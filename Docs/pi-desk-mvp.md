@@ -40,7 +40,8 @@ H3 Code is not an AI coding agent, Codex clone, or model provider. Pi owns agent
 
 ## Preferred Stack
 
-- pnpm workspaces monorepo
+- npm workspaces monorepo
+- Turborepo for workspace task orchestration and Vercel-friendly builds
 - SvelteKit
 - Electron
 - TypeScript
@@ -48,7 +49,7 @@ H3 Code is not an AI coding agent, Codex clone, or model provider. Pi owns agent
 - Local JSON persistence for H3 Code metadata in the MVP
 - SQLite deferred until metadata queries, search, or indexing justify it
 
-Use SvelteKit for both the desktop renderer and the future marketing site. Keep the desktop app and marketing site as separate workspace apps.
+Use SvelteKit for both the desktop renderer and the future marketing site. Keep the desktop app and marketing site as separate workspace apps. Use Turborepo to coordinate workspace scripts, caching, and Vercel builds without coupling app internals.
 
 ```txt
 apps/
@@ -60,6 +61,8 @@ packages/
 ```
 
 Keep Electron, Pi process management, local filesystem access, and Pi session parsing inside `apps/desktop`. The marketing site should not import desktop internals.
+
+Deploy web-facing SvelteKit surfaces through Vercel first. Electron packaging and distribution remain a separate desktop release path.
 
 ## Core User Flow
 
@@ -263,19 +266,20 @@ Do not build fuzzy search, rich autocomplete, or full file browsing in the MVP.
 
 ## Implementation Order
 
-1. Create pnpm workspace structure.
-2. Create `apps/desktop` with SvelteKit, Electron, TypeScript, and Tailwind.
-3. Create `apps/web` as a placeholder SvelteKit marketing app.
-4. Add local JSON persistence for H3 Code metadata.
-5. Add settings screen for Pi executable path.
-6. Add repo registration, validation, selection, and persistence.
-7. Add session creation, selection, and Pi session pointer persistence.
-8. Spawn Pi in the selected repo and stream output.
-9. Read Pi session output for transcript display.
-10. Add stop-process behavior.
-11. Add slash command expansion.
-12. Add basic file mention expansion.
-13. Polish empty, loading, running, disabled, and error states.
+1. Create npm workspace structure.
+2. Add Turborepo task orchestration.
+3. Create `apps/desktop` with SvelteKit, Electron, TypeScript, and Tailwind.
+4. Create `apps/web` as a placeholder SvelteKit marketing app.
+5. Add local JSON persistence for H3 Code metadata.
+6. Add settings screen for Pi executable path.
+7. Add repo registration, validation, selection, and persistence.
+8. Add session creation, selection, and Pi session pointer persistence.
+9. Spawn Pi in the selected repo and stream output.
+10. Read Pi session output for transcript display.
+11. Add stop-process behavior.
+12. Add slash command expansion.
+13. Add basic file mention expansion.
+14. Polish empty, loading, running, disabled, and error states.
 
 ## Acceptance Criteria
 

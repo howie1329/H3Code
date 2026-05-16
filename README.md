@@ -43,14 +43,15 @@ The MVP intentionally avoids:
 
 ## Planned Stack
 
-- pnpm workspaces monorepo
+- npm workspaces monorepo
+- Turborepo for workspace task orchestration and Vercel-friendly builds
 - SvelteKit
 - Electron
 - TypeScript
 - Tailwind CSS
 - Local JSON persistence for the first MVP, with SQLite deferred until metadata/search needs justify it
 
-The repository should support both the desktop app and a future marketing site without coupling the two apps.
+The repository should support both the desktop app and a future marketing site without coupling the two apps. Turborepo should coordinate build, dev, lint, and check tasks across workspaces without adding product architecture.
 
 Planned monorepo shape:
 
@@ -64,6 +65,8 @@ packages/
 ```
 
 Keep Electron, Pi process management, local filesystem access, and session parsing inside `apps/desktop`. The marketing site should not import desktop internals.
+
+Deploy web-facing SvelteKit surfaces through Vercel first. Electron packaging and distribution remain a separate desktop release path.
 
 ## Core Flow
 
