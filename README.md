@@ -2,9 +2,9 @@
 
 H3 Code is a local desktop UI shell for managing Pi agent sessions across local repositories.
 
-The project is currently in MVP planning. The first product target is **Pi Desk**: a desktop app that lets a user select a repo, run their locally installed Pi executable in that repo, stream Pi output into a chat-style session view, and save local session history.
+The project is currently in MVP planning. The first product target is **Pi Desk**: a desktop app that lets a user select a repo, run their locally installed Pi executable in that repo, stream Pi output into a chat-style session view, and return to saved Pi sessions later.
 
-H3 Code is not an AI coding agent, Codex clone, model provider, or custom inference backend. Pi owns agent behavior, model routing, tool execution, code editing, and extensions. H3 Code owns the desktop experience around Pi.
+H3 Code is not an AI coding agent, Codex clone, model provider, or custom inference backend. Pi owns agent behavior, model routing, tool execution, code editing, extensions, and canonical session history. H3 Code owns the desktop experience around Pi.
 
 ## MVP Scope
 
@@ -16,7 +16,7 @@ The MVP should support:
 - Sending chat-style prompts to Pi.
 - Running Pi with the selected repo as the working directory.
 - Streaming Pi stdout and stderr into the session transcript.
-- Saving repos, sessions, messages, and settings locally.
+- Saving repos, session metadata, Pi session pointers, and settings locally.
 - Switching between repos and sessions.
 - Expanding simple slash commands.
 - Resolving basic `@file` mentions into prompt context.
@@ -43,15 +43,27 @@ The MVP intentionally avoids:
 
 ## Planned Stack
 
+- pnpm workspaces monorepo
+- SvelteKit
 - Electron
-- Vite
-- React
 - TypeScript
 - Tailwind CSS
-- shadcn/ui where it stays lightweight
-- Local JSON persistence for the first MVP
+- Local JSON persistence for the first MVP, with SQLite deferred until metadata/search needs justify it
 
-This is a local desktop app, so the project should avoid Next.js, SSR, API routes, and server components.
+The repository should support both the desktop app and a future marketing site without coupling the two apps.
+
+Planned monorepo shape:
+
+```txt
+apps/
+  desktop/        # SvelteKit + Electron app
+  web/            # SvelteKit marketing site
+packages/
+  config/         # shared TypeScript, lint, Tailwind config when useful
+  ui/             # shared UI only after duplication appears
+```
+
+Keep Electron, Pi process management, local filesystem access, and session parsing inside `apps/desktop`. The marketing site should not import desktop internals.
 
 ## Core Flow
 
@@ -63,7 +75,7 @@ This is a local desktop app, so the project should avoid Next.js, SSR, API route
 6. Send a prompt.
 7. H3 Code runs Pi in the repo directory.
 8. Pi output streams into the transcript.
-9. The session is saved locally.
+9. H3 Code records local session metadata and a pointer to Pi's canonical session file.
 10. Return later and continue the same session.
 
 ## Product Boundary
@@ -75,6 +87,7 @@ Pi handles:
 - Tool execution.
 - Code editing.
 - Extensions.
+- Canonical session transcripts and resume state.
 
 H3 Code handles:
 
@@ -83,7 +96,8 @@ H3 Code handles:
 - Session management.
 - Running Pi in the selected repo.
 - Streaming Pi output.
-- Local session history.
+- Local repo/session index.
+- Pointers to Pi session files.
 - Slash command expansion.
 - Basic file mention expansion.
 - Local settings.

@@ -4,9 +4,9 @@
 
 H3 Code is a local desktop UI shell for managing Pi agent sessions across local repositories.
 
-The MVP should prove one core loop: a user can select a local repo, start a Pi-backed session in that repo, send prompts, stream Pi output into a chat-style transcript, and return to that saved session later.
+The MVP should prove one core loop: a user can select a local repo, start a Pi-backed session in that repo, send prompts, stream Pi output into a chat-style transcript, and return to that Pi session later.
 
-H3 Code is not an AI coding agent, Codex clone, or model provider. Pi owns agent behavior, tool execution, model routing, code editing, extensions, and inference. H3 Code owns the desktop UI, local repo/session organization, process orchestration, prompt conveniences, and local persistence.
+H3 Code is not an AI coding agent, Codex clone, or model provider. Pi owns agent behavior, tool execution, model routing, code editing, extensions, inference, and canonical session history. H3 Code owns the desktop UI, local repo/session organization, process orchestration, prompt conveniences, and local metadata.
 
 ## Goals
 
@@ -16,7 +16,7 @@ H3 Code is not an AI coding agent, Codex clone, or model provider. Pi owns agent
 - Send chat-style prompts to Pi.
 - Run Pi with the selected repo as the process working directory.
 - Stream Pi stdout and stderr into the active session view.
-- Save local repos, sessions, messages, and settings.
+- Save local repos, session metadata, Pi session pointers, and settings.
 - Switch between repos and sessions.
 - Expand simple slash commands into prompt templates.
 - Resolve simple `@file` mentions into prompt context.
@@ -40,15 +40,26 @@ H3 Code is not an AI coding agent, Codex clone, or model provider. Pi owns agent
 
 ## Preferred Stack
 
+- pnpm workspaces monorepo
+- SvelteKit
 - Electron
-- Vite
-- React
 - TypeScript
 - Tailwind CSS
-- shadcn/ui if it stays lightweight and useful
-- Local JSON persistence for MVP
+- Local JSON persistence for H3 Code metadata in the MVP
+- SQLite deferred until metadata queries, search, or indexing justify it
 
-Avoid Next.js. This is a local desktop app and does not need SSR, API routes, or server components.
+Use SvelteKit for both the desktop renderer and the future marketing site. Keep the desktop app and marketing site as separate workspace apps.
+
+```txt
+apps/
+  desktop/        # SvelteKit + Electron app
+  web/            # SvelteKit marketing site
+packages/
+  config/         # shared TypeScript, lint, and Tailwind config when useful
+  ui/             # shared UI only after real duplication appears
+```
+
+Keep Electron, Pi process management, local filesystem access, and Pi session parsing inside `apps/desktop`. The marketing site should not import desktop internals.
 
 ## Core User Flow
 
@@ -108,7 +119,7 @@ The main process owns local capabilities:
 - Resolve file mentions from the selected repo.
 - Enforce that file reads stay inside the selected repo.
 
-### React Renderer
+### SvelteKit Renderer
 
 The renderer owns UI state and interaction:
 
@@ -158,18 +169,12 @@ type Repo = {
 type Session = {
   id: string;
   repoId: string;
+  harness: 'pi';
+  harnessSessionPath: string;
   title: string;
   createdAt: string;
   updatedAt: string;
   status: 'idle' | 'running' | 'error';
-};
-
-type Message = {
-  id: string;
-  sessionId: string;
-  role: 'user' | 'pi' | 'system';
-  content: string;
-  createdAt: string;
 };
 
 type Settings = {
@@ -177,7 +182,9 @@ type Settings = {
 };
 ```
 
-Persist repos, sessions, messages, and settings locally. Keep active process state in memory.
+Persist repos, session metadata, Pi session pointers, and settings locally. Keep active process state in memory.
+
+Pi owns the canonical transcript and resume state. H3 Code should read Pi session JSONL for transcript display or maintain a derived cache that can be rebuilt from Pi's session file. Do not make H3 Code's local store the source of truth for Pi messages.
 
 ## Pi Process Contract
 
@@ -186,7 +193,7 @@ The MVP should use a simple prompt-in/process-out model:
 - `cwd`: selected repo path
 - `command`: configured Pi executable path
 - `input`: expanded user prompt
-- `output`: stdout and stderr streamed into the session transcript
+- `output`: stdout and stderr streamed into the active transcript view
 - `exit`: marks the session idle or errored
 
 For MVP, spawn one Pi process per prompt. Long-lived interactive Pi sessions can be evaluated later if needed.
@@ -194,14 +201,13 @@ For MVP, spawn one Pi process per prompt. Long-lived interactive Pi sessions can
 Behavior:
 
 1. User submits a prompt.
-2. H3 Code creates and persists a user message.
-3. H3 Code expands slash commands and file mentions.
-4. H3 Code spawns Pi with the selected repo as `cwd`.
-5. H3 Code streams stdout and stderr into a Pi message.
-6. H3 Code persists streamed output as the Pi message content updates.
-7. Process exit marks the session `idle`.
-8. Non-zero exit marks the session `error` and preserves output.
-9. User can stop a running process.
+2. H3 Code expands slash commands and file mentions.
+3. H3 Code spawns Pi with the selected repo as `cwd`.
+4. H3 Code streams stdout and stderr into the active view.
+5. H3 Code records or updates the Pi session pointer for the session.
+6. Process exit marks the session `idle`.
+7. Non-zero exit marks the session `error` and preserves access to Pi output through the Pi session file.
+8. User can stop a running process.
 
 ## Slash Commands
 
@@ -257,17 +263,19 @@ Do not build fuzzy search, rich autocomplete, or full file browsing in the MVP.
 
 ## Implementation Order
 
-1. Create Electron, Vite, React, TypeScript, and Tailwind app shell.
-2. Add local JSON persistence.
-3. Add settings screen for Pi executable path.
-4. Add repo registration, validation, selection, and persistence.
-5. Add session creation, selection, and persistence.
-6. Add transcript persistence.
-7. Spawn Pi in the selected repo and stream output.
-8. Add stop-process behavior.
-9. Add slash command expansion.
-10. Add basic file mention expansion.
-11. Polish empty, loading, running, disabled, and error states.
+1. Create pnpm workspace structure.
+2. Create `apps/desktop` with SvelteKit, Electron, TypeScript, and Tailwind.
+3. Create `apps/web` as a placeholder SvelteKit marketing app.
+4. Add local JSON persistence for H3 Code metadata.
+5. Add settings screen for Pi executable path.
+6. Add repo registration, validation, selection, and persistence.
+7. Add session creation, selection, and Pi session pointer persistence.
+8. Spawn Pi in the selected repo and stream output.
+9. Read Pi session output for transcript display.
+10. Add stop-process behavior.
+11. Add slash command expansion.
+12. Add basic file mention expansion.
+13. Polish empty, loading, running, disabled, and error states.
 
 ## Acceptance Criteria
 
@@ -282,22 +290,24 @@ The MVP is complete when this flow works:
 7. H3 Code expands the slash command and file mention.
 8. Pi runs with the repo path as `cwd`.
 9. Pi stdout and stderr stream into the transcript.
-10. The transcript is persisted locally.
+10. H3 Code stores the session metadata and Pi session pointer.
 11. Quit and reopen H3 Code.
-12. The repo, session, and transcript are still available.
+12. The repo, session, and transcript are still available through the Pi session file.
 13. Send another message in the same session.
 14. Stop a running Pi process from the UI.
 
 ## Risks
 
 - Pi invocation details may differ from the simple prompt-in/process-out contract.
+- Pi session file discovery may need adjustment after testing against the installed Pi executable.
 - Large file mentions can make prompts too large.
-- Streaming persistence can be noisy if every chunk writes to disk immediately.
+- Derived transcript caches can drift if treated as canonical.
 - Cross-platform executable validation may need platform-specific handling.
 
 ## Deferred Follow-Up
 
-- SQLite persistence if JSON becomes limiting.
+- SQLite persistence if metadata queries, search, or indexing become limiting.
+- Derived transcript cache or search index.
 - Fuzzy file mention search.
 - Custom slash commands.
 - Session title generation.
