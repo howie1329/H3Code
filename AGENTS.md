@@ -113,10 +113,12 @@ Replace these examples with the project's real commands:
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Start the local development server |
-| `npm test` | Run tests |
+| `npm run dev` | Start all workspace dev tasks through Turborepo |
+| `npm run dev:desktop` | Start the desktop SvelteKit renderer and Electron shell |
+| `npm run dev:web` | Start the marketing site |
+| `npm run check` | Run Svelte and TypeScript checks |
 | `npm run lint` | Run lint checks |
-| `npm run build` | Build the project |
+| `npm run build` | Build workspace apps |
 
 Remove commands that do not apply.
 

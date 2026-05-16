@@ -105,6 +105,50 @@ H3 Code handles:
 - Basic file mention expansion.
 - Local settings.
 
+## Project Structure
+
+```txt
+apps/
+  desktop/        # SvelteKit renderer plus Electron dev shell
+  web/            # SvelteKit marketing site placeholder
+```
+
+Shared packages should only be added when duplication makes them useful.
+
+## Local Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run both workspace dev tasks through Turborepo:
+
+```bash
+npm run dev
+```
+
+Run a single app:
+
+```bash
+npm run dev:desktop
+npm run dev:web
+```
+
+Run checks:
+
+```bash
+npm run check
+npm run lint
+npm run build
+```
+
+The desktop app currently uses a development-only Electron wrapper around the
+SvelteKit renderer. Packaging, signing, and release tooling are intentionally
+deferred until the Pi Desk MVP behavior is further along.
+
 ## Status
 
-This repository currently contains the project direction and MVP brief. Application scaffolding and implementation are next.
+This repository contains the project direction, MVP brief, and initial app
+scaffold. Product implementation is next.

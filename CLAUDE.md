@@ -11,9 +11,11 @@ Replace these examples with the project’s real commands:
 
 ```bash
 npm install
-npm test
+npm run check
 npm run build
 npm run lint
+npm run dev:desktop
+npm run dev:web
 ```
 
 ## Coding Standards

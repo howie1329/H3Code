@@ -1,5 +1,23 @@
 {
+  "name": "h3code",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "npm@11.11.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "check": "turbo run check",
+    "lint": "turbo run lint",
+    "dev:desktop": "npm run dev --workspace @h3code/desktop",
+    "dev:web": "npm run dev --workspace @h3code/web"
+  },
   "devDependencies": {
-    "thomas-agentkit": "^0.6.1"
+    "thomas-agentkit": "^0.6.1",
+    "turbo": "^2.5.0"
   }
 }

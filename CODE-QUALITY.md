@@ -34,7 +34,7 @@ Run the narrowest useful checks first, then broaden verification for larger chan
 Document project commands here:
 
 ```bash
-npm test
+npm run check
 npm run lint
 npm run build
 ```
