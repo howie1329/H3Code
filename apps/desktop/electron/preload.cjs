@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('h3code', {
     add: (input) => ipcRenderer.invoke('repos:add', input),
     select: (input) => ipcRenderer.invoke('repos:select', input)
   },
+  dialog: {
+    pickRepositoryDirectory: () => ipcRenderer.invoke('dialog:pickRepositoryDirectory')
+  },
   sessions: {
     list: (input) => ipcRenderer.invoke('sessions:list', input),
     create: (input) => ipcRenderer.invoke('sessions:create', input),
