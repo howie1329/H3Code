@@ -15,8 +15,6 @@
   import * as Sidebar from '$lib/components/ui/sidebar';
   import {
     addRepository,
-    canAddRepository,
-    canCreateSession,
     createSession,
     openCreateSession,
     pickRepositoryDirectory,
@@ -28,8 +26,11 @@
   const iconSize = 12;
 
   $: settingsActive = page.url.pathname === '/settings';
-  $: canSubmitRepo = canAddRepository();
-  $: canSubmitSession = canCreateSession();
+  $: canSubmitRepo = repositoryState.repoPathInput.trim().length > 0 && !repositoryState.isAddingRepo;
+  $: canSubmitSession =
+    !!repositoryState.selectedRepo &&
+    repositoryState.sessionTitleInput.trim().length > 0 &&
+    !repositoryState.isCreatingSession;
 </script>
 
 <Sidebar.Root collapsible="icon" class="border-sidebar-border">
