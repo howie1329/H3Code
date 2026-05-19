@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('h3code', {
   sessions: {
     list: (input) => ipcRenderer.invoke('sessions:list', input),
     create: (input) => ipcRenderer.invoke('sessions:create', input),
+    select: (input) => ipcRenderer.invoke('sessions:select', input),
     getMessages: (input) => ipcRenderer.invoke('sessions:getMessages', input),
     sendMessage: (input) => ipcRenderer.invoke('sessions:sendMessage', input)
   },
