@@ -14,7 +14,10 @@
   let prompt = '';
   let isLoadingSettings = true;
   let isSavingSettings = false;
+  let isDetectingPi = false;
   let settingsError = '';
+  let detectionMessage = '';
+  let pendingDetectedPi: PiDetectionResult | null = null;
 
   $: canSendPrompt = settingsState.validation.status === 'valid';
   $: validationLabel = getValidationLabel(settingsState.validation.status);
@@ -40,6 +43,10 @@
     try {
       settingsState = await window.h3code.settings.get();
       piExecutablePath = settingsState.settings.piExecutablePath;
+
+      if (!settingsState.settings.piExecutablePath) {
+        await detectPiExecutable({ silent: true });
+      }
     } catch {
       settingsError = 'Could not load Pi executable settings.';
     } finally {
@@ -59,10 +66,83 @@
     try {
       settingsState = await window.h3code.settings.update({ piExecutablePath });
       piExecutablePath = settingsState.settings.piExecutablePath;
+      pendingDetectedPi = null;
+      detectionMessage = '';
     } catch {
       settingsError = 'Could not save Pi executable settings.';
     } finally {
       isSavingSettings = false;
+    }
+  }
+
+  async function detectPiExecutable({ silent = false } = {}) {
+    if (!window.h3code?.settings) {
+      if (!silent) settingsError = 'Settings are only available in the desktop app.';
+      return;
+    }
+
+    isDetectingPi = true;
+    if (!silent) {
+      settingsError = '';
+      detectionMessage = '';
+      pendingDetectedPi = null;
+    }
+
+    try {
+      const result = await window.h3code.settings.detectPiExecutable();
+
+      if (!result.ok) {
+        if (!silent) settingsError = result.error.message;
+        return;
+      }
+
+      const detected = result.data;
+      const sourceLabel = getDetectionSourceLabel(detected.source);
+      const shouldUseDetectedPath =
+        !piExecutablePath.trim() || settingsState.validation.status !== 'valid';
+
+      if (shouldUseDetectedPath) {
+        piExecutablePath = detected.path;
+        detectionMessage = `Detected Pi via ${sourceLabel}. Click Save to use it.`;
+        pendingDetectedPi = null;
+        return;
+      }
+
+      if (piExecutablePath.trim() !== detected.path) {
+        pendingDetectedPi = detected;
+        detectionMessage = `Detected Pi via ${sourceLabel}.`;
+      } else {
+        detectionMessage = `Detected Pi via ${sourceLabel}.`;
+      }
+    } catch {
+      if (!silent) settingsError = 'Could not auto-detect Pi.';
+    } finally {
+      isDetectingPi = false;
+    }
+  }
+
+  function useDetectedPiPath() {
+    if (!pendingDetectedPi) return;
+
+    piExecutablePath = pendingDetectedPi.path;
+    detectionMessage = `Using detected Pi path. Click Save to persist it.`;
+    pendingDetectedPi = null;
+  }
+
+  function getDetectionSourceLabel(source: PiDetectionSource) {
+    switch (source) {
+      case 'path':
+        return 'PATH';
+      case 'nvm':
+        return 'nvm';
+      case 'local-bin':
+        return '~/.local/bin';
+      case 'pnpm':
+        return 'pnpm';
+      case 'homebrew':
+        return 'Homebrew';
+      case 'system':
+        return 'system paths';
     }
   }
 
@@ -135,10 +215,19 @@
             </label>
 
             <button
+              class="h-8 rounded-md border border-[var(--border)] px-3 text-xs font-medium text-[var(--foreground)] outline-none ring-[var(--ring)] hover:bg-[var(--accent)] focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+              on:click={() => detectPiExecutable()}
+              disabled={isLoadingSettings || isSavingSettings || isDetectingPi}
+            >
+              {isDetectingPi ? 'Detecting...' : 'Auto-detect Pi'}
+            </button>
+
+            <button
               class="h-8 rounded-md bg-[var(--primary)] px-3 text-xs font-medium text-[var(--background)] outline-none ring-[var(--ring)] hover:opacity-90 focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
               type="button"
               on:click={saveSettings}
-              disabled={isLoadingSettings || isSavingSettings}
+              disabled={isLoadingSettings || isSavingSettings || isDetectingPi}
             >
               {isSavingSettings ? 'Saving...' : 'Save'}
             </button>
@@ -148,6 +237,21 @@
             <span class="font-medium" style:color={validationColor}>{validationLabel}</span>
             <span class="text-[var(--muted-foreground)]">{settingsState.validation.message}</span>
           </div>
+
+          {#if detectionMessage}
+            <div class="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+              <span>{detectionMessage}</span>
+              {#if pendingDetectedPi}
+                <button
+                  class="font-medium text-[var(--primary)] underline-offset-2 hover:underline"
+                  type="button"
+                  on:click={useDetectedPiPath}
+                >
+                  Use detected path
+                </button>
+              {/if}
+            </div>
+          {/if}
 
           {#if settingsError}
             <p class="text-xs text-[var(--destructive)]">{settingsError}</p>

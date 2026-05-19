@@ -18,7 +18,8 @@ contextBridge.exposeInMainWorld('h3code', {
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
-    update: (settings) => ipcRenderer.invoke('settings:update', settings)
+    update: (settings) => ipcRenderer.invoke('settings:update', settings),
+    detectPiExecutable: () => ipcRenderer.invoke('settings:detectPiExecutable')
   },
   files: {
     resolveMentions: (input) => ipcRenderer.invoke('files:resolveMentions', input)

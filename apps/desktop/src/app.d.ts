@@ -48,6 +48,13 @@ declare global {
     | { ok: true; data: T }
     | { ok: false; error: { code: string; message: string } };
 
+  type PiDetectionSource = 'path' | 'nvm' | 'local-bin' | 'pnpm' | 'homebrew' | 'system';
+
+  type PiDetectionResult = {
+    path: string;
+    source: PiDetectionSource;
+  };
+
   type Message = {
     id: string;
     role: 'user' | 'assistant' | 'system';
@@ -80,6 +87,7 @@ declare global {
       settings: {
         get: () => Promise<SettingsState>;
         update: (settings: Settings) => Promise<SettingsState>;
+        detectPiExecutable: () => Promise<IpcResult<PiDetectionResult>>;
       };
       files: {
         resolveMentions: (input: { repoId: string; prompt: string }) => Promise<IpcResult<ResolvedMentions>>;

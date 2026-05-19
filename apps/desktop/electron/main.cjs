@@ -1,8 +1,12 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { randomUUID } = require('node:crypto');
 const { constants } = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+
+const execFileAsync = promisify(execFile);
 
 const rendererUrl = process.env.H3CODE_RENDERER_URL || 'http://127.0.0.1:5173';
 const metadataSchemaVersion = 1;
@@ -221,6 +225,97 @@ async function getSettingsState(settings = null) {
   };
 }
 
+async function isValidPiExecutablePath(candidatePath) {
+  const validation = await validatePiExecutablePath(candidatePath);
+  return validation.status === 'valid';
+}
+
+async function detectPiOnPath() {
+  const command = process.platform === 'win32' ? 'where' : 'sh';
+  const args = process.platform === 'win32' ? ['pi'] : ['-lc', 'command -v pi'];
+
+  try {
+    const { stdout } = await execFileAsync(command, args, { timeout: 3000 });
+    const candidatePath = stdout.split(/\r?\n/).find(Boolean)?.trim();
+
+    if (candidatePath && (await isValidPiExecutablePath(candidatePath))) {
+      return { path: candidatePath, source: 'path' };
+    }
+
+    return candidatePath ? { invalidCandidateFound: true } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function collectNvmPiCandidates(homeDirectory) {
+  const nodeVersionsPath = path.join(homeDirectory, '.nvm', 'versions', 'node');
+
+  try {
+    const entries = await fs.readdir(nodeVersionsPath, { withFileTypes: true });
+    const candidates = await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory())
+        .map(async (entry) => {
+          const candidatePath = path.join(nodeVersionsPath, entry.name, 'bin', 'pi');
+
+          try {
+            const stats = await fs.stat(candidatePath);
+            return { path: candidatePath, source: 'nvm', mtimeMs: stats.mtimeMs };
+          } catch {
+            return null;
+          }
+        })
+    );
+
+    return candidates.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs);
+  } catch {
+    return [];
+  }
+}
+
+async function detectPiExecutable() {
+  let invalidCandidateFound = false;
+  const pathResult = await detectPiOnPath();
+
+  if (pathResult?.path) return ok(pathResult);
+  if (pathResult?.invalidCandidateFound) invalidCandidateFound = true;
+
+  const homeDirectory = app.getPath('home');
+  const candidates = [
+    ...(await collectNvmPiCandidates(homeDirectory)),
+    { path: path.join(homeDirectory, '.local', 'bin', 'pi'), source: 'local-bin' },
+    { path: path.join(homeDirectory, 'Library', 'pnpm', 'pi'), source: 'pnpm' },
+    { path: '/opt/homebrew/bin/pi', source: 'homebrew' },
+    { path: '/usr/local/bin/pi', source: 'system' },
+    { path: '/usr/bin/pi', source: 'system' }
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const exists = await fs.stat(candidate.path);
+      if (!exists.isFile()) {
+        invalidCandidateFound = true;
+        continue;
+      }
+
+      if (await isValidPiExecutablePath(candidate.path)) {
+        return ok({ path: candidate.path, source: candidate.source });
+      }
+
+      invalidCandidateFound = true;
+    } catch {
+      // Missing candidates are expected during detection.
+    }
+  }
+
+  if (invalidCandidateFound) {
+    return fail('pi_candidates_invalid', 'Found Pi candidates, but none were executable.');
+  }
+
+  return fail('pi_not_found', 'Could not find Pi automatically. Enter the executable path manually.');
+}
+
 function ok(data) {
   return { ok: true, data };
 }
@@ -292,6 +387,8 @@ function registerIpcHandlers() {
     await writeSettings(settings);
     return getSettingsState(settings);
   });
+
+  ipcMain.handle('settings:detectPiExecutable', async () => detectPiExecutable());
 
   ipcMain.handle('repos:list', async () => {
     const metadata = await readMetadata();
