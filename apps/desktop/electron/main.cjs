@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
+const { randomUUID } = require('node:crypto');
 const { constants } = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -220,6 +221,66 @@ async function getSettingsState(settings = null) {
   };
 }
 
+function ok(data) {
+  return { ok: true, data };
+}
+
+function fail(code, message) {
+  return { ok: false, error: { code, message } };
+}
+
+function requireObject(input, label = 'Input') {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return `${label} must be an object.`;
+  }
+
+  return null;
+}
+
+function requireNonEmptyString(input, field) {
+  if (typeof input?.[field] !== 'string' || input[field].trim().length === 0) {
+    return `${field} is required.`;
+  }
+
+  return null;
+}
+
+function findRepo(metadata, repoId) {
+  return metadata.repos.find((repo) => repo.id === repoId) ?? null;
+}
+
+function findSession(metadata, sessionId) {
+  return metadata.sessions.find((session) => session.id === sessionId) ?? null;
+}
+
+function sortRepos(repos) {
+  return [...repos].sort((a, b) => {
+    const aDate = a.lastOpenedAt ?? a.addedAt;
+    const bDate = b.lastOpenedAt ?? b.addedAt;
+    return bDate.localeCompare(aDate);
+  });
+}
+
+async function validateRepoDirectory(repoPath) {
+  let stats;
+
+  try {
+    stats = await fs.stat(repoPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return fail('repo_path_not_found', 'No directory exists at this repository path.');
+    }
+
+    throw error;
+  }
+
+  if (!stats.isDirectory()) {
+    return fail('repo_path_not_directory', 'Repository path must point to a directory.');
+  }
+
+  return ok(null);
+}
+
 function registerIpcHandlers() {
   ipcMain.handle('metadata:get', async () => readMetadata());
 
@@ -230,6 +291,163 @@ function registerIpcHandlers() {
 
     await writeSettings(settings);
     return getSettingsState(settings);
+  });
+
+  ipcMain.handle('repos:list', async () => {
+    const metadata = await readMetadata();
+    return ok(sortRepos(metadata.repos));
+  });
+
+  ipcMain.handle('repos:add', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const pathError = requireNonEmptyString(input, 'path');
+    if (pathError) return fail('invalid_input', pathError);
+
+    const repoPath = path.resolve(input.path.trim());
+    const validation = await validateRepoDirectory(repoPath);
+    if (!validation.ok) return validation;
+
+    const metadata = await readMetadata();
+    const existingRepo = metadata.repos.find((repo) => path.resolve(repo.path) === repoPath);
+    const now = new Date().toISOString();
+
+    if (existingRepo) {
+      const repos = metadata.repos.map((repo) =>
+        repo.id === existingRepo.id ? { ...repo, lastOpenedAt: now } : repo
+      );
+      const selectedRepo = { ...existingRepo, lastOpenedAt: now };
+      await writeMetadata({ ...metadata, repos });
+      return ok(selectedRepo);
+    }
+
+    const repo = {
+      id: randomUUID(),
+      name: path.basename(repoPath),
+      path: repoPath,
+      addedAt: now,
+      lastOpenedAt: now
+    };
+
+    await writeMetadata({ ...metadata, repos: [...metadata.repos, repo] });
+    return ok(repo);
+  });
+
+  ipcMain.handle('repos:select', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const repoIdError = requireNonEmptyString(input, 'repoId');
+    if (repoIdError) return fail('invalid_input', repoIdError);
+
+    const metadata = await readMetadata();
+    const repo = findRepo(metadata, input.repoId.trim());
+    if (!repo) return fail('repo_not_found', 'Repository could not be found.');
+
+    const selectedRepo = { ...repo, lastOpenedAt: new Date().toISOString() };
+    const repos = metadata.repos.map((item) => (item.id === selectedRepo.id ? selectedRepo : item));
+
+    await writeMetadata({ ...metadata, repos });
+    return ok(selectedRepo);
+  });
+
+  ipcMain.handle('sessions:list', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const repoIdError = requireNonEmptyString(input, 'repoId');
+    if (repoIdError) return fail('invalid_input', repoIdError);
+
+    const metadata = await readMetadata();
+    if (!findRepo(metadata, input.repoId.trim())) return fail('repo_not_found', 'Repository could not be found.');
+
+    return ok(metadata.sessions.filter((session) => session.repoId === input.repoId.trim()));
+  });
+
+  ipcMain.handle('sessions:create', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const repoIdError = requireNonEmptyString(input, 'repoId');
+    if (repoIdError) return fail('invalid_input', repoIdError);
+
+    const metadata = await readMetadata();
+    const repoId = input.repoId.trim();
+    if (!findRepo(metadata, repoId)) return fail('repo_not_found', 'Repository could not be found.');
+
+    const now = new Date().toISOString();
+    const title = typeof input.title === 'string' && input.title.trim() ? input.title.trim() : 'New session';
+    const session = {
+      id: randomUUID(),
+      repoId,
+      harness: 'pi',
+      harnessSessionPath: '',
+      title,
+      createdAt: now,
+      updatedAt: now,
+      status: 'idle'
+    };
+
+    await writeMetadata({ ...metadata, sessions: [...metadata.sessions, session] });
+    return ok(session);
+  });
+
+  ipcMain.handle('sessions:getMessages', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const sessionIdError = requireNonEmptyString(input, 'sessionId');
+    if (sessionIdError) return fail('invalid_input', sessionIdError);
+
+    const metadata = await readMetadata();
+    if (!findSession(metadata, input.sessionId.trim())) return fail('session_not_found', 'Session could not be found.');
+
+    return ok([]);
+  });
+
+  ipcMain.handle('sessions:sendMessage', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const sessionIdError = requireNonEmptyString(input, 'sessionId');
+    if (sessionIdError) return fail('invalid_input', sessionIdError);
+
+    const promptError = requireNonEmptyString(input, 'prompt');
+    if (promptError) return fail('invalid_input', promptError);
+
+    const metadata = await readMetadata();
+    if (!findSession(metadata, input.sessionId.trim())) return fail('session_not_found', 'Session could not be found.');
+
+    return fail('not_implemented', 'Prompt execution will be added with Pi process streaming.');
+  });
+
+  ipcMain.handle('files:resolveMentions', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const repoIdError = requireNonEmptyString(input, 'repoId');
+    if (repoIdError) return fail('invalid_input', repoIdError);
+
+    if (typeof input.prompt !== 'string') return fail('invalid_input', 'prompt is required.');
+
+    const metadata = await readMetadata();
+    if (!findRepo(metadata, input.repoId.trim())) return fail('repo_not_found', 'Repository could not be found.');
+
+    return ok({ prompt: input.prompt, mentions: [] });
+  });
+
+  ipcMain.handle('pi:stopSession', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const sessionIdError = requireNonEmptyString(input, 'sessionId');
+    if (sessionIdError) return fail('invalid_input', sessionIdError);
+
+    const metadata = await readMetadata();
+    if (!findSession(metadata, input.sessionId.trim())) return fail('session_not_found', 'Session could not be found.');
+
+    return fail('no_running_process', 'There is no running Pi process for this session.');
   });
 }
 
