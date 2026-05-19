@@ -55,6 +55,10 @@ declare global {
     source: PiDetectionSource;
   };
 
+  type PickRepositoryDirectoryResult = {
+    path: string;
+  } | null;
+
   type Message = {
     id: string;
     role: 'user' | 'assistant' | 'system';
@@ -77,6 +81,9 @@ declare global {
         list: () => Promise<IpcResult<Repo[]>>;
         add: (input: { path: string }) => Promise<IpcResult<Repo>>;
         select: (input: { repoId: string }) => Promise<IpcResult<Repo>>;
+      };
+      dialog: {
+        pickRepositoryDirectory: () => Promise<IpcResult<PickRepositoryDirectoryResult>>;
       };
       sessions: {
         list: (input: { repoId: string }) => Promise<IpcResult<Session[]>>;

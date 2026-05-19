@@ -153,4 +153,4 @@ Examples:
 
 ## Other Rules
 
-- For UI: prefer existing `$lib/components/ui` components. If missing, add via shadcn-svelte CLI from `apps/desktop` (see `components.json`). Read `Docs/SvelteKitShadcn.md` for component APIs and `DESIGN-SYSTEM.md` for layout/token rules.
+- For UI in `apps/desktop` or `apps/web`: use that app's existing `$lib/components/ui` components first. If a component is missing, run the shadcn-svelte CLI from **that app's directory** (where its `components.json` lives), e.g. `cd apps/web && npx shadcn-svelte@latest add <name>`. Do not install into the other app unless you are editing it too. Read `Docs/SvelteKitShadcn.md` for APIs and `DESIGN-SYSTEM.md` for layout/token rules.

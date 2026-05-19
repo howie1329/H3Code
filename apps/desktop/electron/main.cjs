@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { randomUUID } = require('node:crypto');
@@ -389,6 +389,18 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('settings:detectPiExecutable', async () => detectPiExecutable());
+
+  ipcMain.handle('dialog:pickRepositoryDirectory', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory']
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return ok(null);
+    }
+
+    return ok({ path: result.filePaths[0] });
+  });
 
   ipcMain.handle('repos:list', async () => {
     const metadata = await readMetadata();
