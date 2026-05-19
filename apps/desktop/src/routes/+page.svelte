@@ -1,5 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Separator } from '$lib/components/ui/separator';
 
   let settingsState: SettingsState = {
     settings: {
@@ -21,10 +26,7 @@
 
   $: canSendPrompt = settingsState.validation.status === 'valid';
   $: validationLabel = getValidationLabel(settingsState.validation.status);
-  $: validationColor =
-    settingsState.validation.status === 'valid'
-      ? 'var(--primary)'
-      : 'var(--destructive)';
+  $: validationTone = getValidationTone(settingsState.validation.status);
 
   onMount(() => {
     void loadSettings();
@@ -160,131 +162,157 @@
         return 'Not executable';
     }
   }
+
+  function getValidationTone(status: PiExecutableValidationStatus) {
+    return status === 'valid' ? 'valid' : 'invalid';
+  }
 </script>
 
 <svelte:head>
   <title>H3 Code</title>
 </svelte:head>
 
-<main class="flex min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-  <aside class="flex w-60 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--sidebar)] p-3">
-    <div class="mb-6 text-sm font-semibold">H3 Code</div>
+<main class="flex min-h-screen bg-background text-foreground">
+  <aside class="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground">
+    <div class="mb-5 px-2 text-sm font-semibold leading-tight">H3 Code</div>
 
-    <section class="space-y-2">
-      <h2 class="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Repos</h2>
-      <p class="rounded-md px-2 py-1.5 text-xs text-[var(--muted-foreground)]">No repos added</p>
-    </section>
+    <nav class="space-y-5" aria-label="Desktop navigation">
+      <section class="space-y-1.5">
+        <h2 class="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Repos</h2>
+        <p class="h-7 px-2.5 text-xs leading-7 text-muted-foreground">No repos added</p>
+      </section>
 
-    <section class="mt-6 space-y-2">
-      <h2 class="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Sessions</h2>
-      <p class="rounded-md px-2 py-1.5 text-xs text-[var(--muted-foreground)]">No active session</p>
-    </section>
+      <section class="space-y-1.5">
+        <h2 class="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Sessions</h2>
+        <p class="h-7 px-2.5 text-xs leading-7 text-muted-foreground">No active session</p>
+      </section>
 
-    <section class="mt-6 space-y-2">
-      <h2 class="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Settings</h2>
-      <p class="rounded-md bg-[var(--sidebar-accent)] px-2 py-1.5 text-xs font-medium">Pi executable</p>
-    </section>
+      <section class="space-y-1.5">
+        <h2 class="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Settings</h2>
+        <p class="h-7 rounded-full bg-sidebar-accent px-2.5 text-xs font-medium leading-7 text-sidebar-accent-foreground">
+          Pi executable
+        </p>
+      </section>
+    </nav>
 
-    <div class="mt-auto text-[11px] text-[var(--muted-foreground)]">Pi Desk scaffold</div>
+    <div class="mt-auto px-2 text-[11px] text-muted-foreground">Pi Desk scaffold</div>
   </aside>
 
   <section class="flex min-w-0 flex-1 flex-col">
-    <header class="flex h-12 items-center justify-between border-b border-[var(--border)] px-4">
+    <header class="flex h-12 items-center px-4">
       <div>
-        <h1 class="text-sm font-semibold">Pi executable settings</h1>
-        <p class="text-[11px] text-[var(--muted-foreground)]">Configure Pi before starting a session.</p>
-      </div>
-      <div class="flex items-center gap-2 text-[11px]">
-        <span class="size-1.5 rounded-full bg-current" style:color={validationColor}></span>
-        <span style:color={validationColor}>{validationLabel}</span>
+        <h1 class="text-xl font-semibold leading-tight">Settings</h1>
+        <p class="text-[11px] leading-tight text-muted-foreground">Configure Pi before starting a session.</p>
       </div>
     </header>
+    <Separator />
 
     <div class="flex min-h-0 flex-1 flex-col">
-      <div class="border-b border-[var(--border)] p-4">
-        <div class="max-w-3xl space-y-3">
-          <div class="flex items-end gap-2">
-            <label class="min-w-0 flex-1 space-y-1">
-              <span class="block text-xs font-medium">Pi executable path</span>
-              <input
-                class="h-8 w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-xs text-[var(--foreground)] outline-none ring-[var(--ring)] placeholder:text-[var(--muted-foreground)] focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
-                placeholder="/usr/local/bin/pi"
-                bind:value={piExecutablePath}
-                disabled={isLoadingSettings || isSavingSettings}
-              />
-            </label>
-
-            <button
-              class="h-8 rounded-md border border-[var(--border)] px-3 text-xs font-medium text-[var(--foreground)] outline-none ring-[var(--ring)] hover:bg-[var(--accent)] focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
-              type="button"
-              on:click={() => detectPiExecutable()}
-              disabled={isLoadingSettings || isSavingSettings || isDetectingPi}
-            >
-              {isDetectingPi ? 'Detecting...' : 'Auto-detect Pi'}
-            </button>
-
-            <button
-              class="h-8 rounded-md bg-[var(--primary)] px-3 text-xs font-medium text-[var(--background)] outline-none ring-[var(--ring)] hover:opacity-90 focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
-              type="button"
-              on:click={saveSettings}
-              disabled={isLoadingSettings || isSavingSettings || isDetectingPi}
-            >
-              {isSavingSettings ? 'Saving...' : 'Save'}
-            </button>
+      <section class="px-4 py-5">
+        <div class="grid max-w-4xl gap-4 md:grid-cols-[12rem_minmax(0,1fr)]">
+          <div class="space-y-1">
+            <h2 class="text-base font-semibold leading-tight">Pi executable</h2>
+            <p class="text-[11px] leading-snug text-muted-foreground">
+              Set the local Pi binary used to validate the desktop prompt workflow.
+            </p>
           </div>
 
-          <div class="flex items-center gap-2 text-xs">
-            <span class="font-medium" style:color={validationColor}>{validationLabel}</span>
-            <span class="text-[var(--muted-foreground)]">{settingsState.validation.message}</span>
-          </div>
+          <div class="min-w-0 space-y-3">
+            <div class="space-y-1.5">
+              <Label for="pi-executable-path">Executable path</Label>
+              <div class="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="pi-executable-path"
+                  class="h-8 flex-1 bg-background text-xs"
+                  placeholder="/usr/local/bin/pi"
+                  bind:value={piExecutablePath}
+                  disabled={isLoadingSettings || isSavingSettings}
+                  aria-invalid={validationTone === 'invalid'}
+                />
 
-          {#if detectionMessage}
-            <div class="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-              <span>{detectionMessage}</span>
-              {#if pendingDetectedPi}
-                <button
-                  class="font-medium text-[var(--primary)] underline-offset-2 hover:underline"
-                  type="button"
-                  on:click={useDetectedPiPath}
-                >
-                  Use detected path
-                </button>
-              {/if}
+                <div class="flex gap-2">
+                  <Button
+                    class="h-8"
+                    variant="outline"
+                    type="button"
+                    onclick={() => detectPiExecutable()}
+                    disabled={isLoadingSettings || isSavingSettings || isDetectingPi}
+                  >
+                    {isDetectingPi ? 'Detecting...' : 'Auto-detect Pi'}
+                  </Button>
+
+                  <Button
+                    class="h-8"
+                    type="button"
+                    onclick={saveSettings}
+                    disabled={isLoadingSettings || isSavingSettings || isDetectingPi}
+                  >
+                    {isSavingSettings ? 'Saving...' : 'Save'}
+                  </Button>
+                </div>
+              </div>
             </div>
-          {/if}
 
-          {#if settingsError}
-            <p class="text-xs text-[var(--destructive)]">{settingsError}</p>
-          {/if}
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <span
+                class="size-1.5 rounded-full"
+                class:bg-primary={validationTone === 'valid'}
+                class:bg-destructive={validationTone === 'invalid'}
+                aria-hidden="true"
+              ></span>
+              <Badge variant={validationTone === 'valid' ? 'secondary' : 'destructive'}>{validationLabel}</Badge>
+              <span class="text-muted-foreground">{settingsState.validation.message}</span>
+            </div>
+
+            {#if detectionMessage}
+              <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>{detectionMessage}</span>
+                {#if pendingDetectedPi}
+                  <Button
+                    class="h-auto px-0 py-0 text-xs"
+                    variant="link"
+                    type="button"
+                    onclick={useDetectedPiPath}
+                  >
+                    Use detected path
+                  </Button>
+                {/if}
+              </div>
+            {/if}
+
+            {#if settingsError}
+              <p class="text-xs text-destructive">{settingsError}</p>
+            {/if}
+          </div>
         </div>
-      </div>
+      </section>
+
+      <Separator />
 
       <div class="flex min-h-0 flex-1 flex-col">
         <div class="flex flex-1 items-center justify-center p-6">
           <div class="max-w-md text-center">
-            <p class="text-base font-semibold">No session selected</p>
-            <p class="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">
+            <p class="text-base font-semibold leading-tight">No session selected</p>
+            <p class="mt-2 text-xs leading-5 text-muted-foreground">
               Prompt sending will unlock when the Pi executable path is valid.
             </p>
           </div>
         </div>
 
-        <form class="border-t border-[var(--border)] p-4" on:submit|preventDefault>
+        <Separator />
+
+        <form class="p-4" on:submit|preventDefault>
           <div class="flex gap-2">
-            <input
-              class="h-9 min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-xs text-[var(--foreground)] outline-none ring-[var(--ring)] placeholder:text-[var(--muted-foreground)] focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+            <Input
+              class="h-9 min-w-0 flex-1 bg-background text-xs"
               placeholder={canSendPrompt ? 'Send a prompt to Pi' : settingsState.validation.message}
               bind:value={prompt}
               disabled={!canSendPrompt}
             />
 
-            <button
-              class="h-9 rounded-md bg-[var(--primary)] px-3 text-xs font-medium text-[var(--background)] outline-none ring-[var(--ring)] hover:opacity-90 focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
-              type="submit"
-              disabled={!canSendPrompt || !prompt.trim()}
-            >
+            <Button class="h-9" type="submit" disabled={!canSendPrompt || !prompt.trim()}>
               Send
-            </button>
+            </Button>
           </div>
         </form>
       </div>
