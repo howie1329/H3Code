@@ -1,4 +1,5 @@
 <!-- agentkit:start agents -->
+
 # H3Code Agent Guide
 
 ## Purpose
@@ -111,14 +112,14 @@ Before marking work complete:
 
 Replace these examples with the project's real commands:
 
-| Command | Description |
-| --- | --- |
-| `npm run dev` | Start all workspace dev tasks through Turborepo |
+| Command               | Description                                             |
+| --------------------- | ------------------------------------------------------- |
+| `npm run dev`         | Start all workspace dev tasks through Turborepo         |
 | `npm run dev:desktop` | Start the desktop SvelteKit renderer and Electron shell |
-| `npm run dev:web` | Start the marketing site |
-| `npm run check` | Run Svelte and TypeScript checks |
-| `npm run lint` | Run lint checks |
-| `npm run build` | Build workspace apps |
+| `npm run dev:web`     | Start the marketing site                                |
+| `npm run check`       | Run Svelte and TypeScript checks                        |
+| `npm run lint`        | Run lint checks                                         |
+| `npm run build`       | Build workspace apps                                    |
 
 Remove commands that do not apply.
 
@@ -149,3 +150,7 @@ Examples:
 - Follow local generated patterns over generic assumptions.
 - Keep schemas, validators, and API boundaries strict and explicit.
 <!-- agentkit:end agents -->
+
+## Other Rules
+
+- For UI: prefer existing `$lib/components/ui` components. If missing, add via shadcn-svelte CLI from `apps/desktop` (see `components.json`). Read `Docs/SvelteKitShadcn.md` for component APIs and `DESIGN-SYSTEM.md` for layout/token rules.
