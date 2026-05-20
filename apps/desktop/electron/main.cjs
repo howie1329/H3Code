@@ -15,6 +15,7 @@ const defaultSettings = {
 };
 const defaultMetadata = {
   schemaVersion: metadataSchemaVersion,
+  selectedRepoId: '',
   repos: [],
   sessions: [],
   settings: defaultSettings
@@ -54,7 +55,8 @@ function sanitizeRepo(input) {
     name: input.name,
     path: input.path,
     addedAt: input.addedAt,
-    ...(typeof input.lastOpenedAt === 'string' ? { lastOpenedAt: input.lastOpenedAt } : {})
+    ...(typeof input.lastOpenedAt === 'string' ? { lastOpenedAt: input.lastOpenedAt } : {}),
+    ...(typeof input.selectedSessionId === 'string' ? { selectedSessionId: input.selectedSessionId } : {})
   };
 }
 
@@ -93,6 +95,7 @@ function sanitizeMetadata(input) {
 
   return {
     schemaVersion: metadataSchemaVersion,
+    selectedRepoId: typeof root.selectedRepoId === 'string' ? root.selectedRepoId : '',
     repos: Array.isArray(root.repos) ? root.repos.map(sanitizeRepo).filter(Boolean) : [],
     sessions: Array.isArray(root.sessions) ? root.sessions.map(sanitizeSession).filter(Boolean) : [],
     settings: sanitizeSettings(root.settings)
@@ -423,11 +426,9 @@ function registerIpcHandlers() {
     const now = new Date().toISOString();
 
     if (existingRepo) {
-      const repos = metadata.repos.map((repo) =>
-        repo.id === existingRepo.id ? { ...repo, lastOpenedAt: now } : repo
-      );
       const selectedRepo = { ...existingRepo, lastOpenedAt: now };
-      await writeMetadata({ ...metadata, repos });
+      const repos = metadata.repos.map((repo) => (repo.id === existingRepo.id ? selectedRepo : repo));
+      await writeMetadata({ ...metadata, selectedRepoId: selectedRepo.id, repos });
       return ok(selectedRepo);
     }
 
@@ -439,7 +440,7 @@ function registerIpcHandlers() {
       lastOpenedAt: now
     };
 
-    await writeMetadata({ ...metadata, repos: [...metadata.repos, repo] });
+    await writeMetadata({ ...metadata, selectedRepoId: repo.id, repos: [...metadata.repos, repo] });
     return ok(repo);
   });
 
@@ -457,7 +458,7 @@ function registerIpcHandlers() {
     const selectedRepo = { ...repo, lastOpenedAt: new Date().toISOString() };
     const repos = metadata.repos.map((item) => (item.id === selectedRepo.id ? selectedRepo : item));
 
-    await writeMetadata({ ...metadata, repos });
+    await writeMetadata({ ...metadata, selectedRepoId: selectedRepo.id, repos });
     return ok(selectedRepo);
   });
 
@@ -483,7 +484,8 @@ function registerIpcHandlers() {
 
     const metadata = await readMetadata();
     const repoId = input.repoId.trim();
-    if (!findRepo(metadata, repoId)) return fail('repo_not_found', 'Repository could not be found.');
+    const repo = findRepo(metadata, repoId);
+    if (!repo) return fail('repo_not_found', 'Repository could not be found.');
 
     const now = new Date().toISOString();
     const title = typeof input.title === 'string' && input.title.trim() ? input.title.trim() : 'New session';
@@ -498,7 +500,44 @@ function registerIpcHandlers() {
       status: 'idle'
     };
 
-    await writeMetadata({ ...metadata, sessions: [...metadata.sessions, session] });
+    const repos = metadata.repos.map((item) =>
+      item.id === repo.id ? { ...item, selectedSessionId: session.id, lastOpenedAt: now } : item
+    );
+
+    await writeMetadata({
+      ...metadata,
+      selectedRepoId: repo.id,
+      repos,
+      sessions: [...metadata.sessions, session]
+    });
+    return ok(session);
+  });
+
+  ipcMain.handle('sessions:select', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const repoIdError = requireNonEmptyString(input, 'repoId');
+    if (repoIdError) return fail('invalid_input', repoIdError);
+
+    const sessionIdError = requireNonEmptyString(input, 'sessionId');
+    if (sessionIdError) return fail('invalid_input', sessionIdError);
+
+    const metadata = await readMetadata();
+    const repoId = input.repoId.trim();
+    const sessionId = input.sessionId.trim();
+    const repo = findRepo(metadata, repoId);
+    if (!repo) return fail('repo_not_found', 'Repository could not be found.');
+
+    const session = findSession(metadata, sessionId);
+    if (!session) return fail('session_not_found', 'Session could not be found.');
+    if (session.repoId !== repoId) return fail('session_repo_mismatch', 'Session does not belong to this repository.');
+
+    const repos = metadata.repos.map((item) =>
+      item.id === repo.id ? { ...item, selectedSessionId: session.id, lastOpenedAt: new Date().toISOString() } : item
+    );
+
+    await writeMetadata({ ...metadata, selectedRepoId: repo.id, repos });
     return ok(session);
   });
 

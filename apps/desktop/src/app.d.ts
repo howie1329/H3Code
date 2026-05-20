@@ -12,6 +12,7 @@ declare global {
     path: string;
     addedAt: string;
     lastOpenedAt?: string;
+    selectedSessionId?: string;
   };
 
   type Session = {
@@ -31,6 +32,7 @@ declare global {
 
   type Metadata = {
     schemaVersion: 1;
+    selectedRepoId?: string;
     repos: Repo[];
     sessions: Session[];
     settings: Settings;
@@ -88,6 +90,7 @@ declare global {
       sessions: {
         list: (input: { repoId: string }) => Promise<IpcResult<Session[]>>;
         create: (input: { repoId: string; title?: string }) => Promise<IpcResult<Session>>;
+        select: (input: { repoId: string; sessionId: string }) => Promise<IpcResult<Session>>;
         getMessages: (input: { sessionId: string }) => Promise<IpcResult<Message[]>>;
         sendMessage: (input: { sessionId: string; prompt: string }) => Promise<IpcResult<never>>;
       };
