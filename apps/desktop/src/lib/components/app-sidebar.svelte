@@ -18,19 +18,18 @@
     createSession,
     openCreateSession,
     pickRepositoryDirectory,
+    renameSession,
     repositoryState,
     selectRepository,
-    selectSession
+    selectSession,
+    startRenamingSession
   } from '$lib/state/repositories.svelte';
 
   const iconSize = 12;
 
   $: settingsActive = page.url.pathname === '/settings';
   $: canSubmitRepo = repositoryState.repoPathInput.trim().length > 0 && !repositoryState.isAddingRepo;
-  $: canSubmitSession =
-    !!repositoryState.selectedRepo &&
-    repositoryState.sessionTitleInput.trim().length > 0 &&
-    !repositoryState.isCreatingSession;
+  $: canSubmitSession = !!repositoryState.selectedRepo && !repositoryState.isCreatingSession;
 </script>
 
 <Sidebar.Root collapsible="icon" class="border-sidebar-border">
@@ -155,11 +154,11 @@
             }}
           >
             <div class="space-y-1.5">
-              <Label class="text-[11px]" for="session-title">Session title</Label>
+              <Label class="text-[11px]" for="session-title">Session title (optional)</Label>
               <Input
                 id="session-title"
                 class="h-8 bg-background text-xs"
-                placeholder="Fix failing tests"
+                placeholder="Pi can name this later"
                 bind:value={repositoryState.sessionTitleInput}
                 disabled={repositoryState.isCreatingSession}
                 aria-invalid={repositoryState.sessionError ? 'true' : undefined}
@@ -212,23 +211,63 @@
           <Sidebar.Menu>
             {#each repositoryState.sessions as session}
               <Sidebar.MenuItem>
-                <Sidebar.MenuButton
-                  size="sm"
-                  isActive={repositoryState.selectedSession?.id === session.id}
-                  tooltipContent={session.title}
-                  class="h-auto min-h-7 items-start py-1.5"
-                  onclick={() => selectSession(session)}
-                  aria-disabled={repositoryState.isSelectingSessionId === session.id ? 'true' : undefined}
-                  aria-current={repositoryState.selectedSession?.id === session.id ? 'page' : undefined}
-                >
-                  <HugeiconsIcon icon={BubbleChatFreeIcons} size={iconSize} color="currentColor" />
-                  <span class="min-w-0 leading-tight">
-                    <span class="block truncate">{session.title}</span>
-                    <span class="block truncate text-[11px] font-normal text-muted-foreground group-data-[collapsible=icon]:hidden">
-                      {session.status} · {session.harness}
-                    </span>
-                  </span>
-                </Sidebar.MenuButton>
+                {#if repositoryState.editingSessionTitleId === session.id}
+                  <form
+                    class="space-y-1 px-2 group-data-[collapsible=icon]:hidden"
+                    onsubmit={(event) => {
+                      event.preventDefault();
+                      void renameSession(session);
+                    }}
+                  >
+                    <Input
+                      class="h-8 bg-background text-xs"
+                      bind:value={repositoryState.renameTitleInput}
+                      disabled={repositoryState.isRenamingSession}
+                      aria-label="Session title"
+                    />
+                    <div class="flex gap-1">
+                      <Button class="h-7 flex-1 px-2 text-xs" type="submit" disabled={repositoryState.isRenamingSession}>
+                        Save
+                      </Button>
+                      <Button
+                        class="h-7 px-2 text-xs"
+                        variant="outline"
+                        type="button"
+                        onclick={() => (repositoryState.editingSessionTitleId = '')}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                {:else}
+                  <div class="flex items-start gap-1">
+                    <Sidebar.MenuButton
+                      size="sm"
+                      isActive={repositoryState.selectedSession?.id === session.id}
+                      tooltipContent={session.title}
+                      class="h-auto min-h-7 flex-1 items-start py-1.5"
+                      onclick={() => selectSession(session)}
+                      aria-disabled={repositoryState.isSelectingSessionId === session.id ? 'true' : undefined}
+                      aria-current={repositoryState.selectedSession?.id === session.id ? 'page' : undefined}
+                    >
+                      <HugeiconsIcon icon={BubbleChatFreeIcons} size={iconSize} color="currentColor" />
+                      <span class="min-w-0 leading-tight">
+                        <span class="block truncate">{session.title}</span>
+                        <span class="block truncate text-[11px] font-normal text-muted-foreground group-data-[collapsible=icon]:hidden">
+                          {session.status} · {session.harness}
+                        </span>
+                      </span>
+                    </Sidebar.MenuButton>
+                    <Button
+                      class="mt-0.5 h-6 px-1.5 text-[10px] group-data-[collapsible=icon]:hidden"
+                      variant="ghost"
+                      type="button"
+                      onclick={() => startRenamingSession(session)}
+                    >
+                      Rename
+                    </Button>
+                  </div>
+                {/if}
               </Sidebar.MenuItem>
             {/each}
           </Sidebar.Menu>

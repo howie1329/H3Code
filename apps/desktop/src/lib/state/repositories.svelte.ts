@@ -5,8 +5,12 @@ type RepositoryState = {
   selectedSession: Session | null;
   repoPathInput: string;
   sessionTitleInput: string;
+  promptInput: string;
+  renameTitleInput: string;
+  transcriptEventsBySessionId: Record<string, TranscriptEvent[]>;
   repoError: string;
   sessionError: string;
+  promptError: string;
   isLoadingRepos: boolean;
   isLoadingSessions: boolean;
   isAddingRepo: boolean;
@@ -16,6 +20,12 @@ type RepositoryState = {
   isSelectingSessionId: string;
   isAddRepoOpen: boolean;
   isCreateSessionOpen: boolean;
+  isSendingPrompt: boolean;
+  isStoppingSession: boolean;
+  isRenamingSession: boolean;
+  editingSessionTitleId: string;
+  unsubscribeTranscriptEvents: (() => void) | null;
+  unsubscribeSessionUpdates: (() => void) | null;
 };
 
 export const repositoryState = $state<RepositoryState>({
@@ -25,8 +35,12 @@ export const repositoryState = $state<RepositoryState>({
   selectedSession: null,
   repoPathInput: '',
   sessionTitleInput: '',
+  promptInput: '',
+  renameTitleInput: '',
+  transcriptEventsBySessionId: {},
   repoError: '',
   sessionError: '',
+  promptError: '',
   isLoadingRepos: true,
   isLoadingSessions: false,
   isAddingRepo: false,
@@ -35,7 +49,13 @@ export const repositoryState = $state<RepositoryState>({
   isSelectingRepoId: '',
   isSelectingSessionId: '',
   isAddRepoOpen: false,
-  isCreateSessionOpen: false
+  isCreateSessionOpen: false,
+  isSendingPrompt: false,
+  isStoppingSession: false,
+  isRenamingSession: false,
+  editingSessionTitleId: '',
+  unsubscribeTranscriptEvents: null,
+  unsubscribeSessionUpdates: null
 });
 
 export function canAddRepository() {
@@ -43,11 +63,32 @@ export function canAddRepository() {
 }
 
 export function canCreateSession() {
-  return (
-    !!repositoryState.selectedRepo &&
-    repositoryState.sessionTitleInput.trim().length > 0 &&
-    !repositoryState.isCreatingSession
-  );
+  return !!repositoryState.selectedRepo && !repositoryState.isCreatingSession;
+}
+
+export function getSelectedTranscriptEvents() {
+  const sessionId = repositoryState.selectedSession?.id;
+  return sessionId ? (repositoryState.transcriptEventsBySessionId[sessionId] ?? []) : [];
+}
+
+export function initializeSessionEventListeners() {
+  if (!window.h3code?.sessions) return;
+  if (!repositoryState.unsubscribeTranscriptEvents) {
+    repositoryState.unsubscribeTranscriptEvents = window.h3code.sessions.onTranscriptEvent((event) => {
+      const existing = repositoryState.transcriptEventsBySessionId[event.sessionId] ?? [];
+      repositoryState.transcriptEventsBySessionId = {
+        ...repositoryState.transcriptEventsBySessionId,
+        [event.sessionId]: [...existing, event]
+      };
+    });
+  }
+
+  if (!repositoryState.unsubscribeSessionUpdates) {
+    repositoryState.unsubscribeSessionUpdates = window.h3code.sessions.onSessionUpdated((session) => {
+      repositoryState.sessions = repositoryState.sessions.map((item) => (item.id === session.id ? session : item));
+      if (repositoryState.selectedSession?.id === session.id) repositoryState.selectedSession = session;
+    });
+  }
 }
 
 export function openCreateSession() {
@@ -180,16 +221,11 @@ export async function createSession() {
   }
 
   const title = repositoryState.sessionTitleInput.trim();
-  if (!title) {
-    repositoryState.sessionError = 'Enter a session title.';
-    return;
-  }
-
   repositoryState.isCreatingSession = true;
   repositoryState.sessionError = '';
 
   try {
-    const result = await window.h3code.sessions.create({ repoId: repositoryState.selectedRepo.id, title });
+    const result = await window.h3code.sessions.create({ repoId: repositoryState.selectedRepo.id, title: title || undefined });
 
     if (!result.ok) {
       repositoryState.sessionError = getSessionErrorMessage(result.error.code);
@@ -233,6 +269,7 @@ export async function selectSession(session: Session) {
     repositoryState.sessions = repositoryState.sessions.map((item) =>
       item.id === result.data.id ? result.data : item
     );
+    await loadTranscriptForSession(result.data.id);
   } catch {
     repositoryState.sessionError = 'Could not select session. Try again.';
   } finally {
@@ -265,12 +302,112 @@ async function loadSessionsForRepo(repo: Repo, preferredSessionId?: string) {
 
     repositoryState.sessions = sessions;
     repositoryState.selectedSession = selectedSession;
+    if (selectedSession) await loadTranscriptForSession(selectedSession.id);
   } catch {
     repositoryState.sessionError = 'Could not load sessions.';
     repositoryState.sessions = [];
     repositoryState.selectedSession = null;
   } finally {
     repositoryState.isLoadingSessions = false;
+  }
+}
+
+export async function loadTranscriptForSession(sessionId: string) {
+  if (!window.h3code?.sessions) return;
+
+  try {
+    const result = await window.h3code.sessions.getMessages({ sessionId });
+    if (result.ok) {
+      repositoryState.transcriptEventsBySessionId = {
+        ...repositoryState.transcriptEventsBySessionId,
+        [sessionId]: result.data
+      };
+    }
+  } catch {
+    repositoryState.promptError = 'Could not load transcript.';
+  }
+}
+
+export async function sendPrompt() {
+  if (!window.h3code?.sessions || !repositoryState.selectedRepo || !repositoryState.selectedSession) {
+    repositoryState.promptError = 'Select a repository and session before sending.';
+    return;
+  }
+
+  const prompt = repositoryState.promptInput.trim();
+  if (!prompt) return;
+
+  repositoryState.isSendingPrompt = true;
+  repositoryState.promptError = '';
+
+  try {
+    const result = await window.h3code.sessions.sendMessage({
+      sessionId: repositoryState.selectedSession.id,
+      prompt
+    });
+
+    if (!result.ok) {
+      repositoryState.promptError = result.error.message;
+      return;
+    }
+
+    repositoryState.promptInput = '';
+    await loadTranscriptForSession(repositoryState.selectedSession.id);
+  } catch {
+    repositoryState.promptError = 'Could not send prompt to Pi.';
+  } finally {
+    repositoryState.isSendingPrompt = false;
+  }
+}
+
+export async function stopSelectedSession() {
+  if (!window.h3code?.pi || !repositoryState.selectedSession) return;
+
+  repositoryState.isStoppingSession = true;
+  repositoryState.promptError = '';
+
+  try {
+    const result = await window.h3code.pi.stopSession({ sessionId: repositoryState.selectedSession.id });
+    if (!result.ok) repositoryState.promptError = result.error.message;
+  } catch {
+    repositoryState.promptError = 'Could not stop Pi.';
+  } finally {
+    repositoryState.isStoppingSession = false;
+  }
+}
+
+export function startRenamingSession(session: Session) {
+  repositoryState.editingSessionTitleId = session.id;
+  repositoryState.renameTitleInput = session.title;
+  repositoryState.sessionError = '';
+}
+
+export async function renameSession(session: Session) {
+  if (!window.h3code?.sessions) return;
+  const title = repositoryState.renameTitleInput.trim();
+  if (!title) {
+    repositoryState.sessionError = 'Enter a session title.';
+    return;
+  }
+
+  repositoryState.isRenamingSession = true;
+  repositoryState.sessionError = '';
+
+  try {
+    const result = await window.h3code.sessions.updateTitle({ sessionId: session.id, title });
+    if (!result.ok) {
+      repositoryState.sessionError = getSessionErrorMessage(result.error.code);
+      return;
+    }
+
+    repositoryState.sessions = repositoryState.sessions.map((item) => (item.id === result.data.id ? result.data : item));
+    if (repositoryState.selectedSession?.id === result.data.id) repositoryState.selectedSession = result.data;
+    repositoryState.editingSessionTitleId = '';
+    repositoryState.renameTitleInput = '';
+  } catch {
+    repositoryState.sessionError = 'Could not rename session.';
+  } finally {
+    repositoryState.isRenamingSession = false;
   }
 }
 
@@ -308,6 +445,8 @@ function getSessionErrorMessage(code: string) {
       return 'Session could not be found.';
     case 'session_repo_mismatch':
       return 'Session does not belong to this repository.';
+    case 'invalid_pi_path':
+      return 'Set a valid Pi executable path.';
     default:
       return 'Could not update session. Try again.';
   }

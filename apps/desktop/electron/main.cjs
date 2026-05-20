@@ -1,5 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { randomUUID } = require('node:crypto');
 const { constants } = require('node:fs');
@@ -20,6 +20,8 @@ const defaultMetadata = {
   sessions: [],
   settings: defaultSettings
 };
+
+const runningProcesses = new Map();
 
 function getMetadataPath() {
   return path.join(app.getPath('userData'), 'h3-metadata.json');
@@ -86,7 +88,8 @@ function sanitizeSession(input) {
     title: input.title,
     createdAt: input.createdAt,
     updatedAt: input.updatedAt,
-    status: input.status === 'running' ? 'idle' : input.status
+    status: input.status,
+    titleSource: ['local', 'pi', 'user'].includes(input.titleSource) ? input.titleSource : 'local'
   };
 }
 
@@ -351,6 +354,64 @@ function findSession(metadata, sessionId) {
   return metadata.sessions.find((session) => session.id === sessionId) ?? null;
 }
 
+function getTranscriptPath(sessionId) {
+  return path.join(app.getPath('userData'), 'transcripts', `${sessionId}.jsonl`);
+}
+
+async function appendTranscriptEvent(sessionId, event) {
+  const transcriptPath = getTranscriptPath(sessionId);
+  const entry = { id: randomUUID(), sessionId, createdAt: new Date().toISOString(), ...event };
+  await fs.mkdir(path.dirname(transcriptPath), { recursive: true });
+  await fs.appendFile(transcriptPath, `${JSON.stringify(entry)}\n`, 'utf8');
+  broadcast('sessions:transcriptEvent', entry);
+  return entry;
+}
+
+async function readTranscriptEvents(sessionId) {
+  try {
+    const contents = await fs.readFile(getTranscriptPath(sessionId), 'utf8');
+    return contents
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+function broadcast(channel, payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(channel, payload);
+  }
+}
+
+async function updateSession(sessionId, updater) {
+  const metadata = await readMetadata();
+  const session = findSession(metadata, sessionId);
+  if (!session) return null;
+  const updatedSession = { ...session, ...updater(session), updatedAt: new Date().toISOString() };
+  await writeMetadata({
+    ...metadata,
+    sessions: metadata.sessions.map((item) => (item.id === sessionId ? updatedSession : item))
+  });
+  broadcast('sessions:updated', updatedSession);
+  return updatedSession;
+}
+
+function derivePromptTitle(prompt) {
+  const collapsed = prompt.replace(/\s+/g, ' ').trim();
+  if (!collapsed) return 'New session';
+  return collapsed.length > 60 ? `${collapsed.slice(0, 57)}...` : collapsed;
+}
+
 function sortRepos(repos) {
   return [...repos].sort((a, b) => {
     const aDate = a.lastOpenedAt ?? a.addedAt;
@@ -377,6 +438,213 @@ async function validateRepoDirectory(repoPath) {
   }
 
   return ok(null);
+}
+
+
+function attachRpcJsonlReader(child, runningProcess) {
+  child.stdout.on('data', (chunk) => {
+    runningProcess.stdoutBuffer += chunk.toString('utf8');
+
+    while (true) {
+      const newlineIndex = runningProcess.stdoutBuffer.indexOf('\n');
+      if (newlineIndex === -1) break;
+
+      let line = runningProcess.stdoutBuffer.slice(0, newlineIndex);
+      runningProcess.stdoutBuffer = runningProcess.stdoutBuffer.slice(newlineIndex + 1);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      if (!line.trim()) continue;
+
+      void handleRpcLine(runningProcess, line);
+    }
+  });
+
+  child.stdout.on('end', () => {
+    const line = runningProcess.stdoutBuffer.endsWith('\r')
+      ? runningProcess.stdoutBuffer.slice(0, -1)
+      : runningProcess.stdoutBuffer;
+    runningProcess.stdoutBuffer = '';
+    if (line.trim()) void handleRpcLine(runningProcess, line);
+  });
+}
+
+async function handleRpcLine(runningProcess, line) {
+  let payload;
+
+  try {
+    payload = JSON.parse(line);
+  } catch {
+    await appendTranscriptEvent(runningProcess.sessionId, {
+      type: 'stderr',
+      stream: 'stdout',
+      content: `Invalid Pi RPC JSON: ${line}`
+    });
+    return;
+  }
+
+  if (payload.type === 'agent_start') runningProcess.isStreaming = true;
+  if (payload.type === 'agent_end') runningProcess.isStreaming = false;
+
+  await appendTranscriptEvent(runningProcess.sessionId, normalizeRpcTranscriptEvent(payload));
+
+  if (payload.type === 'response' && payload.command === 'get_state' && payload.success && payload.data) {
+    await syncSessionFromRpcState(runningProcess.sessionId, payload.data);
+  }
+
+  if (payload.type === 'agent_end') {
+    sendRpcCommand(runningProcess, { id: randomUUID(), type: 'get_state' });
+  }
+}
+
+function extractMessageText(message) {
+  if (!message) return '';
+  if (typeof message.content === 'string') return message.content;
+  if (!Array.isArray(message.content)) return '';
+  return message.content
+    .map((item) => {
+      if (item?.type === 'text') return item.text ?? '';
+      if (item?.type === 'thinking') return item.thinking ?? '';
+      if (item?.type === 'toolCall') return `Tool call: ${item.name ?? 'tool'}`;
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function normalizeRpcTranscriptEvent(payload) {
+  const base = { rpcType: payload.type, payload };
+
+  if (payload.type === 'message_update') {
+    const delta = payload.assistantMessageEvent;
+    if (delta?.type === 'text_delta') {
+      return { ...base, type: 'assistant_delta', content: delta.delta ?? '' };
+    }
+    if (delta?.type === 'thinking_delta') {
+      return { ...base, type: 'assistant_delta', subtype: 'thinking', content: delta.delta ?? '' };
+    }
+  }
+
+  if (payload.type === 'message_end') {
+    const content = extractMessageText(payload.message);
+    if (content) return { ...base, type: 'assistant_delta', content };
+  }
+
+  if (payload.type === 'turn_end') {
+    const content = extractMessageText(payload.message);
+    if (content) return { ...base, type: 'assistant_delta', content };
+  }
+
+  if (payload.type === 'tool_execution_update') {
+    const text = payload.partialResult?.content
+      ?.map((item) => (item.type === 'text' ? item.text : ''))
+      .join('') ?? '';
+    return { ...base, type: 'tool_execution_update', toolName: payload.toolName, content: text };
+  }
+
+  if (payload.type === 'extension_ui_request') {
+    return {
+      ...base,
+      type: 'extension_ui_request',
+      content: 'Pi requested UI interaction that H3 Code does not support yet.'
+    };
+  }
+
+  if (payload.type === 'response') {
+    return {
+      ...base,
+      type: 'rpc_response',
+      command: payload.command,
+      success: Boolean(payload.success),
+      content: payload.success ? '' : payload.error ?? 'Pi RPC command failed.'
+    };
+  }
+
+  return { ...base, type: 'rpc_event', content: payload.type };
+}
+
+function sendRpcCommand(runningProcess, command) {
+  if (!runningProcess.child.stdin?.writable) {
+    throw new Error('Pi RPC stdin is not writable.');
+  }
+
+  runningProcess.child.stdin.write(`${JSON.stringify(command)}\n`);
+}
+
+async function syncSessionFromRpcState(sessionId, state) {
+  await updateSession(sessionId, (session) => {
+    const patch = {};
+
+    if (typeof state.sessionFile === 'string' && state.sessionFile && state.sessionFile !== session.harnessSessionPath) {
+      patch.harnessSessionPath = state.sessionFile;
+    }
+
+    if (
+      typeof state.sessionName === 'string' &&
+      state.sessionName.trim() &&
+      session.titleSource !== 'user' &&
+      state.sessionName.trim() !== session.title
+    ) {
+      patch.title = state.sessionName.trim();
+      patch.titleSource = 'pi';
+    }
+
+    return patch;
+  });
+}
+
+async function startPiRpcProcess(session, repo, settings) {
+  const args = ['--mode', 'rpc'];
+  if (session.harnessSessionPath) args.push('--session', session.harnessSessionPath);
+
+  const child = spawn(settings.piExecutablePath, args, {
+    cwd: repo.path,
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+
+  const runningProcess = {
+    child,
+    repoId: repo.id,
+    sessionId: session.id,
+    harness: 'pi',
+    isStreaming: false,
+    stdoutBuffer: '',
+    intentionalStop: false,
+    startedAt: new Date().toISOString()
+  };
+
+  runningProcesses.set(session.id, runningProcess);
+  attachRpcJsonlReader(child, runningProcess);
+
+  child.stderr.on('data', (chunk) => {
+    void appendTranscriptEvent(session.id, { type: 'stderr', stream: 'stderr', content: chunk.toString('utf8') });
+  });
+
+  child.on('error', (error) => {
+    void appendTranscriptEvent(session.id, { type: 'process_exit', exitCode: null, content: error.message });
+    void updateSession(session.id, () => ({ status: 'error' }));
+    runningProcesses.delete(session.id);
+  });
+
+  child.on('exit', (code, signal) => {
+    runningProcesses.delete(session.id);
+    void appendTranscriptEvent(session.id, {
+      type: 'process_exit',
+      exitCode: code,
+      signal,
+      content: runningProcess.intentionalStop ? 'Pi session stopped.' : `Pi exited with code ${code ?? 'unknown'}.`
+    });
+    void updateSession(session.id, () => ({ status: runningProcess.intentionalStop || code === 0 ? 'idle' : 'error' }));
+  });
+
+  await appendTranscriptEvent(session.id, { type: 'process_started', content: 'Pi RPC session started.' });
+  await updateSession(session.id, () => ({ status: 'running' }));
+  sendRpcCommand(runningProcess, { id: randomUUID(), type: 'get_state' });
+  return runningProcess;
+}
+
+async function getOrStartPiRpcProcess(session, repo, settings) {
+  const existing = runningProcesses.get(session.id);
+  if (existing && !existing.child.killed) return existing;
+  return startPiRpcProcess(session, repo, settings);
 }
 
 function registerIpcHandlers() {
@@ -497,7 +765,8 @@ function registerIpcHandlers() {
       title,
       createdAt: now,
       updatedAt: now,
-      status: 'idle'
+      status: 'idle',
+      titleSource: typeof input.title === 'string' && input.title.trim() ? 'user' : 'local'
     };
 
     const repos = metadata.repos.map((item) =>
@@ -549,9 +818,25 @@ function registerIpcHandlers() {
     if (sessionIdError) return fail('invalid_input', sessionIdError);
 
     const metadata = await readMetadata();
-    if (!findSession(metadata, input.sessionId.trim())) return fail('session_not_found', 'Session could not be found.');
+    const sessionId = input.sessionId.trim();
+    if (!findSession(metadata, sessionId)) return fail('session_not_found', 'Session could not be found.');
 
-    return ok([]);
+    return ok(await readTranscriptEvents(sessionId));
+  });
+
+  ipcMain.handle('sessions:updateTitle', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
+
+    const sessionIdError = requireNonEmptyString(input, 'sessionId');
+    if (sessionIdError) return fail('invalid_input', sessionIdError);
+
+    const titleError = requireNonEmptyString(input, 'title');
+    if (titleError) return fail('invalid_input', titleError);
+
+    const updated = await updateSession(input.sessionId.trim(), () => ({ title: input.title.trim(), titleSource: 'user' }));
+    if (!updated) return fail('session_not_found', 'Session could not be found.');
+    return ok(updated);
   });
 
   ipcMain.handle('sessions:sendMessage', async (_event, input) => {
@@ -564,10 +849,37 @@ function registerIpcHandlers() {
     const promptError = requireNonEmptyString(input, 'prompt');
     if (promptError) return fail('invalid_input', promptError);
 
+    const sessionId = input.sessionId.trim();
+    const prompt = input.prompt.trim();
     const metadata = await readMetadata();
-    if (!findSession(metadata, input.sessionId.trim())) return fail('session_not_found', 'Session could not be found.');
+    const session = findSession(metadata, sessionId);
+    if (!session) return fail('session_not_found', 'Session could not be found.');
 
-    return fail('not_implemented', 'Prompt execution will be added with Pi process streaming.');
+    const repo = findRepo(metadata, session.repoId);
+    if (!repo) return fail('repo_not_found', 'Repository could not be found.');
+
+    const settingsState = await getSettingsState(metadata.settings);
+    if (settingsState.validation.status !== 'valid') {
+      return fail('invalid_pi_path', settingsState.validation.message);
+    }
+
+    if (session.titleSource !== 'user' && session.title === 'New session') {
+      await updateSession(sessionId, () => ({ title: derivePromptTitle(prompt), titleSource: 'local' }));
+    }
+
+    await appendTranscriptEvent(sessionId, { type: 'user_message', role: 'user', content: prompt });
+
+    try {
+      const runningProcess = await getOrStartPiRpcProcess(session, repo, metadata.settings);
+      const command = { id: randomUUID(), type: 'prompt', message: prompt };
+      if (runningProcess.isStreaming) command.streamingBehavior = 'steer';
+      sendRpcCommand(runningProcess, command);
+      return ok({ accepted: true });
+    } catch (error) {
+      await appendTranscriptEvent(sessionId, { type: 'process_exit', content: error.message });
+      await updateSession(sessionId, () => ({ status: 'error' }));
+      return fail('pi_start_failed', error.message);
+    }
   });
 
   ipcMain.handle('files:resolveMentions', async (_event, input) => {
@@ -592,10 +904,26 @@ function registerIpcHandlers() {
     const sessionIdError = requireNonEmptyString(input, 'sessionId');
     if (sessionIdError) return fail('invalid_input', sessionIdError);
 
+    const sessionId = input.sessionId.trim();
     const metadata = await readMetadata();
-    if (!findSession(metadata, input.sessionId.trim())) return fail('session_not_found', 'Session could not be found.');
+    if (!findSession(metadata, sessionId)) return fail('session_not_found', 'Session could not be found.');
 
-    return fail('no_running_process', 'There is no running Pi process for this session.');
+    const runningProcess = runningProcesses.get(sessionId);
+    if (!runningProcess) return fail('no_running_process', 'There is no running Pi process for this session.');
+
+    runningProcess.intentionalStop = true;
+    try {
+      sendRpcCommand(runningProcess, { id: randomUUID(), type: 'abort' });
+    } catch {
+      // Fall through to process termination.
+    }
+
+    setTimeout(() => {
+      if (!runningProcess.child.killed) runningProcess.child.kill();
+    }, 1000);
+
+    await updateSession(sessionId, () => ({ status: 'idle' }));
+    return ok({ stopped: true });
   });
 }
 

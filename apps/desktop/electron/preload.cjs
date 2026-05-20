@@ -18,7 +18,18 @@ contextBridge.exposeInMainWorld('h3code', {
     create: (input) => ipcRenderer.invoke('sessions:create', input),
     select: (input) => ipcRenderer.invoke('sessions:select', input),
     getMessages: (input) => ipcRenderer.invoke('sessions:getMessages', input),
-    sendMessage: (input) => ipcRenderer.invoke('sessions:sendMessage', input)
+    updateTitle: (input) => ipcRenderer.invoke('sessions:updateTitle', input),
+    sendMessage: (input) => ipcRenderer.invoke('sessions:sendMessage', input),
+    onTranscriptEvent: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('sessions:transcriptEvent', listener);
+      return () => ipcRenderer.removeListener('sessions:transcriptEvent', listener);
+    },
+    onSessionUpdated: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('sessions:updated', listener);
+      return () => ipcRenderer.removeListener('sessions:updated', listener);
+    }
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

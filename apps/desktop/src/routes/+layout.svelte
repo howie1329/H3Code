@@ -3,11 +3,12 @@
   import '../app.css';
   import AppSidebar from '$lib/components/app-sidebar.svelte';
   import * as Sidebar from '$lib/components/ui/sidebar';
-  import { loadRepositories } from '$lib/state/repositories.svelte';
+  import { initializeSessionEventListeners, loadRepositories } from '$lib/state/repositories.svelte';
 
   let { children } = $props();
 
   onMount(() => {
+    initializeSessionEventListeners();
     void loadRepositories();
   });
 </script>

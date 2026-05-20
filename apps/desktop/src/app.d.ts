@@ -24,6 +24,7 @@ declare global {
     createdAt: string;
     updatedAt: string;
     status: 'idle' | 'running' | 'error';
+    titleSource?: 'local' | 'pi' | 'user';
   };
 
   type Settings = {
@@ -61,11 +62,29 @@ declare global {
     path: string;
   } | null;
 
-  type Message = {
+  type TranscriptEvent = {
     id: string;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
+    sessionId: string;
     createdAt: string;
+    type:
+      | 'user_message'
+      | 'process_started'
+      | 'rpc_response'
+      | 'assistant_delta'
+      | 'tool_execution_update'
+      | 'extension_ui_request'
+      | 'stderr'
+      | 'process_exit'
+      | 'rpc_event';
+    content?: string;
+    role?: 'user' | 'assistant' | 'system';
+    stream?: 'stdout' | 'stderr';
+    command?: string;
+    success?: boolean;
+    toolName?: string;
+    exitCode?: number | null;
+    signal?: string | null;
+    payload?: unknown;
   };
 
   type ResolvedMentions = {
@@ -91,8 +110,11 @@ declare global {
         list: (input: { repoId: string }) => Promise<IpcResult<Session[]>>;
         create: (input: { repoId: string; title?: string }) => Promise<IpcResult<Session>>;
         select: (input: { repoId: string; sessionId: string }) => Promise<IpcResult<Session>>;
-        getMessages: (input: { sessionId: string }) => Promise<IpcResult<Message[]>>;
-        sendMessage: (input: { sessionId: string; prompt: string }) => Promise<IpcResult<never>>;
+        getMessages: (input: { sessionId: string }) => Promise<IpcResult<TranscriptEvent[]>>;
+        updateTitle: (input: { sessionId: string; title: string }) => Promise<IpcResult<Session>>;
+        sendMessage: (input: { sessionId: string; prompt: string }) => Promise<IpcResult<{ accepted: boolean }>>;
+        onTranscriptEvent: (callback: (event: TranscriptEvent) => void) => () => void;
+        onSessionUpdated: (callback: (session: Session) => void) => () => void;
       };
       settings: {
         get: () => Promise<SettingsState>;
@@ -103,7 +125,7 @@ declare global {
         resolveMentions: (input: { repoId: string; prompt: string }) => Promise<IpcResult<ResolvedMentions>>;
       };
       pi: {
-        stopSession: (input: { sessionId: string }) => Promise<IpcResult<never>>;
+        stopSession: (input: { sessionId: string }) => Promise<IpcResult<{ stopped: boolean }>>;
       };
     };
   }
