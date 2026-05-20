@@ -66,25 +66,25 @@ declare global {
     id: string;
     sessionId: string;
     createdAt: string;
-    type:
-      | 'user_message'
-      | 'process_started'
-      | 'rpc_response'
-      | 'assistant_delta'
-      | 'tool_execution_update'
-      | 'extension_ui_request'
-      | 'stderr'
-      | 'process_exit'
-      | 'rpc_event';
-    content?: string;
-    role?: 'user' | 'assistant' | 'system';
-    stream?: 'stdout' | 'stderr';
-    command?: string;
-    success?: boolean;
+    kind: 'user' | 'assistant' | 'tool' | 'system' | 'error' | 'diagnostic';
+    blockId: string;
+    mode: 'append' | 'replace' | 'final';
+    content: string;
+    title?: string;
+    toolCallId?: string;
     toolName?: string;
-    exitCode?: number | null;
-    signal?: string | null;
-    payload?: unknown;
+    stream?: 'stdout' | 'stderr';
+    rawPayload?: unknown;
+  };
+
+  type TranscriptBlock = {
+    id: string;
+    kind: TranscriptEvent['kind'];
+    title?: string;
+    content: string;
+    createdAt: string;
+    updatedAt: string;
+    isFinal: boolean;
   };
 
   type ResolvedMentions = {

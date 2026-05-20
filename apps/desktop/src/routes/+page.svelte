@@ -1,6 +1,7 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte';
   import { BubbleChatFreeIcons, FolderGitFreeIcons, PlusSignFreeIcons } from '@hugeicons/core-free-icons';
+  import { dev } from '$app/environment';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import * as Empty from '$lib/components/ui/empty';
@@ -17,10 +18,46 @@
       timeStyle: 'short'
     }).format(new Date(value));
 
-  $: selectedSessionId = repositoryState.selectedSession?.id;
+  function deriveTranscriptBlocks(events: TranscriptEvent[]) {
+    const blocks: TranscriptBlock[] = [];
+    const blockIndexes = new Map<string, number>();
+
+    for (const event of events) {
+      const index = blockIndexes.get(event.blockId);
+
+      if (index === undefined) {
+        blockIndexes.set(event.blockId, blocks.length);
+        blocks.push({
+          id: event.blockId,
+          kind: event.kind,
+          title: event.title,
+          content: event.content,
+          createdAt: event.createdAt,
+          updatedAt: event.createdAt,
+          isFinal: event.mode === 'final'
+        });
+        continue;
+      }
+
+      const existing = blocks[index];
+      blocks[index] = {
+        ...existing,
+        title: event.title || existing.title,
+        content: event.mode === 'append' ? `${existing.content}${event.content}` : event.content,
+        updatedAt: event.createdAt,
+        isFinal: event.mode === 'final' ? true : existing.isFinal
+      };
+    }
+
+    return blocks;
+  }
+
+  $: selectedSessionId = repositoryState.selectedSession?.id ?? '';
   $: transcriptEvents = selectedSessionId
     ? (repositoryState.transcriptEventsBySessionId[selectedSessionId] ?? [])
     : [];
+  $: transcriptBlocks = deriveTranscriptBlocks(transcriptEvents);
+  $: isLoadingSelectedTranscript = repositoryState.loadingTranscriptSessionId === selectedSessionId;
   $: canSendPrompt =
     !!repositoryState.selectedRepo &&
     !!repositoryState.selectedSession &&
@@ -122,7 +159,25 @@
     </section>
 
     <section class="min-h-0 flex-1 overflow-y-auto p-4">
-      {#if transcriptEvents.length === 0}
+      {#if dev}
+        <div class="mb-3 rounded-md border border-border bg-muted/30 px-3 py-2 font-mono text-[11px] text-muted-foreground">
+          session={selectedSessionId || 'none'} raw={transcriptEvents.length} blocks={transcriptBlocks.length} loading={repositoryState.loadingTranscriptSessionId || 'none'}
+        </div>
+      {/if}
+
+      {#if isLoadingSelectedTranscript && transcriptBlocks.length === 0}
+        <div class="flex min-h-80 items-center justify-center">
+          <Empty.Root>
+            <Empty.Header>
+              <Empty.Media variant="icon">
+                <HugeiconsIcon icon={BubbleChatFreeIcons} size={18} color="currentColor" />
+              </Empty.Media>
+              <Empty.Title>Loading transcript</Empty.Title>
+              <Empty.Description>Restoring this Pi session transcript.</Empty.Description>
+            </Empty.Header>
+          </Empty.Root>
+        </div>
+      {:else if transcriptBlocks.length === 0}
         <div class="flex min-h-80 items-center justify-center">
           <Empty.Root>
             <Empty.Header>
@@ -136,23 +191,17 @@
         </div>
       {:else}
         <div class="mx-auto flex max-w-4xl flex-col gap-3">
-          {#each transcriptEvents as event (event.id)}
+          {#each transcriptBlocks as block (block.id)}
             <article
               class={`rounded-lg border p-3 text-xs leading-5 ${
-                event.type === 'stderr' || event.type === 'process_exit' ? 'border-destructive/40' : 'border-border'
-              } ${event.type === 'user_message' ? 'bg-primary/10' : 'bg-muted/40'}`}
+                block.kind === 'error' ? 'border-destructive/40' : 'border-border'
+              } ${block.kind === 'user' ? 'bg-primary/10' : 'bg-muted/40'}`}
             >
               <div class="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                <span class="capitalize">{event.type.replaceAll('_', ' ')}</span>
-                <time>{formatDate(event.createdAt)}</time>
+                <span class="capitalize">{block.title || block.kind}</span>
+                <time>{formatDate(block.updatedAt)}</time>
               </div>
-              {#if event.content}
-                <pre class="whitespace-pre-wrap break-words font-sans">{event.content}</pre>
-              {:else if event.type === 'rpc_response' && event.command}
-                <p>{event.command} {event.success ? 'accepted' : 'failed'}</p>
-              {:else}
-                <p class="text-muted-foreground">{event.type}</p>
-              {/if}
+              <pre class="whitespace-pre-wrap break-words font-sans">{block.content}</pre>
             </article>
           {/each}
         </div>

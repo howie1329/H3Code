@@ -8,6 +8,9 @@ type RepositoryState = {
   promptInput: string;
   renameTitleInput: string;
   transcriptEventsBySessionId: Record<string, TranscriptEvent[]>;
+  pendingLocalEventIds: string[];
+  lastMainTranscriptEventAt: number;
+  loadingTranscriptSessionId: string;
   repoError: string;
   sessionError: string;
   promptError: string;
@@ -38,6 +41,9 @@ export const repositoryState = $state<RepositoryState>({
   promptInput: '',
   renameTitleInput: '',
   transcriptEventsBySessionId: {},
+  pendingLocalEventIds: [],
+  lastMainTranscriptEventAt: 0,
+  loadingTranscriptSessionId: '',
   repoError: '',
   sessionError: '',
   promptError: '',
@@ -66,20 +72,75 @@ export function canCreateSession() {
   return !!repositoryState.selectedRepo && !repositoryState.isCreatingSession;
 }
 
-export function getSelectedTranscriptEvents() {
-  const sessionId = repositoryState.selectedSession?.id;
-  return sessionId ? (repositoryState.transcriptEventsBySessionId[sessionId] ?? []) : [];
+function createLocalTranscriptEvent(
+  sessionId: string,
+  event: Omit<TranscriptEvent, 'id' | 'sessionId' | 'createdAt'>
+): TranscriptEvent {
+  return {
+    id: `local-${crypto.randomUUID()}`,
+    sessionId,
+    createdAt: new Date().toISOString(),
+    ...event
+  };
+}
+
+function setTranscriptEvents(sessionId: string, events: TranscriptEvent[]) {
+  repositoryState.transcriptEventsBySessionId = {
+    ...repositoryState.transcriptEventsBySessionId,
+    [sessionId]: events
+  };
+}
+
+function mergeTranscriptEvents(existing: TranscriptEvent[], incoming: TranscriptEvent[]) {
+  const eventsById = new Map<string, TranscriptEvent>();
+
+  for (const event of existing) eventsById.set(event.id, event);
+  for (const event of incoming) eventsById.set(event.id, event);
+
+  return [...eventsById.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+function appendTranscriptEvent(event: TranscriptEvent) {
+  const existing = repositoryState.transcriptEventsBySessionId[event.sessionId] ?? [];
+  setTranscriptEvents(event.sessionId, mergeTranscriptEvents(existing, [event]));
+}
+
+function replaceLocalUserEvent(event: TranscriptEvent) {
+  const existing = repositoryState.transcriptEventsBySessionId[event.sessionId] ?? [];
+  const pendingIndex = existing.findIndex(
+    (item) =>
+      item.id.startsWith('local-') &&
+      item.kind === 'user' &&
+      item.content === event.content
+  );
+
+  if (pendingIndex === -1) {
+    appendTranscriptEvent(event);
+    return;
+  }
+
+  const nextEvents = [...existing];
+  nextEvents[pendingIndex] = event;
+  setTranscriptEvents(event.sessionId, mergeTranscriptEvents([], nextEvents));
 }
 
 export function initializeSessionEventListeners() {
-  if (!window.h3code?.sessions) return;
+  if (!window.h3code?.sessions) {
+    repositoryState.promptError = 'Transcript streaming is only available in the desktop app.';
+    return;
+  }
   if (!repositoryState.unsubscribeTranscriptEvents) {
     repositoryState.unsubscribeTranscriptEvents = window.h3code.sessions.onTranscriptEvent((event) => {
-      const existing = repositoryState.transcriptEventsBySessionId[event.sessionId] ?? [];
-      repositoryState.transcriptEventsBySessionId = {
-        ...repositoryState.transcriptEventsBySessionId,
-        [event.sessionId]: [...existing, event]
-      };
+      repositoryState.lastMainTranscriptEventAt = Date.now();
+      if (event.kind === 'user') {
+        repositoryState.pendingLocalEventIds = repositoryState.pendingLocalEventIds.filter(
+          (id) => !id.startsWith(`${event.sessionId}:`)
+        );
+        replaceLocalUserEvent(event);
+        return;
+      }
+
+      appendTranscriptEvent(event);
     });
   }
 
@@ -97,6 +158,8 @@ export function openCreateSession() {
 }
 
 export async function loadRepositories() {
+  initializeSessionEventListeners();
+
   if (!window.h3code?.metadata || !window.h3code?.sessions) {
     repositoryState.isLoadingRepos = false;
     repositoryState.repoError = 'Repositories are only available in the desktop app.';
@@ -120,6 +183,7 @@ export async function loadRepositories() {
     } else {
       repositoryState.sessions = [];
       repositoryState.selectedSession = null;
+      repositoryState.loadingTranscriptSessionId = '';
     }
   } catch {
     repositoryState.repoError = 'Could not load repositories.';
@@ -290,6 +354,7 @@ async function loadSessionsForRepo(repo: Repo, preferredSessionId?: string) {
       repositoryState.sessionError = 'Could not load sessions.';
       repositoryState.sessions = [];
       repositoryState.selectedSession = null;
+      repositoryState.loadingTranscriptSessionId = '';
       return;
     }
 
@@ -302,11 +367,16 @@ async function loadSessionsForRepo(repo: Repo, preferredSessionId?: string) {
 
     repositoryState.sessions = sessions;
     repositoryState.selectedSession = selectedSession;
-    if (selectedSession) await loadTranscriptForSession(selectedSession.id);
+    if (selectedSession) {
+      await loadTranscriptForSession(selectedSession.id);
+    } else {
+      repositoryState.loadingTranscriptSessionId = '';
+    }
   } catch {
     repositoryState.sessionError = 'Could not load sessions.';
     repositoryState.sessions = [];
     repositoryState.selectedSession = null;
+    repositoryState.loadingTranscriptSessionId = '';
   } finally {
     repositoryState.isLoadingSessions = false;
   }
@@ -315,16 +385,20 @@ async function loadSessionsForRepo(repo: Repo, preferredSessionId?: string) {
 export async function loadTranscriptForSession(sessionId: string) {
   if (!window.h3code?.sessions) return;
 
+  repositoryState.loadingTranscriptSessionId = sessionId;
+
   try {
     const result = await window.h3code.sessions.getMessages({ sessionId });
     if (result.ok) {
-      repositoryState.transcriptEventsBySessionId = {
-        ...repositoryState.transcriptEventsBySessionId,
-        [sessionId]: result.data
-      };
+      const existing = repositoryState.transcriptEventsBySessionId[sessionId] ?? [];
+      setTranscriptEvents(sessionId, mergeTranscriptEvents(existing, result.data));
     }
   } catch {
     repositoryState.promptError = 'Could not load transcript.';
+  } finally {
+    if (repositoryState.loadingTranscriptSessionId === sessionId) {
+      repositoryState.loadingTranscriptSessionId = '';
+    }
   }
 }
 
@@ -340,21 +414,62 @@ export async function sendPrompt() {
   repositoryState.isSendingPrompt = true;
   repositoryState.promptError = '';
 
+  const sessionId = repositoryState.selectedSession.id;
+  const localUserEvent = createLocalTranscriptEvent(sessionId, {
+    kind: 'user',
+    blockId: `user:${crypto.randomUUID()}`,
+    mode: 'final',
+    content: prompt
+  });
+  appendTranscriptEvent(localUserEvent);
+  repositoryState.pendingLocalEventIds = [...repositoryState.pendingLocalEventIds, `${sessionId}:${prompt}`];
+  const sentAt = Date.now();
+
   try {
     const result = await window.h3code.sessions.sendMessage({
-      sessionId: repositoryState.selectedSession.id,
+      sessionId,
       prompt
     });
 
     if (!result.ok) {
       repositoryState.promptError = result.error.message;
+      appendTranscriptEvent(
+        createLocalTranscriptEvent(sessionId, {
+          kind: 'error',
+          blockId: `send-error:${crypto.randomUUID()}`,
+          mode: 'final',
+          title: 'Prompt failed',
+          content: result.error.message
+        })
+      );
       return;
     }
 
     repositoryState.promptInput = '';
-    await loadTranscriptForSession(repositoryState.selectedSession.id);
+    setTimeout(() => {
+      if (repositoryState.selectedSession?.id !== sessionId) return;
+      if (repositoryState.lastMainTranscriptEventAt >= sentAt) return;
+      appendTranscriptEvent(
+        createLocalTranscriptEvent(sessionId, {
+          kind: 'diagnostic',
+          blockId: `diagnostic:${crypto.randomUUID()}`,
+          mode: 'final',
+          title: 'Waiting for Pi events',
+          content: 'Prompt was accepted, but no transcript event has arrived from Pi yet.'
+        })
+      );
+    }, 500);
   } catch {
     repositoryState.promptError = 'Could not send prompt to Pi.';
+    appendTranscriptEvent(
+      createLocalTranscriptEvent(sessionId, {
+        kind: 'error',
+        blockId: `send-error:${crypto.randomUUID()}`,
+        mode: 'final',
+        title: 'Prompt failed',
+        content: 'Could not send prompt to Pi.'
+      })
+    );
   } finally {
     repositoryState.isSendingPrompt = false;
   }

@@ -188,7 +188,7 @@ type Settings = {
 
 Persist repos, session metadata, Pi session pointers, and settings locally. `harnessSessionPath` stores Pi's RPC `sessionFile` when available. Keep active process state in memory.
 
-Pi owns the canonical transcript and resume state. H3 Code should read Pi session JSONL for transcript display or maintain a derived cache that can be rebuilt from Pi's session file. Do not make H3 Code's local store the source of truth for Pi messages.
+Pi owns the canonical transcript and resume state. H3 Code should read Pi session JSONL for transcript display. Do not make H3 Code's local store the source of truth for Pi messages.
 
 ## Pi Process Contract
 
@@ -196,7 +196,7 @@ The MVP should use Pi's RPC mode for process integration:
 
 - `cwd`: selected repo path
 - `command`: configured Pi executable path
-- `args`: `--mode rpc`, plus `--session <harnessSessionPath>` when resuming an existing Pi session
+- `args`: `--mode rpc`
 - `input`: LF-delimited JSON RPC commands written to stdin
 - `output`: LF-delimited JSON RPC responses/events read from stdout and rendered into the transcript
 - `stderr`: diagnostic output captured and preserved separately from normal transcript events
@@ -208,13 +208,14 @@ Behavior:
 
 1. User submits a prompt.
 2. H3 Code starts or reuses that session's Pi RPC process with the selected repo as `cwd`.
-3. H3 Code sends a `prompt` RPC command over stdin. If Pi is already streaming, H3 Code sends the prompt with `streamingBehavior: "steer"`.
-4. H3 Code parses stdout as strict LF-delimited JSONL RPC events and streams normalized transcript events into the active or background session view.
-5. H3 Code captures stderr as diagnostic transcript events.
-6. H3 Code records or updates the Pi session pointer from RPC `get_state.sessionFile`.
-7. H3 Code updates local session titles from RPC `get_state.sessionName` unless the user manually renamed the session.
-8. Process lifetime maps to session status: alive is `running`, no live process is `idle`, and unexpected start/exit failures are `error`.
-9. User can stop a running process; H3 Code sends RPC `abort` before force-killing if needed.
+3. When resuming an existing Pi session, H3 Code sends a `switch_session` RPC command with `harnessSessionPath`.
+4. H3 Code sends a `prompt` RPC command over stdin. If Pi is already streaming, H3 Code sends the prompt with `streamingBehavior: "steer"`.
+5. H3 Code parses stdout as strict LF-delimited JSONL RPC events and streams normalized transcript events into the active or background session view.
+6. H3 Code captures stderr as diagnostic transcript events.
+7. H3 Code records or updates the Pi session pointer from RPC `get_state.sessionFile`.
+8. H3 Code updates local session titles from RPC `get_state.sessionName` unless the user manually renamed the session.
+9. Process lifetime maps to session status: alive is `running`, no live process is `idle`, and unexpected start/exit failures are `error`.
+10. User can stop a running process; H3 Code sends RPC `abort` before force-killing if needed.
 
 ## Slash Commands
 
@@ -279,7 +280,7 @@ Do not build fuzzy search, rich autocomplete, or full file browsing in the MVP.
 7. Add repo registration, validation, selection, and persistence.
 8. Add session creation, selection, and Pi session pointer persistence.
 9. Spawn long-lived Pi RPC processes in selected repos and stream RPC events.
-10. Store derived per-session transcript caches and Pi `sessionFile` pointers.
+10. Read historical transcripts from Pi `sessionFile` pointers.
 11. Add stop-process behavior using RPC `abort` before force-killing if needed.
 12. Add slash command expansion.
 13. Add basic file mention expansion.
@@ -298,9 +299,9 @@ The MVP is complete when this flow works:
 7. H3 Code sends the prompt to Pi through RPC.
 8. Pi runs with the repo path as `cwd`.
 9. Pi RPC events stream into the transcript, with stderr shown as diagnostics if emitted.
-10. H3 Code stores the session metadata, Pi `sessionFile` pointer, and derived transcript cache.
+10. H3 Code stores the session metadata and Pi `sessionFile` pointer.
 11. Quit and reopen H3 Code.
-12. The repo, session, and transcript are still available.
+12. The repo and session are still available, and the transcript is rebuilt from Pi's session JSONL.
 13. Send another message in the same session and continue the same Pi session.
 14. Stop a running Pi process from the UI.
 
@@ -309,13 +310,13 @@ The MVP is complete when this flow works:
 - Pi RPC protocol details may require adjustment after testing against the installed Pi executable.
 - Pi session file and session-title mapping may need refinement after real RPC testing.
 - Large file mentions can make prompts too large.
-- Derived transcript caches can drift if treated as canonical.
+- Pi session JSONL parsing may need updates as Pi adds new canonical event types.
 - Cross-platform executable validation may need platform-specific handling.
 
 ## Deferred Follow-Up
 
 - SQLite persistence if metadata queries, search, or indexing become limiting.
-- Derived transcript cache or search index.
+- Optional transcript search index derived from Pi session JSONL.
 - Fuzzy file mention search.
 - Custom slash commands.
 - Rich session title generation beyond Pi `sessionName` sync.
