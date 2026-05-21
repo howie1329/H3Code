@@ -15,10 +15,10 @@ contextBridge.exposeInMainWorld('h3code', {
   },
   sessions: {
     list: (input) => ipcRenderer.invoke('sessions:list', input),
-    create: (input) => ipcRenderer.invoke('sessions:create', input),
+    createDraft: (input) => ipcRenderer.invoke('sessions:createDraft', input),
     select: (input) => ipcRenderer.invoke('sessions:select', input),
+    getLocalMessages: (input) => ipcRenderer.invoke('sessions:getLocalMessages', input),
     getMessages: (input) => ipcRenderer.invoke('sessions:getMessages', input),
-    updateTitle: (input) => ipcRenderer.invoke('sessions:updateTitle', input),
     sendMessage: (input) => ipcRenderer.invoke('sessions:sendMessage', input),
     onTranscriptEvent: (callback) => {
       const listener = (_event, payload) => callback(payload);
@@ -29,6 +29,11 @@ contextBridge.exposeInMainWorld('h3code', {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('sessions:updated', listener);
       return () => ipcRenderer.removeListener('sessions:updated', listener);
+    },
+    onMessagesUpdated: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('sessions:messagesUpdated', listener);
+      return () => ipcRenderer.removeListener('sessions:messagesUpdated', listener);
     }
   },
   settings: {
@@ -36,10 +41,7 @@ contextBridge.exposeInMainWorld('h3code', {
     update: (settings) => ipcRenderer.invoke('settings:update', settings),
     detectPiExecutable: () => ipcRenderer.invoke('settings:detectPiExecutable')
   },
-  files: {
-    resolveMentions: (input) => ipcRenderer.invoke('files:resolveMentions', input)
-  },
   pi: {
-    stopSession: (input) => ipcRenderer.invoke('pi:stopSession', input)
+    stop: () => ipcRenderer.invoke('pi:stop')
   }
 });

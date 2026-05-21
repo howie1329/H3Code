@@ -5,9 +5,7 @@
     BubbleChatFreeIcons,
     FolderGitFreeIcons,
     PlusSignFreeIcons,
-    Settings02FreeIcons,
-    Tick02FreeIcons,
-    Cancel01FreeIcons
+    Settings02FreeIcons
   } from '@hugeicons/core-free-icons';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -16,20 +14,16 @@
   import {
     addRepository,
     createSession,
-    openCreateSession,
     pickRepositoryDirectory,
-    renameSession,
     repositoryState,
     selectRepository,
-    selectSession,
-    startRenamingSession
+    selectSession
   } from '$lib/state/repositories.svelte';
 
   const iconSize = 12;
 
   $: settingsActive = page.url.pathname === '/settings';
   $: canSubmitRepo = repositoryState.repoPathInput.trim().length > 0 && !repositoryState.isAddingRepo;
-  $: canSubmitSession = !!repositoryState.selectedRepo && !repositoryState.isCreatingSession;
 </script>
 
 <Sidebar.Root collapsible="icon" class="border-sidebar-border">
@@ -139,62 +133,12 @@
     <Sidebar.Group>
       <Sidebar.GroupLabel>Sessions</Sidebar.GroupLabel>
       {#if repositoryState.selectedRepo}
-        <Sidebar.GroupAction aria-label="Create session" title="Create session" onclick={openCreateSession}>
+        <Sidebar.GroupAction aria-label="New chat" title="New chat" onclick={createSession}>
           <HugeiconsIcon icon={PlusSignFreeIcons} size={12} color="currentColor" />
         </Sidebar.GroupAction>
       {/if}
 
       <Sidebar.GroupContent class="space-y-2">
-        {#if repositoryState.isCreateSessionOpen && repositoryState.selectedRepo}
-          <form
-            class="space-y-2 px-2 group-data-[collapsible=icon]:hidden"
-            onsubmit={(event) => {
-              event.preventDefault();
-              void createSession();
-            }}
-          >
-            <div class="space-y-1.5">
-              <Label class="text-[11px]" for="session-title">Session title (optional)</Label>
-              <Input
-                id="session-title"
-                class="h-8 bg-background text-xs"
-                placeholder="Pi can name this later"
-                bind:value={repositoryState.sessionTitleInput}
-                disabled={repositoryState.isCreatingSession}
-                aria-invalid={repositoryState.sessionError ? 'true' : undefined}
-              />
-            </div>
-
-            <div class="flex gap-2">
-              <Button
-                class="h-8 flex-1 px-2 text-xs"
-                type="submit"
-                disabled={!canSubmitSession}
-              >
-                <HugeiconsIcon icon={Tick02FreeIcons} size={12} color="currentColor" />
-                {repositoryState.isCreatingSession ? 'Creating...' : 'Create'}
-              </Button>
-              <Button
-                class="h-8 px-2 text-xs"
-                variant="outline"
-                type="button"
-                disabled={repositoryState.isCreatingSession}
-                onclick={() => {
-                  repositoryState.isCreateSessionOpen = false;
-                  repositoryState.sessionError = '';
-                }}
-                aria-label="Cancel session creation"
-              >
-                <HugeiconsIcon icon={Cancel01FreeIcons} size={12} color="currentColor" />
-              </Button>
-            </div>
-
-            {#if repositoryState.sessionError}
-              <p class="text-xs leading-snug text-destructive">{repositoryState.sessionError}</p>
-            {/if}
-          </form>
-        {/if}
-
         {#if !repositoryState.selectedRepo}
           <div class="px-2.5 text-xs leading-snug text-muted-foreground group-data-[collapsible=icon]:hidden">
             Select a repo to view sessions.
@@ -205,69 +149,29 @@
           </div>
         {:else if repositoryState.sessions.length === 0}
           <div class="px-2.5 text-xs leading-snug text-muted-foreground group-data-[collapsible=icon]:hidden">
-            No sessions yet.
+            No Pi sessions yet.
           </div>
         {:else}
           <Sidebar.Menu>
             {#each repositoryState.sessions as session}
               <Sidebar.MenuItem>
-                {#if repositoryState.editingSessionTitleId === session.id}
-                  <form
-                    class="space-y-1 px-2 group-data-[collapsible=icon]:hidden"
-                    onsubmit={(event) => {
-                      event.preventDefault();
-                      void renameSession(session);
-                    }}
-                  >
-                    <Input
-                      class="h-8 bg-background text-xs"
-                      bind:value={repositoryState.renameTitleInput}
-                      disabled={repositoryState.isRenamingSession}
-                      aria-label="Session title"
-                    />
-                    <div class="flex gap-1">
-                      <Button class="h-7 flex-1 px-2 text-xs" type="submit" disabled={repositoryState.isRenamingSession}>
-                        Save
-                      </Button>
-                      <Button
-                        class="h-7 px-2 text-xs"
-                        variant="outline"
-                        type="button"
-                        onclick={() => (repositoryState.editingSessionTitleId = '')}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </form>
-                {:else}
-                  <div class="flex items-start gap-1">
-                    <Sidebar.MenuButton
-                      size="sm"
-                      isActive={repositoryState.selectedSession?.id === session.id}
-                      tooltipContent={session.title}
-                      class="h-auto min-h-7 flex-1 items-start py-1.5"
-                      onclick={() => selectSession(session)}
-                      aria-disabled={repositoryState.isSelectingSessionId === session.id ? 'true' : undefined}
-                      aria-current={repositoryState.selectedSession?.id === session.id ? 'page' : undefined}
-                    >
-                      <HugeiconsIcon icon={BubbleChatFreeIcons} size={iconSize} color="currentColor" />
-                      <span class="min-w-0 leading-tight">
-                        <span class="block truncate">{session.title}</span>
-                        <span class="block truncate text-[11px] font-normal text-muted-foreground group-data-[collapsible=icon]:hidden">
-                          {session.status} · {session.harness}
-                        </span>
-                      </span>
-                    </Sidebar.MenuButton>
-                    <Button
-                      class="mt-0.5 h-6 px-1.5 text-[10px] group-data-[collapsible=icon]:hidden"
-                      variant="ghost"
-                      type="button"
-                      onclick={() => startRenamingSession(session)}
-                    >
-                      Rename
-                    </Button>
-                  </div>
-                {/if}
+                <Sidebar.MenuButton
+                  size="sm"
+                  isActive={repositoryState.selectedSession?.id === session.id}
+                  tooltipContent={session.title}
+                  class="h-auto min-h-7 items-start py-1.5"
+                  onclick={() => selectSession(session)}
+                  aria-disabled={repositoryState.isSelectingSessionId === session.id ? 'true' : undefined}
+                  aria-current={repositoryState.selectedSession?.id === session.id ? 'page' : undefined}
+                >
+                  <HugeiconsIcon icon={BubbleChatFreeIcons} size={iconSize} color="currentColor" />
+                  <span class="min-w-0 leading-tight">
+                    <span class="block truncate">{session.title}</span>
+                    <span class="block truncate text-[11px] font-normal text-muted-foreground group-data-[collapsible=icon]:hidden">
+                      {session.isDraft ? 'draft' : session.status} · {session.harness}
+                    </span>
+                  </span>
+                </Sidebar.MenuButton>
               </Sidebar.MenuItem>
             {/each}
           </Sidebar.Menu>

@@ -12,7 +12,7 @@ declare global {
     path: string;
     addedAt: string;
     lastOpenedAt?: string;
-    selectedSessionId?: string;
+    selectedSessionPath?: string;
   };
 
   type Session = {
@@ -24,7 +24,7 @@ declare global {
     createdAt: string;
     updatedAt: string;
     status: 'idle' | 'running' | 'error';
-    titleSource?: 'local' | 'pi' | 'user';
+    isDraft?: boolean;
   };
 
   type Settings = {
@@ -32,10 +32,9 @@ declare global {
   };
 
   type Metadata = {
-    schemaVersion: 1;
+    schemaVersion: 2;
     selectedRepoId?: string;
     repos: Repo[];
-    sessions: Session[];
     settings: Settings;
   };
 
@@ -62,11 +61,31 @@ declare global {
     path: string;
   } | null;
 
+  type TranscriptMessage = {
+    id: string;
+    kind: 'user' | 'assistant' | 'tool' | 'system' | 'error' | 'diagnostic';
+    title?: string;
+    content: string;
+    createdAt: string;
+  };
+
+  type TranscriptMessagesResult = {
+    messages: TranscriptMessage[];
+    meta: {
+      sessionId: string;
+      sessionPath: string;
+      rawMessageCount: number;
+      normalizedMessageCount: number;
+      source?: 'jsonl' | 'rpc' | 'diagnostic';
+      timings?: Record<string, number>;
+    };
+  };
+
   type TranscriptEvent = {
     id: string;
     sessionId: string;
     createdAt: string;
-    kind: 'user' | 'assistant' | 'tool' | 'system' | 'error' | 'diagnostic';
+    kind: TranscriptMessage['kind'];
     blockId: string;
     mode: 'append' | 'replace' | 'final';
     content: string;
@@ -87,11 +106,6 @@ declare global {
     isFinal: boolean;
   };
 
-  type ResolvedMentions = {
-    prompt: string;
-    mentions: Array<{ path: string; content: string }>;
-  };
-
   interface Window {
     h3code?: {
       platform: string;
@@ -108,24 +122,27 @@ declare global {
       };
       sessions: {
         list: (input: { repoId: string }) => Promise<IpcResult<Session[]>>;
-        create: (input: { repoId: string; title?: string }) => Promise<IpcResult<Session>>;
-        select: (input: { repoId: string; sessionId: string }) => Promise<IpcResult<Session>>;
-        getMessages: (input: { sessionId: string }) => Promise<IpcResult<TranscriptEvent[]>>;
-        updateTitle: (input: { sessionId: string; title: string }) => Promise<IpcResult<Session>>;
-        sendMessage: (input: { sessionId: string; prompt: string }) => Promise<IpcResult<{ accepted: boolean }>>;
+        createDraft: (input: { repoId: string }) => Promise<IpcResult<Session>>;
+        select: (input: { repoId: string; sessionId: string; sessionPath?: string }) => Promise<IpcResult<Session>>;
+        getLocalMessages: (input: { repoId: string; sessionId: string; sessionPath?: string }) => Promise<IpcResult<TranscriptMessagesResult>>;
+        getMessages: (input: { repoId: string; sessionId: string; sessionPath?: string }) => Promise<IpcResult<TranscriptMessagesResult>>;
+        sendMessage: (input: {
+          repoId: string;
+          sessionId: string;
+          sessionPath?: string;
+          prompt: string;
+        }) => Promise<IpcResult<{ accepted: boolean; sessionPath?: string }>>;
         onTranscriptEvent: (callback: (event: TranscriptEvent) => void) => () => void;
         onSessionUpdated: (callback: (session: Session) => void) => () => void;
+        onMessagesUpdated: (callback: (payload: TranscriptMessagesResult) => void) => () => void;
       };
       settings: {
         get: () => Promise<SettingsState>;
         update: (settings: Settings) => Promise<SettingsState>;
         detectPiExecutable: () => Promise<IpcResult<PiDetectionResult>>;
       };
-      files: {
-        resolveMentions: (input: { repoId: string; prompt: string }) => Promise<IpcResult<ResolvedMentions>>;
-      };
       pi: {
-        stopSession: (input: { sessionId: string }) => Promise<IpcResult<{ stopped: boolean }>>;
+        stop: () => Promise<IpcResult<{ stopped: boolean }>>;
       };
     };
   }

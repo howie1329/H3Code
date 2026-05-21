@@ -1,27 +1,24 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { execFile, spawn } = require('node:child_process');
-const { promisify } = require('node:util');
 const { randomUUID } = require('node:crypto');
 const { constants } = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { StringDecoder } = require('node:string_decoder');
+const { promisify } = require('node:util');
 
 const execFileAsync = promisify(execFile);
-
 const rendererUrl = process.env.H3CODE_RENDERER_URL || 'http://127.0.0.1:5173';
-const metadataSchemaVersion = 1;
-const defaultSettings = {
-  piExecutablePath: ''
-};
+const metadataSchemaVersion = 2;
+const defaultSettings = { piExecutablePath: '' };
 const defaultMetadata = {
   schemaVersion: metadataSchemaVersion,
   selectedRepoId: '',
   repos: [],
-  sessions: [],
   settings: defaultSettings
 };
 
-const runningProcesses = new Map();
+let activeProcess = null;
 
 function getMetadataPath() {
   return path.join(app.getPath('userData'), 'h3-metadata.json');
@@ -29,6 +26,32 @@ function getMetadataPath() {
 
 function getLegacySettingsPath() {
   return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function getPiSessionsPath() {
+  return path.join(app.getPath('home'), '.pi', 'agent', 'sessions');
+}
+
+function ok(data) {
+  return { ok: true, data };
+}
+
+function fail(code, message) {
+  return { ok: false, error: { code, message } };
+}
+
+function requireObject(input, label = 'Input') {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return `${label} must be an object.`;
+  }
+  return null;
+}
+
+function requireNonEmptyString(input, field) {
+  if (typeof input?.[field] !== 'string' || input[field].trim().length === 0) {
+    return `${field} is required.`;
+  }
+  return null;
 }
 
 function sanitizeSettings(input) {
@@ -39,10 +62,7 @@ function sanitizeSettings(input) {
 }
 
 function sanitizeRepo(input) {
-  if (!input || typeof input !== 'object') {
-    return null;
-  }
-
+  if (!input || typeof input !== 'object') return null;
   if (
     typeof input.id !== 'string' ||
     typeof input.name !== 'string' ||
@@ -58,62 +78,25 @@ function sanitizeRepo(input) {
     path: input.path,
     addedAt: input.addedAt,
     ...(typeof input.lastOpenedAt === 'string' ? { lastOpenedAt: input.lastOpenedAt } : {}),
-    ...(typeof input.selectedSessionId === 'string' ? { selectedSessionId: input.selectedSessionId } : {})
-  };
-}
-
-function sanitizeSession(input) {
-  if (!input || typeof input !== 'object') {
-    return null;
-  }
-
-  if (
-    typeof input.id !== 'string' ||
-    typeof input.repoId !== 'string' ||
-    input.harness !== 'pi' ||
-    typeof input.harnessSessionPath !== 'string' ||
-    typeof input.title !== 'string' ||
-    typeof input.createdAt !== 'string' ||
-    typeof input.updatedAt !== 'string' ||
-    !['idle', 'running', 'error'].includes(input.status)
-  ) {
-    return null;
-  }
-
-  return {
-    id: input.id,
-    repoId: input.repoId,
-    harness: 'pi',
-    harnessSessionPath: input.harnessSessionPath,
-    title: input.title,
-    createdAt: input.createdAt,
-    updatedAt: input.updatedAt,
-    status: input.status,
-    titleSource: ['local', 'pi', 'user'].includes(input.titleSource) ? input.titleSource : 'local'
+    ...(typeof input.selectedSessionPath === 'string' ? { selectedSessionPath: input.selectedSessionPath } : {})
   };
 }
 
 function sanitizeMetadata(input) {
   const root = input && typeof input === 'object' ? input : {};
-
   return {
     schemaVersion: metadataSchemaVersion,
     selectedRepoId: typeof root.selectedRepoId === 'string' ? root.selectedRepoId : '',
     repos: Array.isArray(root.repos) ? root.repos.map(sanitizeRepo).filter(Boolean) : [],
-    sessions: Array.isArray(root.sessions) ? root.sessions.map(sanitizeSession).filter(Boolean) : [],
     settings: sanitizeSettings(root.settings)
   };
 }
 
 async function readLegacySettings() {
   try {
-    const contents = await fs.readFile(getLegacySettingsPath(), 'utf8');
-    return sanitizeSettings(JSON.parse(contents));
+    return sanitizeSettings(JSON.parse(await fs.readFile(getLegacySettingsPath(), 'utf8')));
   } catch (error) {
-    if (error.code === 'ENOENT' || error instanceof SyntaxError) {
-      return { ...defaultSettings };
-    }
-
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) return { ...defaultSettings };
     throw error;
   }
 }
@@ -121,32 +104,25 @@ async function readLegacySettings() {
 async function preserveCorruptMetadata() {
   const metadataPath = getMetadataPath();
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const corruptPath = path.join(path.dirname(metadataPath), `h3-metadata.corrupt-${timestamp}.json`);
-
-  await fs.rename(metadataPath, corruptPath);
+  await fs.rename(metadataPath, path.join(path.dirname(metadataPath), `h3-metadata.corrupt-${timestamp}.json`));
 }
 
 async function readMetadata() {
   try {
-    const contents = await fs.readFile(getMetadataPath(), 'utf8');
-    const parsed = JSON.parse(contents);
-
+    const parsed = JSON.parse(await fs.readFile(getMetadataPath(), 'utf8'));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       await preserveCorruptMetadata();
       return { ...defaultMetadata, settings: { ...defaultSettings } };
     }
-
     return sanitizeMetadata(parsed);
   } catch (error) {
     if (error.code === 'ENOENT') {
       return { ...defaultMetadata, settings: await readLegacySettings() };
     }
-
     if (error instanceof SyntaxError) {
       await preserveCorruptMetadata();
       return { ...defaultMetadata, settings: { ...defaultSettings } };
     }
-
     throw error;
   }
 }
@@ -154,86 +130,53 @@ async function readMetadata() {
 async function writeMetadata(metadata) {
   const metadataPath = getMetadataPath();
   const tempPath = `${metadataPath}.tmp`;
-  const sanitized = sanitizeMetadata(metadata);
-
   await fs.mkdir(path.dirname(metadataPath), { recursive: true });
-  await fs.writeFile(tempPath, `${JSON.stringify(sanitized, null, 2)}\n`, 'utf8');
+  await fs.writeFile(tempPath, `${JSON.stringify(sanitizeMetadata(metadata), null, 2)}\n`, 'utf8');
   await fs.rename(tempPath, metadataPath);
 }
 
 async function readSettings() {
-  const metadata = await readMetadata();
-  return metadata.settings;
+  return (await readMetadata()).settings;
 }
 
 async function writeSettings(settings) {
   const metadata = await readMetadata();
-  await writeMetadata({
-    ...metadata,
-    settings
-  });
+  await writeMetadata({ ...metadata, settings });
 }
 
 async function validatePiExecutablePath(piExecutablePath) {
   const normalizedPath = piExecutablePath.trim();
-
-  if (!normalizedPath) {
-    return {
-      status: 'missing',
-      message: 'Set the Pi executable path before sending prompts.'
-    };
-  }
+  if (!normalizedPath) return { status: 'missing', message: 'Set the Pi executable path before sending prompts.' };
 
   let stats;
-
   try {
     stats = await fs.stat(normalizedPath);
   } catch (error) {
-    if (error.code === 'ENOENT') {
-      return {
-        status: 'nonexistent',
-        message: 'No file exists at this path.'
-      };
-    }
-
+    if (error.code === 'ENOENT') return { status: 'nonexistent', message: 'No file exists at this path.' };
     throw error;
   }
 
-  if (!stats.isFile()) {
-    return {
-      status: 'non-file',
-      message: 'The Pi executable path must point to a file.'
-    };
-  }
+  if (!stats.isFile()) return { status: 'non-file', message: 'The Pi executable path must point to a file.' };
 
   try {
     await fs.access(normalizedPath, constants.X_OK);
   } catch {
-    return {
-      status: 'non-executable',
-      message: 'This file is not executable.'
-    };
+    return { status: 'non-executable', message: 'This file is not executable.' };
   }
 
-  return {
-    status: 'valid',
-    message: 'Pi executable path is ready.'
-  };
+  return { status: 'valid', message: 'Pi executable path is ready.' };
 }
 
 async function getSettingsState(settings = null) {
   const currentSettings = settings ?? (await readSettings());
-  const validation = await validatePiExecutablePath(currentSettings.piExecutablePath);
-
   return {
     settings: currentSettings,
-    validation
+    validation: await validatePiExecutablePath(currentSettings.piExecutablePath)
   };
 }
 
 async function isValidPiExecutablePath(candidatePath) {
-  const validation = await validatePiExecutablePath(candidatePath);
-  return validation.status === 'valid';
+  return (await validatePiExecutablePath(candidatePath)).status === 'valid';
 }
 
 async function detectPiOnPath() {
@@ -243,11 +186,7 @@ async function detectPiOnPath() {
   try {
     const { stdout } = await execFileAsync(command, args, { timeout: 3000 });
     const candidatePath = stdout.split(/\r?\n/).find(Boolean)?.trim();
-
-    if (candidatePath && (await isValidPiExecutablePath(candidatePath))) {
-      return { path: candidatePath, source: 'path' };
-    }
-
+    if (candidatePath && (await isValidPiExecutablePath(candidatePath))) return { path: candidatePath, source: 'path' };
     return candidatePath ? { invalidCandidateFound: true } : null;
   } catch {
     return null;
@@ -255,16 +194,13 @@ async function detectPiOnPath() {
 }
 
 async function collectNvmPiCandidates(homeDirectory) {
-  const nodeVersionsPath = path.join(homeDirectory, '.nvm', 'versions', 'node');
-
   try {
-    const entries = await fs.readdir(nodeVersionsPath, { withFileTypes: true });
+    const entries = await fs.readdir(path.join(homeDirectory, '.nvm', 'versions', 'node'), { withFileTypes: true });
     const candidates = await Promise.all(
       entries
         .filter((entry) => entry.isDirectory())
         .map(async (entry) => {
-          const candidatePath = path.join(nodeVersionsPath, entry.name, 'bin', 'pi');
-
+          const candidatePath = path.join(homeDirectory, '.nvm', 'versions', 'node', entry.name, 'bin', 'pi');
           try {
             const stats = await fs.stat(candidatePath);
             return { path: candidatePath, source: 'nvm', mtimeMs: stats.mtimeMs };
@@ -273,7 +209,6 @@ async function collectNvmPiCandidates(homeDirectory) {
           }
         })
     );
-
     return candidates.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs);
   } catch {
     return [];
@@ -283,7 +218,6 @@ async function collectNvmPiCandidates(homeDirectory) {
 async function detectPiExecutable() {
   let invalidCandidateFound = false;
   const pathResult = await detectPiOnPath();
-
   if (pathResult?.path) return ok(pathResult);
   if (pathResult?.invalidCandidateFound) invalidCandidateFound = true;
 
@@ -299,287 +233,193 @@ async function detectPiExecutable() {
 
   for (const candidate of candidates) {
     try {
-      const exists = await fs.stat(candidate.path);
-      if (!exists.isFile()) {
-        invalidCandidateFound = true;
-        continue;
-      }
-
-      if (await isValidPiExecutablePath(candidate.path)) {
-        return ok({ path: candidate.path, source: candidate.source });
-      }
-
+      const stats = await fs.stat(candidate.path);
+      if (stats.isFile() && (await isValidPiExecutablePath(candidate.path))) return ok(candidate);
       invalidCandidateFound = true;
     } catch {
-      // Missing candidates are expected during detection.
+      // Missing candidates are expected.
     }
   }
 
-  if (invalidCandidateFound) {
-    return fail('pi_candidates_invalid', 'Found Pi candidates, but none were executable.');
-  }
-
+  if (invalidCandidateFound) return fail('pi_candidates_invalid', 'Found Pi candidates, but none were executable.');
   return fail('pi_not_found', 'Could not find Pi automatically. Enter the executable path manually.');
 }
 
-function ok(data) {
-  return { ok: true, data };
-}
-
-function fail(code, message) {
-  return { ok: false, error: { code, message } };
-}
-
-function requireObject(input, label = 'Input') {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return `${label} must be an object.`;
+async function validateRepoDirectory(repoPath) {
+  try {
+    const stats = await fs.stat(repoPath);
+    if (!stats.isDirectory()) return fail('repo_path_not_directory', 'Repository path must point to a directory.');
+    return ok(null);
+  } catch (error) {
+    if (error.code === 'ENOENT') return fail('repo_path_not_found', 'No directory exists at this repository path.');
+    throw error;
   }
-
-  return null;
 }
 
-function requireNonEmptyString(input, field) {
-  if (typeof input?.[field] !== 'string' || input[field].trim().length === 0) {
-    return `${field} is required.`;
-  }
-
-  return null;
+function sortRepos(repos) {
+  return [...repos].sort((a, b) => (b.lastOpenedAt ?? b.addedAt).localeCompare(a.lastOpenedAt ?? a.addedAt));
 }
 
 function findRepo(metadata, repoId) {
   return metadata.repos.find((repo) => repo.id === repoId) ?? null;
 }
 
-function findSession(metadata, sessionId) {
-  return metadata.sessions.find((session) => session.id === sessionId) ?? null;
+function broadcast(channel, payload) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(channel, payload);
+  }
 }
 
-const blockingExtensionUiMethods = new Set(['select', 'confirm', 'input', 'editor']);
-const fireAndForgetExtensionUiMethods = new Set(['notify', 'setStatus', 'setWidget', 'setTitle', 'set_editor_text']);
-
-function createDisplayTranscriptEvent(sessionId, event) {
-  return {
-    id: randomUUID(),
-    sessionId,
-    createdAt: new Date().toISOString(),
-    title: '',
-    ...event
-  };
-}
-
-function emitTranscriptEvent(sessionId, event) {
-  const entry = createDisplayTranscriptEvent(sessionId, event);
-  broadcast('sessions:transcriptEvent', entry);
-  return entry;
-}
-
-function createPiSessionTranscriptEvent(sessionId, entry, event) {
-  return {
-    id: `${entry.id ?? randomUUID()}:${event.blockId}`,
-    sessionId,
-    createdAt: typeof entry.timestamp === 'string' ? entry.timestamp : new Date().toISOString(),
-    title: '',
-    rawPayload: entry,
-    ...event
-  };
-}
-
-function normalizePiSessionEntry(sessionId, entry) {
-  if (!entry || typeof entry !== 'object') return [];
-
-  if (entry.type === 'session') {
-    return [createPiSessionTranscriptEvent(sessionId, entry, {
-      kind: 'system',
-      blockId: `session:${entry.id ?? 'start'}`,
-      mode: 'final',
-      title: 'Pi session',
-      content: entry.cwd ? `Pi session started in ${entry.cwd}.` : 'Pi session started.'
-    })];
-  }
-
-  if (entry.type === 'model_change') {
-    return [createPiSessionTranscriptEvent(sessionId, entry, {
-      kind: 'diagnostic',
-      blockId: `model:${entry.id ?? entry.timestamp ?? randomUUID()}`,
-      mode: 'final',
-      title: 'Pi model',
-      content: [entry.provider, entry.modelId].filter(Boolean).join('/') || 'Pi model changed.'
-    })];
-  }
-
-  if (entry.type === 'thinking_level_change') {
-    return [createPiSessionTranscriptEvent(sessionId, entry, {
-      kind: 'diagnostic',
-      blockId: `thinking:${entry.id ?? entry.timestamp ?? randomUUID()}`,
-      mode: 'final',
-      title: 'Thinking level',
-      content: entry.thinkingLevel ? `Thinking level: ${entry.thinkingLevel}` : 'Thinking level changed.'
-    })];
-  }
-
-  if (entry.type === 'custom_message') {
-    if (entry.display === false) return [];
-    return [createPiSessionTranscriptEvent(sessionId, entry, {
-      kind: 'diagnostic',
-      blockId: `custom-message:${entry.id ?? entry.timestamp ?? randomUUID()}`,
-      mode: 'final',
-      title: entry.customType || 'Pi message',
-      content: typeof entry.content === 'string' ? entry.content : ''
-    })];
-  }
-
-  if (entry.type === 'custom') {
-    if (entry.display === false) return [];
-    return [createPiSessionTranscriptEvent(sessionId, entry, {
-      kind: 'diagnostic',
-      blockId: `custom:${entry.id ?? entry.timestamp ?? randomUUID()}`,
-      mode: 'final',
-      title: entry.customType || 'Pi event',
-      content: typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.data ?? {}, null, 2)
-    })];
-  }
-
-  if (entry.type === 'message') {
-    const message = entry.message;
-    const content = extractMessageText(message);
-    if (!content) return [];
-
-    const role = message?.role;
-    const kind = role === 'user' ? 'user' : role === 'assistant' ? 'assistant' : 'system';
-    return [createPiSessionTranscriptEvent(sessionId, entry, {
-      kind,
-      blockId: `${kind}:${entry.id ?? message?.timestamp ?? randomUUID()}`,
-      mode: 'final',
-      content
-    })];
-  }
-
-  if (entry.type === 'tool_result' || entry.type === 'tool_execution_result') {
-    return [createPiSessionTranscriptEvent(sessionId, entry, {
-      kind: entry.isError ? 'error' : 'tool',
-      blockId: `tool:${entry.toolCallId ?? entry.id ?? randomUUID()}`,
-      mode: 'final',
-      toolCallId: entry.toolCallId,
-      toolName: entry.toolName,
-      title: entry.toolName ? `Tool: ${entry.toolName}` : 'Tool',
-      content: getToolText(entry.result ?? entry)
-    })];
-  }
-
-  return [];
-}
-
-async function readPiSessionTranscriptEvents(session) {
-  if (!session.harnessSessionPath) return [];
-
+async function collectJsonlFiles(directory) {
+  let entries;
   try {
-    const contents = await fs.readFile(session.harnessSessionPath, 'utf8');
-    return contents
-      .split('\n')
-      .filter(Boolean)
-      .flatMap((line) => {
-        try {
-          const parsed = JSON.parse(line);
-          return normalizePiSessionEntry(session.id, parsed);
-        } catch {
-          return [];
-        }
-      })
-      .filter(Boolean);
+    entries = await fs.readdir(directory, { withFileTypes: true });
   } catch (error) {
     if (error.code === 'ENOENT') return [];
     throw error;
   }
+
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) return collectJsonlFiles(entryPath);
+      return entry.isFile() && entry.name.endsWith('.jsonl') ? [entryPath] : [];
+    })
+  );
+  return nested.flat();
 }
 
-function broadcast(channel, payload) {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send(channel, payload);
-  }
-}
-
-async function updateSession(sessionId, updater) {
-  const metadata = await readMetadata();
-  const session = findSession(metadata, sessionId);
-  if (!session) return null;
-  const updatedSession = { ...session, ...updater(session), updatedAt: new Date().toISOString() };
-  await writeMetadata({
-    ...metadata,
-    sessions: metadata.sessions.map((item) => (item.id === sessionId ? updatedSession : item))
-  });
-  broadcast('sessions:updated', updatedSession);
-  return updatedSession;
-}
-
-function derivePromptTitle(prompt) {
-  const collapsed = prompt.replace(/\s+/g, ' ').trim();
-  if (!collapsed) return 'New session';
-  return collapsed.length > 60 ? `${collapsed.slice(0, 57)}...` : collapsed;
-}
-
-function sortRepos(repos) {
-  return [...repos].sort((a, b) => {
-    const aDate = a.lastOpenedAt ?? a.addedAt;
-    const bDate = b.lastOpenedAt ?? b.addedAt;
-    return bDate.localeCompare(aDate);
-  });
-}
-
-async function validateRepoDirectory(repoPath) {
-  let stats;
-
+async function readFirstJsonlEntry(filePath) {
+  const handle = await fs.open(filePath, 'r');
   try {
-    stats = await fs.stat(repoPath);
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      return fail('repo_path_not_found', 'No directory exists at this repository path.');
+    const buffer = Buffer.alloc(8192);
+    let line = '';
+    let position = 0;
+
+    while (!line.includes('\n')) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      if (bytesRead === 0) break;
+      line += buffer.subarray(0, bytesRead).toString('utf8');
+      position += bytesRead;
     }
 
-    throw error;
+    const firstLine = line.split(/\r?\n/, 1)[0]?.trim();
+    return firstLine ? JSON.parse(firstLine) : null;
+  } finally {
+    await handle.close();
   }
-
-  if (!stats.isDirectory()) {
-    return fail('repo_path_not_directory', 'Repository path must point to a directory.');
-  }
-
-  return ok(null);
 }
 
-function attachRpcJsonlReader(child, runningProcess) {
-  child.stdout.on('data', (chunk) => {
-    runningProcess.stdoutBuffer += chunk.toString('utf8');
+function titleFromSessionFile(filePath, sessionEntry) {
+  if (typeof sessionEntry?.name === 'string' && sessionEntry.name.trim()) return sessionEntry.name.trim();
+  const basename = path.basename(filePath, '.jsonl');
+  const timestamp = basename.split('_', 1)[0];
+  const date = new Date(timestamp);
+  if (!Number.isNaN(date.getTime())) {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  }
+  return basename;
+}
+
+async function scanPiSessionsForRepo(repo) {
+  const repoPath = path.resolve(repo.path);
+  const files = await collectJsonlFiles(getPiSessionsPath());
+  const sessions = [];
+
+  for (const filePath of files) {
+    try {
+      const entry = await readFirstJsonlEntry(filePath);
+      if (entry?.type !== 'session' || path.resolve(entry.cwd ?? '') !== repoPath) continue;
+      const stats = await fs.stat(filePath);
+      const createdAt = typeof entry.timestamp === 'string' ? entry.timestamp : stats.birthtime.toISOString();
+
+      sessions.push({
+        id: entry.id || path.basename(filePath, '.jsonl'),
+        repoId: repo.id,
+        harness: 'pi',
+        harnessSessionPath: filePath,
+        title: titleFromSessionFile(filePath, entry),
+        createdAt,
+        updatedAt: stats.mtime.toISOString(),
+        status: activeProcess?.sessionPath === filePath ? activeProcess.status : 'idle',
+        isDraft: false
+      });
+    } catch {
+      // Ignore unreadable or malformed session files; Pi owns the format.
+    }
+  }
+
+  return sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function createDraftSession(repoId) {
+  const now = new Date().toISOString();
+  return {
+    id: `draft:${randomUUID()}`,
+    repoId,
+    harness: 'pi',
+    harnessSessionPath: '',
+    title: 'New chat',
+    createdAt: now,
+    updatedAt: now,
+    status: 'idle',
+    isDraft: true
+  };
+}
+
+function emitSessionStatus(session, status) {
+  broadcast('sessions:updated', { ...session, status });
+}
+
+function emitTranscriptEvent(sessionId, event) {
+  broadcast('sessions:transcriptEvent', {
+    id: randomUUID(),
+    sessionId,
+    createdAt: new Date().toISOString(),
+    ...event
+  });
+}
+
+function attachJsonlReader(stream, onLine) {
+  const decoder = new StringDecoder('utf8');
+  let buffer = '';
+
+  stream.on('data', (chunk) => {
+    buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
 
     while (true) {
-      const newlineIndex = runningProcess.stdoutBuffer.indexOf('\n');
+      const newlineIndex = buffer.indexOf('\n');
       if (newlineIndex === -1) break;
 
-      let line = runningProcess.stdoutBuffer.slice(0, newlineIndex);
-      runningProcess.stdoutBuffer = runningProcess.stdoutBuffer.slice(newlineIndex + 1);
+      let line = buffer.slice(0, newlineIndex);
+      buffer = buffer.slice(newlineIndex + 1);
       if (line.endsWith('\r')) line = line.slice(0, -1);
-      if (!line.trim()) continue;
-
-      void handleRpcLine(runningProcess, line);
+      if (line.trim()) onLine(line);
     }
   });
 
-  child.stdout.on('end', () => {
-    const line = runningProcess.stdoutBuffer.endsWith('\r')
-      ? runningProcess.stdoutBuffer.slice(0, -1)
-      : runningProcess.stdoutBuffer;
-    runningProcess.stdoutBuffer = '';
-    if (line.trim()) void handleRpcLine(runningProcess, line);
+  stream.on('end', () => {
+    buffer += decoder.end();
+    if (!buffer) return;
+    const line = buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer;
+    if (line.trim()) onLine(line);
   });
 }
 
-async function handleRpcLine(runningProcess, line) {
-  let payload;
+function attachRpcJsonlReader(processState) {
+  attachJsonlReader(processState.child.stdout, (line) => {
+    void handleRpcLine(processState, line);
+  });
+}
 
+async function handleRpcLine(processState, line) {
+  let payload;
   try {
     payload = JSON.parse(line);
   } catch {
-    await emitTranscriptEvent(runningProcess.sessionId, {
+    emitTranscriptEvent(processState.uiSessionId, {
       kind: 'diagnostic',
-      blockId: `diagnostic:${randomUUID()}`,
+      blockId: `stdout:${randomUUID()}`,
       mode: 'final',
       stream: 'stdout',
       content: `Invalid Pi RPC JSON: ${line}`
@@ -588,379 +428,151 @@ async function handleRpcLine(runningProcess, line) {
   }
 
   if (payload.type === 'response') {
-    await handleRpcResponse(runningProcess, payload);
+    handleRpcResponse(processState, payload);
     return;
   }
 
-  if (payload.type === 'agent_start') runningProcess.isStreaming = true;
-  if (payload.type === 'agent_end') runningProcess.isStreaming = false;
+  if (payload.type === 'agent_start') {
+    processState.status = 'running';
+    emitSessionStatus(processState.session, 'running');
+  }
+  if (payload.type === 'agent_end') {
+    processState.status = 'idle';
+    emitSessionStatus(processState.session, 'idle');
+    void refreshActiveMessages(processState);
+    void requestRpc(processState, { type: 'get_state' }).catch(() => {});
+  }
 
   if (payload.type === 'extension_ui_request') {
-    await handleExtensionUiRequest(runningProcess, payload);
+    handleExtensionUiRequest(processState, payload);
     return;
   }
 
-  const events = normalizeRpcTranscriptEvents(runningProcess, payload);
-  for (const event of events) await emitTranscriptEvent(runningProcess.sessionId, event);
-
-  if (payload.type === 'agent_end') {
-    sendRpcCommand(runningProcess, { type: 'get_state' }, { internal: true });
-  }
+  for (const event of normalizeLiveRpcEvent(processState, payload)) emitTranscriptEvent(processState.uiSessionId, event);
 }
 
-async function handleRpcResponse(runningProcess, payload) {
-  const pending = payload.id ? runningProcess.pendingRequests.get(payload.id) : null;
-  if (payload.id) runningProcess.pendingRequests.delete(payload.id);
+function handleRpcResponse(processState, payload) {
+  const pending = payload.id ? processState.pendingRequests.get(payload.id) : null;
+  if (!pending) return;
 
-  if (payload.command === 'get_state' && payload.success && payload.data) {
-    runningProcess.isStreaming = Boolean(payload.data.isStreaming);
-    await syncSessionFromRpcState(runningProcess.sessionId, payload.data);
-  }
-
-  if (payload.command === 'switch_session' && payload.success) {
-    if (payload.data?.cancelled) {
-      await emitTranscriptEvent(runningProcess.sessionId, {
-        kind: 'error',
-        blockId: `rpc:${payload.id ?? randomUUID()}`,
-        mode: 'final',
-        title: 'Pi session resume cancelled',
-        content: 'Pi cancelled loading the previous session.',
-        rawPayload: payload
-      });
-      await updateSession(runningProcess.sessionId, () => ({ status: 'error' }));
-      return;
-    }
-
-    sendRpcCommand(runningProcess, { type: 'get_state' }, { internal: true });
-  }
-
-  if (payload.success && pending?.internal !== false) return;
-  if (payload.success && pending) return;
-
-  await emitTranscriptEvent(runningProcess.sessionId, {
-    kind: payload.success ? 'diagnostic' : 'error',
-    blockId: `rpc:${payload.id ?? randomUUID()}`,
-    mode: 'final',
-    title: payload.command ? `Pi RPC ${payload.command}` : 'Pi RPC response',
-    content: payload.success ? `Unhandled Pi RPC response: ${payload.command ?? 'unknown'}` : payload.error ?? 'Pi RPC command failed.',
-    rawPayload: payload
-  });
+  processState.pendingRequests.delete(payload.id);
+  clearTimeout(pending.timeout);
+  if (payload.success) pending.resolve(payload.data);
+  else pending.reject(new Error(payload.error || `${payload.command || pending.command} failed.`));
 }
 
-async function handleExtensionUiRequest(runningProcess, payload) {
-  if (fireAndForgetExtensionUiMethods.has(payload.method)) return;
-
-  if (blockingExtensionUiMethods.has(payload.method)) {
-    await emitTranscriptEvent(runningProcess.sessionId, {
-      kind: 'diagnostic',
-      blockId: `extension-ui:${payload.id}`,
-      mode: 'final',
-      title: 'Pi UI request cancelled',
-      content: `Pi requested ${payload.method} UI interaction, which H3 Code does not support yet.`,
-      rawPayload: payload
-    });
-    sendRpcCommand(runningProcess, { type: 'extension_ui_response', id: payload.id, cancelled: true }, { track: false, preserveId: true });
-    return;
-  }
-
-  await emitTranscriptEvent(runningProcess.sessionId, {
+function handleExtensionUiRequest(processState, payload) {
+  emitTranscriptEvent(processState.uiSessionId, {
     kind: 'diagnostic',
     blockId: `extension-ui:${payload.id ?? randomUUID()}`,
     mode: 'final',
-    title: 'Unsupported Pi UI request',
-    content: `Pi requested ${payload.method ?? 'unknown'} UI interaction, which H3 Code does not support yet.`,
+    title: 'Pi UI request cancelled',
+    content: `Pi requested ${payload.method ?? 'UI'} interaction, which H3 Code does not support yet.`,
     rawPayload: payload
   });
+
+  if (payload.id) {
+    sendRpcCommand(processState, { type: 'extension_ui_response', id: payload.id, cancelled: true }, { track: false });
+  }
 }
 
-function getRpcMessageId(message) {
-  return message?.id ?? message?.entryId ?? message?.timestamp ?? 'active';
-}
+function sendRpcCommand(processState, command, options = {}) {
+  if (!processState.child.stdin?.writable) throw new Error('Pi RPC stdin is not writable.');
+  const fullCommand = command.id ? command : { ...command, id: randomUUID() };
+  if (options.track !== false) {
+    const timeout = setTimeout(() => {
+      const pending = processState.pendingRequests.get(fullCommand.id);
+      if (!pending) return;
+      processState.pendingRequests.delete(fullCommand.id);
+      pending.reject(new Error(`${fullCommand.type} timed out.`));
+    }, options.timeoutMs ?? 30000);
 
-function getAssistantBlockId(runningProcess, payload, contentIndex = 0) {
-  const messageId = getRpcMessageId(payload.message);
-  const blockId = `assistant:${messageId}:${contentIndex}`;
-  runningProcess.assistantBlocksWithDeltas.add(blockId);
-  runningProcess.activeAssistantBlockId = blockId;
-  return blockId;
-}
-
-function extractMessageText(message) {
-  if (!message) return '';
-  if (typeof message.content === 'string') return message.content;
-  if (!Array.isArray(message.content)) return '';
-  return message.content
-    .map((item) => {
-      if (item?.type === 'text') return item.text ?? '';
-      if (item?.type === 'thinking') return item.thinking ?? '';
-      if (item?.type === 'toolCall') return `Tool call: ${item.name ?? 'tool'}`;
-      return '';
-    })
-    .filter(Boolean)
-    .join('\n');
-}
-
-function getToolText(result) {
-  return result?.content?.map((item) => (item.type === 'text' ? item.text : '')).join('') ?? '';
-}
-
-function getQueueText(payload) {
-  const steeringCount = Array.isArray(payload.steering) ? payload.steering.length : 0;
-  const followUpCount = Array.isArray(payload.followUp) ? payload.followUp.length : 0;
-  return `${steeringCount} steering message${steeringCount === 1 ? '' : 's'}, ${followUpCount} follow-up message${followUpCount === 1 ? '' : 's'} queued.`;
-}
-
-function getCompactionText(payload) {
-  if (payload.type === 'compaction_start') {
-    return `Pi started ${payload.reason ?? 'context'} compaction.`;
-  }
-
-  if (payload.aborted) return 'Pi compaction was aborted.';
-  if (payload.errorMessage) return `Pi compaction failed: ${payload.errorMessage}`;
-  if (payload.willRetry) return 'Pi compacted context and will retry the prompt.';
-  return 'Pi compacted context.';
-}
-
-function getAutoRetryText(payload) {
-  if (payload.type === 'auto_retry_start') {
-    const attempt = payload.attempt ? `attempt ${payload.attempt}` : 'a retry';
-    return `Pi scheduled ${attempt}${payload.delayMs ? ` in ${payload.delayMs}ms` : ''}.`;
-  }
-
-  if (payload.success) return payload.attempt ? `Pi retry attempt ${payload.attempt} succeeded.` : 'Pi retry succeeded.';
-  return payload.finalError ? `Pi retry failed: ${payload.finalError}` : 'Pi retry failed.';
-}
-
-function normalizeRpcTranscriptEvents(runningProcess, payload) {
-  if (payload.type === 'agent_start') {
-    return [{ kind: 'system', blockId: `agent:${randomUUID()}`, mode: 'final', content: 'Pi started processing.', rawPayload: payload }];
-  }
-
-  if (payload.type === 'agent_end') {
-    return [{ kind: 'system', blockId: `agent:${randomUUID()}`, mode: 'final', content: 'Pi finished processing.', rawPayload: payload }];
-  }
-
-  if (payload.type === 'turn_start') {
-    return [{ kind: 'system', blockId: `turn:${randomUUID()}`, mode: 'final', content: 'Pi started a turn.', rawPayload: payload }];
-  }
-
-  if (payload.type === 'message_start') {
-    runningProcess.activeAssistantBlockId = '';
-    return [];
-  }
-
-  if (payload.type === 'message_update') {
-    const delta = payload.assistantMessageEvent;
-    if (delta?.type === 'text_delta' || delta?.type === 'thinking_delta') {
-      return [{
-        kind: 'assistant',
-        blockId: getAssistantBlockId(runningProcess, payload, delta.contentIndex ?? 0),
-        mode: 'append',
-        title: delta.type === 'thinking_delta' ? 'Thinking' : undefined,
-        content: delta.delta ?? '',
-        rawPayload: payload
-      }];
-    }
-
-    if (delta?.type === 'toolcall_start' || delta?.type === 'toolcall_end') {
-      const toolCall = delta.toolCall ?? delta.partial?.content?.find((item) => item?.type === 'toolCall');
-      return [{
-        kind: 'assistant',
-        blockId: getAssistantBlockId(runningProcess, payload, delta.contentIndex ?? 0),
-        mode: 'replace',
-        title: 'Tool call',
-        content: `Tool call: ${toolCall?.name ?? 'tool'}`,
-        rawPayload: payload
-      }];
-    }
-
-    if (delta?.type === 'toolcall_delta' && delta.delta) {
-      return [{
-        kind: 'assistant',
-        blockId: getAssistantBlockId(runningProcess, payload, delta.contentIndex ?? 0),
-        mode: 'append',
-        title: 'Tool call',
-        content: delta.delta,
-        rawPayload: payload
-      }];
-    }
-
-    if (delta?.type === 'error') {
-      return [{
-        kind: 'error',
-        blockId: `assistant-error:${getRpcMessageId(payload.message)}`,
-        mode: 'final',
-        content: delta.reason ?? 'Pi assistant message failed.',
-        rawPayload: payload
-      }];
-    }
-
-    return [];
-  }
-
-  if (payload.type === 'message_end' || payload.type === 'turn_end') {
-    const message = payload.message;
-    if (message?.role !== 'assistant') return [];
-    const computedBlockId = `assistant:${getRpcMessageId(message)}:0`;
-    const blockId = runningProcess.activeAssistantBlockId || computedBlockId;
-    const content = extractMessageText(message);
-    if (!content) return [];
-    return [{ kind: 'assistant', blockId, mode: 'final', content, rawPayload: payload }];
-  }
-
-  if (payload.type === 'tool_execution_start') {
-    return [{
-      kind: 'tool',
-      blockId: `tool:${payload.toolCallId}`,
-      mode: 'replace',
-      toolCallId: payload.toolCallId,
-      toolName: payload.toolName,
-      title: payload.toolName ? `Tool: ${payload.toolName}` : 'Tool',
-      content: payload.toolName ? `Running ${payload.toolName}...` : 'Running tool...',
-      rawPayload: payload
-    }];
-  }
-
-  if (payload.type === 'tool_execution_update') {
-    return [{
-      kind: 'tool',
-      blockId: `tool:${payload.toolCallId}`,
-      mode: 'replace',
-      toolCallId: payload.toolCallId,
-      toolName: payload.toolName,
-      title: payload.toolName ? `Tool: ${payload.toolName}` : 'Tool',
-      content: getToolText(payload.partialResult),
-      rawPayload: payload
-    }];
-  }
-
-  if (payload.type === 'tool_execution_end') {
-    return [{
-      kind: payload.isError ? 'error' : 'tool',
-      blockId: `tool:${payload.toolCallId}`,
-      mode: 'final',
-      toolCallId: payload.toolCallId,
-      toolName: payload.toolName,
-      title: payload.toolName ? `Tool: ${payload.toolName}` : 'Tool',
-      content: getToolText(payload.result),
-      rawPayload: payload
-    }];
-  }
-
-  if (payload.type === 'extension_error') {
-    return [{
-      kind: 'error',
-      blockId: `extension-error:${randomUUID()}`,
-      mode: 'final',
-      title: 'Pi extension error',
-      content: payload.error ?? 'Pi extension failed.',
-      rawPayload: payload
-    }];
-  }
-
-  if (payload.type === 'queue_update') {
-    return [{
-      kind: 'diagnostic',
-      blockId: 'queue:update',
-      mode: 'replace',
-      title: 'Pi queue',
-      content: getQueueText(payload),
-      rawPayload: payload
-    }];
-  }
-
-  if (payload.type === 'compaction_start' || payload.type === 'compaction_end') {
-    return [{
-      kind: payload.errorMessage ? 'error' : 'diagnostic',
-      blockId: 'compaction:status',
-      mode: 'replace',
-      title: 'Pi compaction',
-      content: getCompactionText(payload),
-      rawPayload: payload
-    }];
-  }
-
-  if (payload.type === 'auto_retry_start' || payload.type === 'auto_retry_end') {
-    return [{
-      kind: payload.type === 'auto_retry_end' && !payload.success ? 'error' : 'diagnostic',
-      blockId: 'retry:status',
-      mode: 'replace',
-      title: 'Pi retry',
-      content: getAutoRetryText(payload),
-      rawPayload: payload
-    }];
-  }
-
-  return [];
-}
-
-function sendRpcCommand(runningProcess, command, options = {}) {
-  if (!runningProcess.child.stdin?.writable) {
-    throw new Error('Pi RPC stdin is not writable.');
-  }
-
-  const track = options.track !== false;
-  const fullCommand = command.id && options.preserveId ? command : command.id ? command : { ...command, id: randomUUID() };
-  if (track && fullCommand.id) {
-    runningProcess.pendingRequests.set(fullCommand.id, {
+    processState.pendingRequests.set(fullCommand.id, {
       command: fullCommand.type,
-      internal: options.internal !== false
+      resolve: options.resolve,
+      reject: options.reject,
+      timeout
     });
   }
-
-  runningProcess.child.stdin.write(`${JSON.stringify(fullCommand)}\n`);
+  processState.child.stdin.write(`${JSON.stringify(fullCommand)}\n`);
   return fullCommand.id;
 }
 
-async function syncSessionFromRpcState(sessionId, state) {
-  await updateSession(sessionId, (session) => {
-    const patch = {};
-
-    if (typeof state.sessionFile === 'string' && state.sessionFile && state.sessionFile !== session.harnessSessionPath) {
-      patch.harnessSessionPath = state.sessionFile;
-    }
-
-    if (
-      typeof state.sessionName === 'string' &&
-      state.sessionName.trim() &&
-      session.titleSource !== 'user' &&
-      state.sessionName.trim() !== session.title
-    ) {
-      patch.title = state.sessionName.trim();
-      patch.titleSource = 'pi';
-    }
-
-    return patch;
+function requestRpc(processState, command) {
+  return new Promise((resolve, reject) => {
+    sendRpcCommand(processState, command, { resolve, reject });
   });
 }
 
-async function startPiRpcProcess(session, repo, settings) {
-  const args = ['--mode', 'rpc'];
+function createRpcError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
 
-  const child = spawn(settings.piExecutablePath, args, {
+function formatProcessExit(code, signal) {
+  if (signal) return `Pi exited from ${signal}.`;
+  return `Pi exited with code ${code ?? 'unknown'}.`;
+}
+
+async function stopActiveProcess({ abort = true } = {}) {
+  if (!activeProcess) return false;
+
+  const processState = activeProcess;
+  processState.intentionalStop = true;
+
+  if (abort && processState.child.stdin?.writable) {
+    try {
+      sendRpcCommand(processState, { type: 'abort' }, { track: false });
+    } catch {
+      // The process may already be exiting.
+    }
+  }
+
+  processState.child.kill('SIGTERM');
+  activeProcess = null;
+  return true;
+}
+
+function rejectPendingRequests(processState, error) {
+  for (const pending of processState.pendingRequests.values()) {
+    clearTimeout(pending.timeout);
+    pending.reject(error);
+  }
+  processState.pendingRequests.clear();
+}
+
+async function startActiveProcess(session, repo, settings) {
+  if (activeProcess && activeProcess.repoId === repo.id && activeProcess.sessionPath === session.harnessSessionPath) {
+    return activeProcess;
+  }
+
+  await stopActiveProcess({ abort: true });
+
+  const child = spawn(settings.piExecutablePath, ['--mode', 'rpc'], {
     cwd: repo.path,
     stdio: ['pipe', 'pipe', 'pipe']
   });
 
-  const runningProcess = {
+  const processState = {
     child,
     repoId: repo.id,
-    sessionId: session.id,
-    harness: 'pi',
-    isStreaming: false,
+    sessionPath: session.harnessSessionPath,
+    uiSessionId: session.id,
+    session,
+    status: 'idle',
     stdoutBuffer: '',
-    intentionalStop: false,
-    startedAt: new Date().toISOString(),
     pendingRequests: new Map(),
     assistantBlocksWithDeltas: new Set(),
-    activeAssistantBlockId: ''
+    activeAssistantBlockId: '',
+    intentionalStop: false
   };
 
-  runningProcesses.set(session.id, runningProcess);
-  attachRpcJsonlReader(child, runningProcess);
+  activeProcess = processState;
+  attachRpcJsonlReader(processState);
 
   child.stderr.on('data', (chunk) => {
-    void emitTranscriptEvent(session.id, {
+    emitTranscriptEvent(processState.uiSessionId, {
       kind: 'diagnostic',
       blockId: `stderr:${randomUUID()}`,
       mode: 'final',
@@ -970,47 +582,435 @@ async function startPiRpcProcess(session, repo, settings) {
   });
 
   child.on('error', (error) => {
-    void emitTranscriptEvent(session.id, {
+    processState.status = 'error';
+    rejectPendingRequests(processState, error);
+    emitTranscriptEvent(processState.uiSessionId, {
       kind: 'error',
       blockId: `process:${randomUUID()}`,
       mode: 'final',
       content: error.message
     });
-    void updateSession(session.id, () => ({ status: 'error' }));
-    runningProcesses.delete(session.id);
+    emitSessionStatus(processState.session, 'error');
+    if (activeProcess === processState) activeProcess = null;
   });
 
   child.on('exit', (code, signal) => {
-    runningProcesses.delete(session.id);
-    void emitTranscriptEvent(session.id, {
-      kind: runningProcess.intentionalStop || code === 0 ? 'system' : 'error',
+    const status = processState.intentionalStop || code === 0 ? 'idle' : 'error';
+    const exitMessage = formatProcessExit(code, signal);
+    processState.status = status;
+    rejectPendingRequests(
+      processState,
+      createRpcError(processState.intentionalStop ? 'pi_process_stopped' : 'pi_process_exited', exitMessage)
+    );
+    emitTranscriptEvent(processState.uiSessionId, {
+      kind: status === 'error' ? 'error' : 'system',
       blockId: `process:${randomUUID()}`,
       mode: 'final',
-      content: runningProcess.intentionalStop ? 'Pi session stopped.' : `Pi exited with code ${code ?? 'unknown'}.`,
+      content: processState.intentionalStop ? 'Pi stopped.' : exitMessage,
       rawPayload: { exitCode: code, signal }
     });
-    void updateSession(session.id, () => ({ status: runningProcess.intentionalStop || code === 0 ? 'idle' : 'error' }));
+    emitSessionStatus(processState.session, status);
+    if (activeProcess === processState) activeProcess = null;
   });
 
-  await emitTranscriptEvent(session.id, {
-    kind: 'system',
-    blockId: `process:${randomUUID()}`,
-    mode: 'final',
-    content: 'Pi RPC session started.'
-  });
-  await updateSession(session.id, () => ({ status: 'running' }));
+  emitSessionStatus(session, 'idle');
+
   if (session.harnessSessionPath) {
-    sendRpcCommand(runningProcess, { type: 'switch_session', sessionPath: session.harnessSessionPath }, { internal: true });
-  } else {
-    sendRpcCommand(runningProcess, { type: 'get_state' }, { internal: true });
+    await requestRpc(processState, { type: 'switch_session', sessionPath: session.harnessSessionPath });
   }
-  return runningProcess;
+
+  return processState;
 }
 
-async function getOrStartPiRpcProcess(session, repo, settings) {
-  const existing = runningProcesses.get(session.id);
-  if (existing && !existing.child.killed) return existing;
-  return startPiRpcProcess(session, repo, settings);
+async function getRepoAndSession(input) {
+  const metadata = await readMetadata();
+  const repo = findRepo(metadata, input.repoId?.trim());
+  if (!repo) return { error: fail('repo_not_found', 'Repository could not be found.') };
+
+  if (input.sessionId?.startsWith('draft:')) {
+    return { metadata, repo, session: { ...createDraftSession(repo.id), id: input.sessionId } };
+  }
+
+  const sessions = await scanPiSessionsForRepo(repo);
+  const session = sessions.find((item) => item.id === input.sessionId || item.harnessSessionPath === input.sessionPath);
+  if (!session) return { error: fail('session_not_found', 'Session could not be found.') };
+  return { metadata, repo, session };
+}
+
+async function getRepoAndSessionForMessages(input) {
+  const metadata = await readMetadata();
+  const repo = findRepo(metadata, input.repoId?.trim());
+  if (!repo) return { error: fail('repo_not_found', 'Repository could not be found.') };
+
+  if (input.sessionId?.startsWith('draft:')) {
+    return { metadata, repo, session: { ...createDraftSession(repo.id), id: input.sessionId } };
+  }
+
+  if (typeof input.sessionPath === 'string' && input.sessionPath.trim()) {
+    return {
+      metadata,
+      repo,
+      session: {
+        id: input.sessionId,
+        repoId: repo.id,
+        harness: 'pi',
+        harnessSessionPath: input.sessionPath.trim(),
+        title: path.basename(input.sessionPath.trim(), '.jsonl'),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: activeProcess?.sessionPath === input.sessionPath.trim() ? activeProcess.status : 'idle',
+        isDraft: false
+      }
+    };
+  }
+
+  return getRepoAndSession(input);
+}
+
+async function ensureProcessForSession(input) {
+  const result = await getRepoAndSession(input);
+  if (result.error) return result;
+
+  const settingsState = await getSettingsState();
+  if (settingsState.validation.status !== 'valid') {
+    return { error: fail('invalid_pi_path', settingsState.validation.message) };
+  }
+
+  const processState = await startActiveProcess(result.session, result.repo, settingsState.settings);
+  return { ...result, processState };
+}
+
+async function refreshActiveMessages(processState) {
+  try {
+    const data = await requestRpc(processState, { type: 'get_messages' });
+    broadcast('sessions:messagesUpdated', createMessagesResult(data, processState.session));
+  } catch {
+    // Live events still remain visible if Pi cannot provide a snapshot.
+  }
+}
+
+function createMessagesResult(data, session, { source = 'rpc', timings } = {}) {
+  const normalizeStartedAt = Date.now();
+  const rawMessages = getRawMessages(data);
+  const messages = rawMessages.flatMap((message, index) => normalizeMessage(message, index));
+
+  if (rawMessages.length > 0 && messages.length === 0) {
+    messages.push({
+      id: 'diagnostic:no-visible-messages',
+      kind: 'diagnostic',
+      title: 'Pi messages hidden',
+      content: `Pi returned ${rawMessages.length} messages, but none had visible text content.`,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  return {
+    messages,
+    meta: {
+      sessionId: session.id,
+      sessionPath: session.harnessSessionPath,
+      rawMessageCount: rawMessages.length,
+      normalizedMessageCount: messages.length,
+      source,
+      ...(!app.isPackaged
+        ? {
+            timings: {
+              ...(timings ?? {}),
+              normalizeMs: Date.now() - normalizeStartedAt
+            }
+          }
+        : {})
+    }
+  };
+}
+
+function createDiagnosticMessagesResult(session, title, content) {
+  return {
+    messages: [{
+      id: `diagnostic:${Date.now()}`,
+      kind: 'diagnostic',
+      title,
+      content,
+      createdAt: new Date().toISOString()
+    }],
+    meta: {
+      sessionId: session.id,
+      sessionPath: session.harnessSessionPath,
+      rawMessageCount: 0,
+      normalizedMessageCount: 1,
+      source: 'diagnostic'
+    }
+  };
+}
+
+async function loadLocalSessionMessages(session) {
+  if (!session.harnessSessionPath) {
+    throw createRpcError('missing_session_path', 'Pi session file path is required.');
+  }
+
+  const contents = await fs.readFile(session.harnessSessionPath, 'utf8');
+  const messages = [];
+  for (const line of contents.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      messages.push(JSON.parse(line));
+    } catch {
+      // Ignore malformed JSONL entries; Pi owns the session file.
+    }
+  }
+  return createMessagesResult(messages, session, { source: 'jsonl' });
+}
+
+function loadSessionMessagesOnce(session, repo, settings) {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const timings = {};
+    const child = spawn(settings.piExecutablePath, ['--mode', 'rpc'], {
+      cwd: repo.path,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    const pendingRequests = new Map();
+    let settled = false;
+    let stderr = '';
+
+    function cleanup() {
+      for (const pending of pendingRequests.values()) clearTimeout(pending.timeout);
+      pendingRequests.clear();
+      child.removeAllListeners();
+      child.stdout?.removeAllListeners();
+      child.stderr?.removeAllListeners();
+    }
+
+    function finish(error, result) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+
+      if (!child.killed) child.kill('SIGTERM');
+      if (error) reject(error);
+      else resolve(result);
+    }
+
+    function send(command, timeoutMs = 10000) {
+      if (!child.stdin?.writable) throw createRpcError('pi_rpc_stdin_closed', 'Pi RPC stdin is not writable.');
+
+      const fullCommand = { ...command, id: command.id ?? randomUUID() };
+      const commandStartedAt = Date.now();
+      const timeout = setTimeout(() => {
+        pendingRequests.delete(fullCommand.id);
+        finish(createRpcError('pi_rpc_timeout', `${fullCommand.type} timed out while loading messages.`));
+      }, timeoutMs);
+
+      pendingRequests.set(fullCommand.id, {
+        command: fullCommand.type,
+        startedAt: commandStartedAt,
+        timeout
+      });
+
+      child.stdin.write(`${JSON.stringify(fullCommand)}\n`);
+    }
+
+    attachJsonlReader(child.stdout, (line) => {
+      let payload;
+      try {
+        payload = JSON.parse(line);
+      } catch {
+        return;
+      }
+
+      if (payload.type !== 'response' || !payload.id) return;
+      const pending = pendingRequests.get(payload.id);
+      if (!pending) return;
+
+      pendingRequests.delete(payload.id);
+      clearTimeout(pending.timeout);
+
+      if (!payload.success) {
+        finish(createRpcError('pi_rpc_failed', payload.error || `${pending.command} failed while loading messages.`));
+        return;
+      }
+
+      if (pending.command === 'switch_session') {
+        timings.switchSessionMs = Date.now() - pending.startedAt;
+        send({ type: 'get_messages' }, 15000);
+        return;
+      }
+
+      if (pending.command === 'get_messages') {
+        timings.getMessagesMs = Date.now() - pending.startedAt;
+        timings.totalMs = Date.now() - startedAt;
+        finish(null, createMessagesResult(payload.data, session, { source: 'rpc', timings }));
+      }
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (error) => {
+      finish(error);
+    });
+
+    child.on('exit', (code, signal) => {
+      if (settled) return;
+      const message = [formatProcessExit(code, signal), stderr.trim()].filter(Boolean).join('\n');
+      finish(createRpcError('pi_process_exited', message));
+    });
+
+    send({ type: 'switch_session', sessionPath: session.harnessSessionPath }, 15000);
+  });
+}
+
+function getRawMessages(data) {
+  return Array.isArray(data) ? data : Array.isArray(data?.messages) ? data.messages : [];
+}
+
+function normalizeMessages(data) {
+  return createMessagesResult(data, { id: '', harnessSessionPath: '' }).messages;
+}
+
+function normalizeMessage(message, index) {
+  const id = message?.id ?? message?.entryId ?? `${index}`;
+  const createdAt = normalizeTimestamp(message?.timestamp);
+  const role = message?.role ?? message?.message?.role ?? message?.type;
+  const content = extractMessageText(message?.message ?? message) || extractCustomMessageText(message);
+
+  if (role === 'user' || role === 'assistant') {
+    return [{
+      id,
+      kind: role,
+      title: role === 'assistant' ? 'Pi' : 'You',
+      content,
+      createdAt
+    }];
+  }
+
+  if (message?.type === 'tool_execution_start' || message?.type === 'tool_execution_update' || message?.type === 'tool_execution_end') {
+    return [{
+      id,
+      kind: message.isError ? 'error' : 'tool',
+      title: message.toolName ? `Tool: ${message.toolName}` : 'Tool',
+      content: getToolText(message.result ?? message.partialResult) || message.toolName || '',
+      createdAt
+    }];
+  }
+
+  if (!content || message?.display === false) return [];
+  return [{ id, kind: 'diagnostic', title: message?.customType ?? message?.type ?? role ?? 'Pi', content, createdAt }];
+}
+
+function normalizeTimestamp(timestamp) {
+  if (typeof timestamp === 'number') return new Date(timestamp).toISOString();
+  if (typeof timestamp === 'string') {
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  }
+  return new Date().toISOString();
+}
+
+function getRpcMessageId(message) {
+  return message?.id ?? message?.entryId ?? message?.timestamp ?? 'active';
+}
+
+function getAssistantBlockId(processState, payload, contentIndex = 0) {
+  const blockId = `assistant:${getRpcMessageId(payload.message)}:${contentIndex}`;
+  processState.assistantBlocksWithDeltas.add(blockId);
+  processState.activeAssistantBlockId = blockId;
+  return blockId;
+}
+
+function extractMessageText(message) {
+  if (!message) return '';
+  if (typeof message.content === 'string') return message.content;
+  if (!Array.isArray(message.content)) return '';
+  return message.content
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item?.type === 'text') return item.text ?? '';
+      if (item?.type === 'thinking') return item.thinking ?? '';
+      if (item?.type === 'toolCall') return `Tool call: ${item.name ?? 'tool'}`;
+      if (typeof item?.text === 'string') return item.text;
+      if (typeof item?.content === 'string') return item.content;
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function extractCustomMessageText(message) {
+  if (typeof message?.content === 'string') return message.content;
+  if (typeof message?.text === 'string') return message.text;
+  if (typeof message?.message === 'string') return message.message;
+  return '';
+}
+
+function getToolText(result) {
+  return result?.content?.map((item) => (item.type === 'text' ? item.text : '')).join('') ?? '';
+}
+
+function normalizeLiveRpcEvent(processState, payload) {
+  if (payload.type === 'agent_start') {
+    return [{ kind: 'system', blockId: 'agent:status', mode: 'replace', content: 'Pi started processing.', rawPayload: payload }];
+  }
+  if (payload.type === 'agent_end') {
+    return [{ kind: 'system', blockId: 'agent:status', mode: 'final', content: 'Pi finished processing.', rawPayload: payload }];
+  }
+  if (payload.type === 'message_update') {
+    const delta = payload.assistantMessageEvent;
+    if (delta?.type === 'text_delta' || delta?.type === 'thinking_delta') {
+      return [{
+        kind: 'assistant',
+        blockId: getAssistantBlockId(processState, payload, delta.contentIndex ?? 0),
+        mode: 'append',
+        title: delta.type === 'thinking_delta' ? 'Thinking' : 'Pi',
+        content: delta.delta ?? '',
+        rawPayload: payload
+      }];
+    }
+    if (delta?.type === 'toolcall_start' || delta?.type === 'toolcall_end') {
+      const toolCall = delta.toolCall ?? delta.partial?.content?.find((item) => item?.type === 'toolCall');
+      return [{
+        kind: 'tool',
+        blockId: getAssistantBlockId(processState, payload, delta.contentIndex ?? 0),
+        mode: 'replace',
+        title: 'Tool call',
+        content: `Tool call: ${toolCall?.name ?? 'tool'}`,
+        rawPayload: payload
+      }];
+    }
+    if (delta?.type === 'toolcall_delta' && delta.delta) {
+      return [{
+        kind: 'tool',
+        blockId: getAssistantBlockId(processState, payload, delta.contentIndex ?? 0),
+        mode: 'append',
+        title: 'Tool call',
+        content: delta.delta,
+        rawPayload: payload
+      }];
+    }
+    if (delta?.type === 'error') {
+      return [{
+        kind: 'error',
+        blockId: `assistant-error:${getRpcMessageId(payload.message)}`,
+        mode: 'final',
+        content: delta.reason ?? 'Pi assistant message failed.',
+        rawPayload: payload
+      }];
+    }
+  }
+  if (payload.type === 'tool_execution_start' || payload.type === 'tool_execution_update' || payload.type === 'tool_execution_end') {
+    return [{
+      kind: payload.isError ? 'error' : 'tool',
+      blockId: `tool:${payload.toolCallId ?? randomUUID()}`,
+      mode: payload.type === 'tool_execution_end' ? 'final' : 'replace',
+      toolCallId: payload.toolCallId,
+      toolName: payload.toolName,
+      title: payload.toolName ? `Tool: ${payload.toolName}` : 'Tool',
+      content: getToolText(payload.result ?? payload.partialResult) || (payload.toolName ? `Running ${payload.toolName}...` : 'Running tool...'),
+      rawPayload: payload
+    }];
+  }
+  return [];
 }
 
 function registerIpcHandlers() {
@@ -1020,7 +1020,6 @@ function registerIpcHandlers() {
 
   ipcMain.handle('settings:update', async (_event, input) => {
     const settings = sanitizeSettings(input);
-
     await writeSettings(settings);
     return getSettingsState(settings);
   });
@@ -1028,26 +1027,15 @@ function registerIpcHandlers() {
   ipcMain.handle('settings:detectPiExecutable', async () => detectPiExecutable());
 
   ipcMain.handle('dialog:pickRepositoryDirectory', async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openDirectory']
-    });
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return ok(null);
-    }
-
-    return ok({ path: result.filePaths[0] });
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    return ok(result.canceled || result.filePaths.length === 0 ? null : { path: result.filePaths[0] });
   });
 
-  ipcMain.handle('repos:list', async () => {
-    const metadata = await readMetadata();
-    return ok(sortRepos(metadata.repos));
-  });
+  ipcMain.handle('repos:list', async () => ok(sortRepos((await readMetadata()).repos)));
 
   ipcMain.handle('repos:add', async (_event, input) => {
     const objectError = requireObject(input);
     if (objectError) return fail('invalid_input', objectError);
-
     const pathError = requireNonEmptyString(input, 'path');
     if (pathError) return fail('invalid_input', pathError);
 
@@ -1061,19 +1049,15 @@ function registerIpcHandlers() {
 
     if (existingRepo) {
       const selectedRepo = { ...existingRepo, lastOpenedAt: now };
-      const repos = metadata.repos.map((repo) => (repo.id === existingRepo.id ? selectedRepo : repo));
-      await writeMetadata({ ...metadata, selectedRepoId: selectedRepo.id, repos });
+      await writeMetadata({
+        ...metadata,
+        selectedRepoId: selectedRepo.id,
+        repos: metadata.repos.map((repo) => (repo.id === selectedRepo.id ? selectedRepo : repo))
+      });
       return ok(selectedRepo);
     }
 
-    const repo = {
-      id: randomUUID(),
-      name: path.basename(repoPath),
-      path: repoPath,
-      addedAt: now,
-      lastOpenedAt: now
-    };
-
+    const repo = { id: randomUUID(), name: path.basename(repoPath), path: repoPath, addedAt: now, lastOpenedAt: now };
     await writeMetadata({ ...metadata, selectedRepoId: repo.id, repos: [...metadata.repos, repo] });
     return ok(repo);
   });
@@ -1081,7 +1065,6 @@ function registerIpcHandlers() {
   ipcMain.handle('repos:select', async (_event, input) => {
     const objectError = requireObject(input);
     if (objectError) return fail('invalid_input', objectError);
-
     const repoIdError = requireNonEmptyString(input, 'repoId');
     if (repoIdError) return fail('invalid_input', repoIdError);
 
@@ -1090,218 +1073,139 @@ function registerIpcHandlers() {
     if (!repo) return fail('repo_not_found', 'Repository could not be found.');
 
     const selectedRepo = { ...repo, lastOpenedAt: new Date().toISOString() };
-    const repos = metadata.repos.map((item) => (item.id === selectedRepo.id ? selectedRepo : item));
-
-    await writeMetadata({ ...metadata, selectedRepoId: selectedRepo.id, repos });
+    await writeMetadata({
+      ...metadata,
+      selectedRepoId: selectedRepo.id,
+      repos: metadata.repos.map((item) => (item.id === selectedRepo.id ? selectedRepo : item))
+    });
     return ok(selectedRepo);
   });
 
   ipcMain.handle('sessions:list', async (_event, input) => {
     const objectError = requireObject(input);
     if (objectError) return fail('invalid_input', objectError);
+    const repoIdError = requireNonEmptyString(input, 'repoId');
+    if (repoIdError) return fail('invalid_input', repoIdError);
 
+    const metadata = await readMetadata();
+    const repo = findRepo(metadata, input.repoId.trim());
+    if (!repo) return fail('repo_not_found', 'Repository could not be found.');
+
+    return ok(await scanPiSessionsForRepo(repo));
+  });
+
+  ipcMain.handle('sessions:createDraft', async (_event, input) => {
+    const objectError = requireObject(input);
+    if (objectError) return fail('invalid_input', objectError);
     const repoIdError = requireNonEmptyString(input, 'repoId');
     if (repoIdError) return fail('invalid_input', repoIdError);
 
     const metadata = await readMetadata();
     if (!findRepo(metadata, input.repoId.trim())) return fail('repo_not_found', 'Repository could not be found.');
-
-    return ok(metadata.sessions.filter((session) => session.repoId === input.repoId.trim()));
-  });
-
-  ipcMain.handle('sessions:create', async (_event, input) => {
-    const objectError = requireObject(input);
-    if (objectError) return fail('invalid_input', objectError);
-
-    const repoIdError = requireNonEmptyString(input, 'repoId');
-    if (repoIdError) return fail('invalid_input', repoIdError);
-
-    const metadata = await readMetadata();
-    const repoId = input.repoId.trim();
-    const repo = findRepo(metadata, repoId);
-    if (!repo) return fail('repo_not_found', 'Repository could not be found.');
-
-    const now = new Date().toISOString();
-    const title = typeof input.title === 'string' && input.title.trim() ? input.title.trim() : 'New session';
-    const session = {
-      id: randomUUID(),
-      repoId,
-      harness: 'pi',
-      harnessSessionPath: '',
-      title,
-      createdAt: now,
-      updatedAt: now,
-      status: 'idle',
-      titleSource: typeof input.title === 'string' && input.title.trim() ? 'user' : 'local'
-    };
-
-    const repos = metadata.repos.map((item) =>
-      item.id === repo.id ? { ...item, selectedSessionId: session.id, lastOpenedAt: now } : item
-    );
-
-    await writeMetadata({
-      ...metadata,
-      selectedRepoId: repo.id,
-      repos,
-      sessions: [...metadata.sessions, session]
-    });
-    return ok(session);
+    return ok(createDraftSession(input.repoId.trim()));
   });
 
   ipcMain.handle('sessions:select', async (_event, input) => {
     const objectError = requireObject(input);
     if (objectError) return fail('invalid_input', objectError);
-
     const repoIdError = requireNonEmptyString(input, 'repoId');
     if (repoIdError) return fail('invalid_input', repoIdError);
-
     const sessionIdError = requireNonEmptyString(input, 'sessionId');
     if (sessionIdError) return fail('invalid_input', sessionIdError);
 
-    const metadata = await readMetadata();
-    const repoId = input.repoId.trim();
-    const sessionId = input.sessionId.trim();
-    const repo = findRepo(metadata, repoId);
-    if (!repo) return fail('repo_not_found', 'Repository could not be found.');
+    const result = await getRepoAndSession(input);
+    if (result.error) return result.error;
 
-    const session = findSession(metadata, sessionId);
-    if (!session) return fail('session_not_found', 'Session could not be found.');
-    if (session.repoId !== repoId) return fail('session_repo_mismatch', 'Session does not belong to this repository.');
+    await writeMetadata({
+      ...result.metadata,
+      selectedRepoId: result.repo.id,
+      repos: result.metadata.repos.map((repo) =>
+        repo.id === result.repo.id ? { ...repo, selectedSessionPath: result.session.harnessSessionPath } : repo
+      )
+    });
 
-    const repos = metadata.repos.map((item) =>
-      item.id === repo.id ? { ...item, selectedSessionId: session.id, lastOpenedAt: new Date().toISOString() } : item
-    );
+    return ok(result.session);
+  });
 
-    await writeMetadata({ ...metadata, selectedRepoId: repo.id, repos });
-    return ok(session);
+  ipcMain.handle('sessions:getLocalMessages', async (_event, input) => {
+    try {
+      const objectError = requireObject(input);
+      if (objectError) return fail('invalid_input', objectError);
+      const sessionPathError = requireNonEmptyString(input, 'sessionPath');
+      if (sessionPathError) return fail('invalid_input', sessionPathError);
+      if (input.sessionId?.startsWith('draft:')) {
+        return ok(createMessagesResult({ messages: [] }, { id: input.sessionId, harnessSessionPath: '' }, { source: 'jsonl' }));
+      }
+
+      const result = await getRepoAndSessionForMessages(input);
+      if (result.error) return result.error;
+      return ok(await loadLocalSessionMessages(result.session));
+    } catch (error) {
+      return fail(error.code || 'pi_local_messages_failed', error.message);
+    }
   });
 
   ipcMain.handle('sessions:getMessages', async (_event, input) => {
-    const objectError = requireObject(input);
-    if (objectError) return fail('invalid_input', objectError);
+    try {
+      const objectError = requireObject(input);
+      if (objectError) return fail('invalid_input', objectError);
+      if (input.sessionId?.startsWith('draft:')) {
+        return ok(createMessagesResult({ messages: [] }, { id: input.sessionId, harnessSessionPath: '' }, { source: 'rpc' }));
+      }
 
-    const sessionIdError = requireNonEmptyString(input, 'sessionId');
-    if (sessionIdError) return fail('invalid_input', sessionIdError);
+      const result = await getRepoAndSessionForMessages(input);
+      if (result.error) return result.error;
 
-    const metadata = await readMetadata();
-    const sessionId = input.sessionId.trim();
-    const session = findSession(metadata, sessionId);
-    if (!session) return fail('session_not_found', 'Session could not be found.');
+      const settingsState = await getSettingsState();
+      if (settingsState.validation.status !== 'valid') {
+        return fail('invalid_pi_path', settingsState.validation.message);
+      }
 
-    return ok(await readPiSessionTranscriptEvents(session));
-  });
+      return ok(await loadSessionMessagesOnce(result.session, result.repo, settingsState.settings));
+    } catch (error) {
+      const objectError = requireObject(input);
+      if (objectError || input.sessionId?.startsWith('draft:')) return fail(error.code || 'pi_get_messages_failed', error.message);
 
-  ipcMain.handle('sessions:updateTitle', async (_event, input) => {
-    const objectError = requireObject(input);
-    if (objectError) return fail('invalid_input', objectError);
+      const fallback = await getRepoAndSessionForMessages(input).catch(() => null);
+      if (fallback?.session) {
+        return ok(createDiagnosticMessagesResult(fallback.session, 'Pi message load failed', error.message));
+      }
 
-    const sessionIdError = requireNonEmptyString(input, 'sessionId');
-    if (sessionIdError) return fail('invalid_input', sessionIdError);
-
-    const titleError = requireNonEmptyString(input, 'title');
-    if (titleError) return fail('invalid_input', titleError);
-
-    const updated = await updateSession(input.sessionId.trim(), () => ({ title: input.title.trim(), titleSource: 'user' }));
-    if (!updated) return fail('session_not_found', 'Session could not be found.');
-    return ok(updated);
+      return fail(error.code || 'pi_get_messages_failed', error.message);
+    }
   });
 
   ipcMain.handle('sessions:sendMessage', async (_event, input) => {
     const objectError = requireObject(input);
     if (objectError) return fail('invalid_input', objectError);
-
+    const repoIdError = requireNonEmptyString(input, 'repoId');
+    if (repoIdError) return fail('invalid_input', repoIdError);
     const sessionIdError = requireNonEmptyString(input, 'sessionId');
     if (sessionIdError) return fail('invalid_input', sessionIdError);
-
     const promptError = requireNonEmptyString(input, 'prompt');
     if (promptError) return fail('invalid_input', promptError);
 
-    const sessionId = input.sessionId.trim();
-    const prompt = input.prompt.trim();
-    const metadata = await readMetadata();
-    const session = findSession(metadata, sessionId);
-    if (!session) return fail('session_not_found', 'Session could not be found.');
+    const ready = await ensureProcessForSession(input);
+    if (ready.error) return ready.error;
 
-    const repo = findRepo(metadata, session.repoId);
-    if (!repo) return fail('repo_not_found', 'Repository could not be found.');
-
-    const settingsState = await getSettingsState(metadata.settings);
-    if (settingsState.validation.status !== 'valid') {
-      return fail('invalid_pi_path', settingsState.validation.message);
-    }
-
-    if (session.titleSource !== 'user' && session.title === 'New session') {
-      await updateSession(sessionId, () => ({ title: derivePromptTitle(prompt), titleSource: 'local' }));
-    }
-
-    await emitTranscriptEvent(sessionId, {
+    emitTranscriptEvent(ready.session.id, {
       kind: 'user',
       blockId: `user:${randomUUID()}`,
       mode: 'final',
-      content: prompt
+      content: input.prompt.trim()
     });
 
     try {
-      const runningProcess = await getOrStartPiRpcProcess(session, repo, metadata.settings);
-      const command = { type: 'prompt', message: prompt };
-      if (runningProcess.isStreaming) command.streamingBehavior = 'steer';
-      sendRpcCommand(runningProcess, command, { internal: true });
-      return ok({ accepted: true });
+      await requestRpc(ready.processState, { type: 'prompt', message: input.prompt.trim() });
+      const state = await requestRpc(ready.processState, { type: 'get_state' }).catch(() => null);
+      const sessionPath = typeof state?.sessionFile === 'string' ? state.sessionFile : ready.session.harnessSessionPath;
+      return ok({ accepted: true, sessionPath });
     } catch (error) {
-      await emitTranscriptEvent(sessionId, {
-        kind: 'error',
-        blockId: `process:${randomUUID()}`,
-        mode: 'final',
-        content: error.message
-      });
-      await updateSession(sessionId, () => ({ status: 'error' }));
-      return fail('pi_start_failed', error.message);
+      return fail('pi_prompt_failed', error.message);
     }
   });
 
-  ipcMain.handle('files:resolveMentions', async (_event, input) => {
-    const objectError = requireObject(input);
-    if (objectError) return fail('invalid_input', objectError);
-
-    const repoIdError = requireNonEmptyString(input, 'repoId');
-    if (repoIdError) return fail('invalid_input', repoIdError);
-
-    if (typeof input.prompt !== 'string') return fail('invalid_input', 'prompt is required.');
-
-    const metadata = await readMetadata();
-    if (!findRepo(metadata, input.repoId.trim())) return fail('repo_not_found', 'Repository could not be found.');
-
-    return ok({ prompt: input.prompt, mentions: [] });
-  });
-
-  ipcMain.handle('pi:stopSession', async (_event, input) => {
-    const objectError = requireObject(input);
-    if (objectError) return fail('invalid_input', objectError);
-
-    const sessionIdError = requireNonEmptyString(input, 'sessionId');
-    if (sessionIdError) return fail('invalid_input', sessionIdError);
-
-    const sessionId = input.sessionId.trim();
-    const metadata = await readMetadata();
-    if (!findSession(metadata, sessionId)) return fail('session_not_found', 'Session could not be found.');
-
-    const runningProcess = runningProcesses.get(sessionId);
-    if (!runningProcess) return fail('no_running_process', 'There is no running Pi process for this session.');
-
-    runningProcess.intentionalStop = true;
-    try {
-      sendRpcCommand(runningProcess, { type: 'abort' }, { internal: true });
-    } catch {
-      // Fall through to process termination.
-    }
-
-    setTimeout(() => {
-      if (!runningProcess.child.killed) runningProcess.child.kill();
-    }, 1000);
-
-    await updateSession(sessionId, () => ({ status: 'idle' }));
-    return ok({ stopped: true });
-  });
+  ipcMain.handle('pi:stop', async () => ok({ stopped: await stopActiveProcess({ abort: true }) }));
 }
 
 function createWindow() {
@@ -1330,14 +1234,14 @@ app.whenReady().then(() => {
   createWindow();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
+app.on('before-quit', () => {
+  void stopActiveProcess({ abort: true });
+});
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
