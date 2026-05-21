@@ -1,119 +1,63 @@
-# H3 Code
+# H3Code
 
-H3 Code is a local desktop UI shell for managing Pi agent sessions across local repositories.
+H3Code is an MVP-stage local desktop UI shell for PI Agent in RPC mode.
 
-The project is currently in MVP planning. The first product target is **Pi Desk**: a desktop app that lets a user select a repo, run their locally installed Pi executable in that repo, stream Pi output into a chat-style session view, and return to saved Pi sessions later.
+The desktop app is being rewritten from scratch. The previous desktop implementation has been intentionally removed so the new Electron and SvelteKit app can be rebuilt around a thin PI RPC integration instead of older app-owned session behavior.
 
-H3 Code is not an AI coding agent, Codex clone, model provider, or custom inference backend. Pi owns agent behavior, model routing, tool execution, code editing, extensions, and canonical session history. H3 Code owns the desktop experience around Pi.
+The web and marketing app are preserved.
 
-## MVP Scope
+## Product Direction
 
-The MVP should support:
+H3Code Desktop should be a local UI wrapper around PI Agent, not a replacement for it.
 
-- Adding and selecting local repositories.
-- Configuring the path to the local Pi executable.
-- Creating and resuming Pi sessions for a selected repo.
-- Sending chat-style prompts to Pi.
-- Running Pi with the selected repo as the working directory.
-- Streaming Pi stdout and stderr into the session transcript.
-- Saving repos, session metadata, Pi session pointers, and settings locally.
-- Switching between repos and sessions.
-- Expanding simple slash commands.
-- Resolving basic `@file` mentions into prompt context.
+PI Agent owns:
 
-The detailed MVP brief lives in [Docs/pi-desk-mvp.md](Docs/pi-desk-mvp.md).
+- Sessions and canonical message history.
+- Agent behavior, tools, model behavior, queueing, compaction, and retry.
+- Tool execution state and results.
 
-## Non-Goals
+H3Code owns:
 
-The MVP intentionally avoids:
+- Electron process lifecycle.
+- PI RPC connection state and diagnostics.
+- Repo/workspace selection.
+- UI state and rendering.
+- Minimal local preferences.
 
-- Direct Codex integration.
-- Direct model provider integration.
-- Custom AI backend.
-- Cloud sync.
-- User accounts.
-- Remote sandboxes.
-- Full IDE/editor features.
-- Complex diff review UI.
-- Linear or GitHub integrations.
-- Plugin marketplace.
-- Team or collaboration features.
-- Automatic commits.
-- Multi-agent orchestration.
+The canonical MVP brief lives in [docs/h3code-desktop-mvp.md](docs/h3code-desktop-mvp.md).
 
-## Planned Stack
+## MVP Focus
 
-- npm workspaces monorepo
-- Turborepo for workspace task orchestration and Vercel-friendly builds
-- SvelteKit
+The first desktop rebuild should prove one loop:
+
+1. Select a local repo.
+2. Launch or connect to `pi --mode rpc` with that repo as the working directory.
+3. Load PI state and messages with `get_state` and `get_messages`.
+4. Send prompts through PI RPC.
+5. Stream assistant output and tool activity into the UI.
+6. Abort active runs and start fresh PI-owned sessions.
+
+The MVP explicitly defers SQL indexing, multi-provider support, Codex support, custom message storage, custom session storage, and app-owned transcript persistence.
+
+## Current Repository Shape
+
+```txt
+apps/
+  web/            # SvelteKit marketing site
+docs/
+  h3code-desktop-mvp.md
+```
+
+`apps/desktop` is intentionally absent until the clean desktop rebuild is scaffolded.
+
+## Planned Desktop Stack
+
 - Electron
+- SvelteKit
 - TypeScript
 - Tailwind CSS
-- Local JSON persistence for the first MVP, with SQLite deferred until metadata/search needs justify it
-
-The repository should support both the desktop app and a future marketing site without coupling the two apps. Turborepo should coordinate build, dev, lint, and check tasks across workspaces without adding product architecture.
-
-Planned monorepo shape:
-
-```txt
-apps/
-  desktop/        # SvelteKit + Electron app
-  web/            # SvelteKit marketing site
-packages/
-  config/         # shared TypeScript, lint, Tailwind config when useful
-  ui/             # shared UI only after duplication appears
-```
-
-Keep Electron, Pi process management, local filesystem access, and session parsing inside `apps/desktop`. The marketing site should not import desktop internals.
-
-Deploy web-facing SvelteKit surfaces through Vercel first. Electron packaging and distribution remain a separate desktop release path.
-
-## Core Flow
-
-1. Open H3 Code.
-2. Configure the Pi executable path.
-3. Add a local repository.
-4. Select the repo.
-5. Create a session.
-6. Send a prompt.
-7. H3 Code runs Pi in the repo directory.
-8. Pi output streams into the transcript.
-9. H3 Code records local session metadata and a pointer to Pi's canonical session file.
-10. Return later and continue the same session.
-
-## Product Boundary
-
-Pi handles:
-
-- Agent behavior.
-- Codex/subscription/model routing.
-- Tool execution.
-- Code editing.
-- Extensions.
-- Canonical session transcripts and resume state.
-
-H3 Code handles:
-
-- Desktop UI.
-- Local repo management.
-- Session management.
-- Running Pi in the selected repo.
-- Streaming Pi output.
-- Local repo/session index.
-- Pointers to Pi session files.
-- Slash command expansion.
-- Basic file mention expansion.
-- Local settings.
-
-## Project Structure
-
-```txt
-apps/
-  desktop/        # SvelteKit renderer plus Electron dev shell
-  web/            # SvelteKit marketing site placeholder
-```
-
-Shared packages should only be added when duplication makes them useful.
+- PI Agent RPC over stdin/stdout JSONL
+- Minimal local JSON preferences for desktop settings
 
 ## Local Development
 
@@ -123,16 +67,15 @@ Install dependencies:
 npm install
 ```
 
-Run both workspace dev tasks through Turborepo:
+Run all workspace dev tasks:
 
 ```bash
 npm run dev
 ```
 
-Run a single app:
+Run the web app:
 
 ```bash
-npm run dev:desktop
 npm run dev:web
 ```
 
@@ -144,11 +87,4 @@ npm run lint
 npm run build
 ```
 
-The desktop app currently uses a development-only Electron wrapper around the
-SvelteKit renderer. Packaging, signing, and release tooling are intentionally
-deferred until the Pi Desk MVP behavior is further along.
-
-## Status
-
-This repository contains the project direction, MVP brief, and initial app
-scaffold. Product implementation is next.
+Desktop commands will be added back when the new desktop app is scaffolded.
