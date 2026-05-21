@@ -3,13 +3,11 @@ type RepositoryState = {
   selectedRepo: Repo | null;
   sessions: Session[];
   selectedSession: Session | null;
+  messagesByTranscriptKey: Record<string, TranscriptMessage[]>;
+  liveEventsByTranscriptKey: Record<string, TranscriptEvent[]>;
+  transcriptLoadToken: string;
   repoPathInput: string;
-  sessionTitleInput: string;
   promptInput: string;
-  renameTitleInput: string;
-  transcriptEventsBySessionId: Record<string, TranscriptEvent[]>;
-  pendingLocalEventIds: string[];
-  lastMainTranscriptEventAt: number;
   loadingTranscriptSessionId: string;
   repoError: string;
   sessionError: string;
@@ -22,13 +20,11 @@ type RepositoryState = {
   isSelectingRepoId: string;
   isSelectingSessionId: string;
   isAddRepoOpen: boolean;
-  isCreateSessionOpen: boolean;
   isSendingPrompt: boolean;
   isStoppingSession: boolean;
-  isRenamingSession: boolean;
-  editingSessionTitleId: string;
   unsubscribeTranscriptEvents: (() => void) | null;
   unsubscribeSessionUpdates: (() => void) | null;
+  unsubscribeMessagesUpdated: (() => void) | null;
 };
 
 export const repositoryState = $state<RepositoryState>({
@@ -36,13 +32,11 @@ export const repositoryState = $state<RepositoryState>({
   selectedRepo: null,
   sessions: [],
   selectedSession: null,
+  messagesByTranscriptKey: {},
+  liveEventsByTranscriptKey: {},
+  transcriptLoadToken: '',
   repoPathInput: '',
-  sessionTitleInput: '',
   promptInput: '',
-  renameTitleInput: '',
-  transcriptEventsBySessionId: {},
-  pendingLocalEventIds: [],
-  lastMainTranscriptEventAt: 0,
   loadingTranscriptSessionId: '',
   repoError: '',
   sessionError: '',
@@ -55,106 +49,81 @@ export const repositoryState = $state<RepositoryState>({
   isSelectingRepoId: '',
   isSelectingSessionId: '',
   isAddRepoOpen: false,
-  isCreateSessionOpen: false,
   isSendingPrompt: false,
   isStoppingSession: false,
-  isRenamingSession: false,
-  editingSessionTitleId: '',
   unsubscribeTranscriptEvents: null,
-  unsubscribeSessionUpdates: null
+  unsubscribeSessionUpdates: null,
+  unsubscribeMessagesUpdated: null
 });
 
-export function canAddRepository() {
-  return repositoryState.repoPathInput.trim().length > 0 && !repositoryState.isAddingRepo;
+export function getTranscriptKey(session: Session | null) {
+  if (!session) return '';
+  return session.harnessSessionPath || session.id;
 }
 
-export function canCreateSession() {
-  return !!repositoryState.selectedRepo && !repositoryState.isCreatingSession;
-}
-
-function createLocalTranscriptEvent(
-  sessionId: string,
-  event: Omit<TranscriptEvent, 'id' | 'sessionId' | 'createdAt'>
-): TranscriptEvent {
-  return {
-    id: `local-${crypto.randomUUID()}`,
-    sessionId,
-    createdAt: new Date().toISOString(),
-    ...event
+function setMessages(transcriptKey: string, messages: TranscriptMessage[]) {
+  repositoryState.messagesByTranscriptKey = {
+    ...repositoryState.messagesByTranscriptKey,
+    [transcriptKey]: messages
   };
 }
 
-function setTranscriptEvents(sessionId: string, events: TranscriptEvent[]) {
-  repositoryState.transcriptEventsBySessionId = {
-    ...repositoryState.transcriptEventsBySessionId,
-    [sessionId]: events
+function setLiveEvents(transcriptKey: string, events: TranscriptEvent[]) {
+  repositoryState.liveEventsByTranscriptKey = {
+    ...repositoryState.liveEventsByTranscriptKey,
+    [transcriptKey]: events
   };
 }
 
 function mergeTranscriptEvents(existing: TranscriptEvent[], incoming: TranscriptEvent[]) {
   const eventsById = new Map<string, TranscriptEvent>();
-
   for (const event of existing) eventsById.set(event.id, event);
   for (const event of incoming) eventsById.set(event.id, event);
-
   return [...eventsById.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-function appendTranscriptEvent(event: TranscriptEvent) {
-  const existing = repositoryState.transcriptEventsBySessionId[event.sessionId] ?? [];
-  setTranscriptEvents(event.sessionId, mergeTranscriptEvents(existing, [event]));
-}
-
-function replaceLocalUserEvent(event: TranscriptEvent) {
-  const existing = repositoryState.transcriptEventsBySessionId[event.sessionId] ?? [];
-  const pendingIndex = existing.findIndex(
-    (item) =>
-      item.id.startsWith('local-') &&
-      item.kind === 'user' &&
-      item.content === event.content
-  );
-
-  if (pendingIndex === -1) {
-    appendTranscriptEvent(event);
-    return;
-  }
-
-  const nextEvents = [...existing];
-  nextEvents[pendingIndex] = event;
-  setTranscriptEvents(event.sessionId, mergeTranscriptEvents([], nextEvents));
+function appendLiveEvent(event: TranscriptEvent) {
+  const matchingSession =
+    repositoryState.selectedSession?.id === event.sessionId
+      ? repositoryState.selectedSession
+      : (repositoryState.sessions.find((session) => session.id === event.sessionId) ?? null);
+  const transcriptKey = getTranscriptKey(matchingSession) || event.sessionId;
+  setLiveEvents(transcriptKey, mergeTranscriptEvents(repositoryState.liveEventsByTranscriptKey[transcriptKey] ?? [], [event]));
 }
 
 export function initializeSessionEventListeners() {
   if (!window.h3code?.sessions) {
-    repositoryState.promptError = 'Transcript streaming is only available in the desktop app.';
+    repositoryState.promptError = 'Pi sessions are only available in the desktop app.';
     return;
   }
+
   if (!repositoryState.unsubscribeTranscriptEvents) {
     repositoryState.unsubscribeTranscriptEvents = window.h3code.sessions.onTranscriptEvent((event) => {
-      repositoryState.lastMainTranscriptEventAt = Date.now();
-      if (event.kind === 'user') {
-        repositoryState.pendingLocalEventIds = repositoryState.pendingLocalEventIds.filter(
-          (id) => !id.startsWith(`${event.sessionId}:`)
-        );
-        replaceLocalUserEvent(event);
-        return;
-      }
-
-      appendTranscriptEvent(event);
+      appendLiveEvent(event);
     });
   }
 
   if (!repositoryState.unsubscribeSessionUpdates) {
     repositoryState.unsubscribeSessionUpdates = window.h3code.sessions.onSessionUpdated((session) => {
-      repositoryState.sessions = repositoryState.sessions.map((item) => (item.id === session.id ? session : item));
-      if (repositoryState.selectedSession?.id === session.id) repositoryState.selectedSession = session;
+      repositoryState.sessions = repositoryState.sessions.map((item) =>
+        item.id === session.id || item.harnessSessionPath === session.harnessSessionPath ? { ...item, status: session.status } : item
+      );
+      if (
+        repositoryState.selectedSession?.id === session.id ||
+        repositoryState.selectedSession?.harnessSessionPath === session.harnessSessionPath
+      ) {
+        repositoryState.selectedSession = { ...repositoryState.selectedSession, status: session.status };
+      }
     });
   }
-}
 
-export function openCreateSession() {
-  repositoryState.sessionError = '';
-  repositoryState.isCreateSessionOpen = true;
+  if (!repositoryState.unsubscribeMessagesUpdated) {
+    repositoryState.unsubscribeMessagesUpdated = window.h3code.sessions.onMessagesUpdated((payload) => {
+      const transcriptKey = payload.meta.sessionPath || payload.meta.sessionId;
+      setMessages(transcriptKey, payload.messages);
+      setLiveEvents(transcriptKey, []);
+    });
+  }
 }
 
 export async function loadRepositories() {
@@ -172,8 +141,7 @@ export async function loadRepositories() {
   try {
     const metadata = await window.h3code.metadata.get();
     const repos = sortRepos(metadata.repos);
-    const selectedRepo =
-      repos.find((repo) => repo.id === metadata.selectedRepoId) ?? repos[0] ?? null;
+    const selectedRepo = repos.find((repo) => repo.id === metadata.selectedRepoId) ?? repos[0] ?? null;
 
     repositoryState.repos = repos;
     repositoryState.selectedRepo = selectedRepo;
@@ -202,15 +170,11 @@ export async function pickRepositoryDirectory() {
 
   try {
     const result = await window.h3code.dialog.pickRepositoryDirectory();
-
     if (!result.ok) {
       repositoryState.repoError = 'Could not open folder picker.';
       return;
     }
-
-    if (result.data) {
-      repositoryState.repoPathInput = result.data.path;
-    }
+    if (result.data) repositoryState.repoPathInput = result.data.path;
   } catch {
     repositoryState.repoError = 'Could not open folder picker.';
   } finally {
@@ -234,13 +198,11 @@ export async function addRepository() {
 
   try {
     const result = await window.h3code.repos.add({ path: repositoryState.repoPathInput });
-
     if (!result.ok) {
       repositoryState.repoError = getRepoErrorMessage(result.error.code);
       return;
     }
 
-    repositoryState.selectedRepo = result.data;
     repositoryState.repoPathInput = '';
     repositoryState.isAddRepoOpen = false;
     await loadRepositories();
@@ -261,16 +223,13 @@ export async function selectRepository(repo: Repo) {
 
   try {
     const result = await window.h3code.repos.select({ repoId: repo.id });
-
     if (!result.ok) {
       repositoryState.repoError = 'Could not select repository. Try again.';
       return;
     }
 
     repositoryState.selectedRepo = result.data;
-    await loadRepositories();
-    repositoryState.selectedRepo = repositoryState.repos.find((item) => item.id === result.data.id) ?? result.data;
-    await loadSessionsForRepo(repositoryState.selectedRepo);
+    await loadSessionsForRepo(result.data);
   } catch {
     repositoryState.repoError = 'Could not select repository. Try again.';
   } finally {
@@ -280,60 +239,54 @@ export async function selectRepository(repo: Repo) {
 
 export async function createSession() {
   if (!window.h3code?.sessions || !repositoryState.selectedRepo) {
-    repositoryState.sessionError = 'Select a repository before creating a session.';
+    repositoryState.sessionError = 'Select a repository before starting a chat.';
     return;
   }
 
-  const title = repositoryState.sessionTitleInput.trim();
   repositoryState.isCreatingSession = true;
   repositoryState.sessionError = '';
 
   try {
-    const result = await window.h3code.sessions.create({ repoId: repositoryState.selectedRepo.id, title: title || undefined });
-
-    if (!result.ok) {
-      repositoryState.sessionError = getSessionErrorMessage(result.error.code);
-      return;
-    }
-
-    repositoryState.sessionTitleInput = '';
-    repositoryState.isCreateSessionOpen = false;
-    await loadSessionsForRepo(repositoryState.selectedRepo, result.data.id);
-  } catch {
-    repositoryState.sessionError = 'Could not create session. Try again.';
-  } finally {
-    repositoryState.isCreatingSession = false;
-  }
-}
-
-export async function selectSession(session: Session) {
-  if (!window.h3code?.sessions || !repositoryState.selectedRepo || repositoryState.selectedSession?.id === session.id) {
-    return;
-  }
-
-  repositoryState.isSelectingSessionId = session.id;
-  repositoryState.sessionError = '';
-
-  try {
-    const result = await window.h3code.sessions.select({
-      repoId: repositoryState.selectedRepo.id,
-      sessionId: session.id
-    });
-
+    const result = await window.h3code.sessions.createDraft({ repoId: repositoryState.selectedRepo.id });
     if (!result.ok) {
       repositoryState.sessionError = getSessionErrorMessage(result.error.code);
       return;
     }
 
     repositoryState.selectedSession = result.data;
-    repositoryState.selectedRepo = {
-      ...repositoryState.selectedRepo,
-      selectedSessionId: result.data.id
-    };
-    repositoryState.sessions = repositoryState.sessions.map((item) =>
-      item.id === result.data.id ? result.data : item
-    );
-    await loadTranscriptForSession(result.data.id);
+    repositoryState.sessions = [result.data, ...repositoryState.sessions.filter((session) => !session.isDraft)];
+    setMessages(getTranscriptKey(result.data), []);
+    setLiveEvents(getTranscriptKey(result.data), []);
+  } catch {
+    repositoryState.sessionError = 'Could not start a new chat.';
+  } finally {
+    repositoryState.isCreatingSession = false;
+  }
+}
+
+export async function selectSession(session: Session) {
+  if (!window.h3code?.sessions || !repositoryState.selectedRepo || repositoryState.selectedSession?.id === session.id) return;
+
+  const repo = repositoryState.selectedRepo;
+  repositoryState.isSelectingSessionId = session.id;
+  repositoryState.sessionError = '';
+  repositoryState.selectedSession = session;
+  void loadTranscriptForSession(session);
+
+  try {
+    const result = await window.h3code.sessions.select({
+      repoId: repo.id,
+      sessionId: session.id,
+      sessionPath: session.harnessSessionPath
+    });
+    if (!result.ok) {
+      repositoryState.sessionError = getSessionErrorMessage(result.error.code);
+      return;
+    }
+
+    if (repositoryState.selectedSession?.id === session.id) {
+      repositoryState.selectedSession = result.data;
+    }
   } catch {
     repositoryState.sessionError = 'Could not select session. Try again.';
   } finally {
@@ -341,7 +294,7 @@ export async function selectSession(session: Session) {
   }
 }
 
-async function loadSessionsForRepo(repo: Repo, preferredSessionId?: string) {
+async function loadSessionsForRepo(repo: Repo) {
   if (!window.h3code?.sessions) return;
 
   repositoryState.isLoadingSessions = true;
@@ -349,54 +302,109 @@ async function loadSessionsForRepo(repo: Repo, preferredSessionId?: string) {
 
   try {
     const result = await window.h3code.sessions.list({ repoId: repo.id });
-
     if (!result.ok) {
       repositoryState.sessionError = 'Could not load sessions.';
       repositoryState.sessions = [];
       repositoryState.selectedSession = null;
-      repositoryState.loadingTranscriptSessionId = '';
       return;
     }
 
     const sessions = sortSessions(result.data);
     const selectedSession =
-      sessions.find((session) => session.id === preferredSessionId) ??
-      sessions.find((session) => session.id === repo.selectedSessionId) ??
+      sessions.find((session) => session.harnessSessionPath === repo.selectedSessionPath) ??
       sessions[0] ??
       null;
 
     repositoryState.sessions = sessions;
     repositoryState.selectedSession = selectedSession;
-    if (selectedSession) {
-      await loadTranscriptForSession(selectedSession.id);
-    } else {
-      repositoryState.loadingTranscriptSessionId = '';
-    }
+
+    if (selectedSession) await loadTranscriptForSession(selectedSession);
+    else repositoryState.loadingTranscriptSessionId = '';
   } catch {
     repositoryState.sessionError = 'Could not load sessions.';
     repositoryState.sessions = [];
     repositoryState.selectedSession = null;
-    repositoryState.loadingTranscriptSessionId = '';
   } finally {
     repositoryState.isLoadingSessions = false;
   }
 }
 
-export async function loadTranscriptForSession(sessionId: string) {
-  if (!window.h3code?.sessions) return;
+export async function loadTranscriptForSession(session: Session) {
+  if (!window.h3code?.sessions || !repositoryState.selectedRepo) return;
+  const transcriptKey = getTranscriptKey(session);
+  const hasCachedMessages = Object.prototype.hasOwnProperty.call(repositoryState.messagesByTranscriptKey, transcriptKey);
+  const loadToken = `${session.id}:${crypto.randomUUID()}`;
+  repositoryState.transcriptLoadToken = loadToken;
+  if (repositoryState.loadingTranscriptSessionId && repositoryState.loadingTranscriptSessionId !== session.id) {
+    repositoryState.loadingTranscriptSessionId = '';
+  }
 
-  repositoryState.loadingTranscriptSessionId = sessionId;
+  if (session.isDraft) {
+    setMessages(transcriptKey, []);
+    setLiveEvents(transcriptKey, []);
+    repositoryState.loadingTranscriptSessionId = '';
+    return;
+  }
+
+  repositoryState.loadingTranscriptSessionId = hasCachedMessages ? '' : session.id;
+  repositoryState.promptError = '';
 
   try {
-    const result = await window.h3code.sessions.getMessages({ sessionId });
-    if (result.ok) {
-      const existing = repositoryState.transcriptEventsBySessionId[sessionId] ?? [];
-      setTranscriptEvents(sessionId, mergeTranscriptEvents(existing, result.data));
+    if (!hasCachedMessages && session.harnessSessionPath) {
+      const localResult = await window.h3code.sessions.getLocalMessages({
+        repoId: repositoryState.selectedRepo.id,
+        sessionId: session.id,
+        sessionPath: session.harnessSessionPath
+      });
+
+      if (repositoryState.transcriptLoadToken !== loadToken || repositoryState.selectedSession?.id !== session.id) return;
+
+      if (localResult.ok && localResult.data.messages.length > 0 && localResult.data.meta.normalizedMessageCount > 0) {
+        setMessages(localResult.data.meta.sessionPath || transcriptKey, localResult.data.messages);
+        setLiveEvents(localResult.data.meta.sessionPath || transcriptKey, []);
+        if (repositoryState.loadingTranscriptSessionId === session.id) {
+          repositoryState.loadingTranscriptSessionId = '';
+        }
+      }
     }
+
+    const result = await window.h3code.sessions.getMessages({
+      repoId: repositoryState.selectedRepo.id,
+      sessionId: session.id,
+      sessionPath: session.harnessSessionPath
+    });
+
+    if (repositoryState.transcriptLoadToken !== loadToken || repositoryState.selectedSession?.id !== session.id) return;
+
+    if (!result.ok) {
+      if (result.error.code === 'pi_process_stopped') return;
+      setMessages(transcriptKey, [{
+        id: `diagnostic:${Date.now()}`,
+        kind: 'diagnostic',
+        title: 'Pi message load failed',
+        content: result.error.message,
+        createdAt: new Date().toISOString()
+      }]);
+      setLiveEvents(transcriptKey, []);
+      repositoryState.promptError = result.error.message;
+      return;
+    }
+
+    setMessages(result.data.meta.sessionPath || transcriptKey, result.data.messages);
+    setLiveEvents(result.data.meta.sessionPath || transcriptKey, []);
   } catch {
-    repositoryState.promptError = 'Could not load transcript.';
+    if (repositoryState.transcriptLoadToken !== loadToken || repositoryState.selectedSession?.id !== session.id) return;
+    setMessages(transcriptKey, [{
+      id: `diagnostic:${Date.now()}`,
+      kind: 'diagnostic',
+      title: 'Pi message load failed',
+      content: 'Could not load Pi messages.',
+      createdAt: new Date().toISOString()
+    }]);
+    setLiveEvents(transcriptKey, []);
+    repositoryState.promptError = 'Could not load Pi messages.';
   } finally {
-    if (repositoryState.loadingTranscriptSessionId === sessionId) {
+    if (repositoryState.transcriptLoadToken === loadToken && repositoryState.loadingTranscriptSessionId === session.id) {
       repositoryState.loadingTranscriptSessionId = '';
     }
   }
@@ -404,72 +412,43 @@ export async function loadTranscriptForSession(sessionId: string) {
 
 export async function sendPrompt() {
   if (!window.h3code?.sessions || !repositoryState.selectedRepo || !repositoryState.selectedSession) {
-    repositoryState.promptError = 'Select a repository and session before sending.';
+    repositoryState.promptError = 'Select a repository and chat before sending.';
     return;
   }
 
   const prompt = repositoryState.promptInput.trim();
   if (!prompt) return;
 
+  const repo = repositoryState.selectedRepo;
+  const session = repositoryState.selectedSession;
   repositoryState.isSendingPrompt = true;
   repositoryState.promptError = '';
 
-  const sessionId = repositoryState.selectedSession.id;
-  const localUserEvent = createLocalTranscriptEvent(sessionId, {
-    kind: 'user',
-    blockId: `user:${crypto.randomUUID()}`,
-    mode: 'final',
-    content: prompt
-  });
-  appendTranscriptEvent(localUserEvent);
-  repositoryState.pendingLocalEventIds = [...repositoryState.pendingLocalEventIds, `${sessionId}:${prompt}`];
-  const sentAt = Date.now();
-
   try {
     const result = await window.h3code.sessions.sendMessage({
-      sessionId,
+      repoId: repo.id,
+      sessionId: session.id,
+      sessionPath: session.harnessSessionPath,
       prompt
     });
 
     if (!result.ok) {
       repositoryState.promptError = result.error.message;
-      appendTranscriptEvent(
-        createLocalTranscriptEvent(sessionId, {
-          kind: 'error',
-          blockId: `send-error:${crypto.randomUUID()}`,
-          mode: 'final',
-          title: 'Prompt failed',
-          content: result.error.message
-        })
-      );
       return;
     }
 
     repositoryState.promptInput = '';
-    setTimeout(() => {
-      if (repositoryState.selectedSession?.id !== sessionId) return;
-      if (repositoryState.lastMainTranscriptEventAt >= sentAt) return;
-      appendTranscriptEvent(
-        createLocalTranscriptEvent(sessionId, {
-          kind: 'diagnostic',
-          blockId: `diagnostic:${crypto.randomUUID()}`,
-          mode: 'final',
-          title: 'Waiting for Pi events',
-          content: 'Prompt was accepted, but no transcript event has arrived from Pi yet.'
-        })
-      );
-    }, 500);
+
+    if (session.isDraft) {
+      await loadSessionsForRepo(repo);
+    const created = repositoryState.sessions.find((item) => item.harnessSessionPath === result.data.sessionPath);
+      if (created) {
+        repositoryState.selectedSession = created;
+        setLiveEvents(getTranscriptKey(created), repositoryState.liveEventsByTranscriptKey[getTranscriptKey(session)] ?? []);
+      }
+    }
   } catch {
     repositoryState.promptError = 'Could not send prompt to Pi.';
-    appendTranscriptEvent(
-      createLocalTranscriptEvent(sessionId, {
-        kind: 'error',
-        blockId: `send-error:${crypto.randomUUID()}`,
-        mode: 'final',
-        title: 'Prompt failed',
-        content: 'Could not send prompt to Pi.'
-      })
-    );
   } finally {
     repositoryState.isSendingPrompt = false;
   }
@@ -482,47 +461,12 @@ export async function stopSelectedSession() {
   repositoryState.promptError = '';
 
   try {
-    const result = await window.h3code.pi.stopSession({ sessionId: repositoryState.selectedSession.id });
+    const result = await window.h3code.pi.stop();
     if (!result.ok) repositoryState.promptError = result.error.message;
   } catch {
     repositoryState.promptError = 'Could not stop Pi.';
   } finally {
     repositoryState.isStoppingSession = false;
-  }
-}
-
-export function startRenamingSession(session: Session) {
-  repositoryState.editingSessionTitleId = session.id;
-  repositoryState.renameTitleInput = session.title;
-  repositoryState.sessionError = '';
-}
-
-export async function renameSession(session: Session) {
-  if (!window.h3code?.sessions) return;
-  const title = repositoryState.renameTitleInput.trim();
-  if (!title) {
-    repositoryState.sessionError = 'Enter a session title.';
-    return;
-  }
-
-  repositoryState.isRenamingSession = true;
-  repositoryState.sessionError = '';
-
-  try {
-    const result = await window.h3code.sessions.updateTitle({ sessionId: session.id, title });
-    if (!result.ok) {
-      repositoryState.sessionError = getSessionErrorMessage(result.error.code);
-      return;
-    }
-
-    repositoryState.sessions = repositoryState.sessions.map((item) => (item.id === result.data.id ? result.data : item));
-    if (repositoryState.selectedSession?.id === result.data.id) repositoryState.selectedSession = result.data;
-    repositoryState.editingSessionTitleId = '';
-    repositoryState.renameTitleInput = '';
-  } catch {
-    repositoryState.sessionError = 'Could not rename session.';
-  } finally {
-    repositoryState.isRenamingSession = false;
   }
 }
 
@@ -535,7 +479,11 @@ function sortRepos(repos: Repo[]) {
 }
 
 function sortSessions(sessions: Session[]) {
-  return [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return [...sessions].sort((a, b) => {
+    if (a.isDraft && !b.isDraft) return -1;
+    if (!a.isDraft && b.isDraft) return 1;
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
 }
 
 function getRepoErrorMessage(code: string) {
@@ -553,13 +501,11 @@ function getRepoErrorMessage(code: string) {
 function getSessionErrorMessage(code: string) {
   switch (code) {
     case 'invalid_input':
-      return 'Enter a session title.';
+      return 'Enter a valid chat.';
     case 'repo_not_found':
       return 'Select an existing repository.';
     case 'session_not_found':
-      return 'Session could not be found.';
-    case 'session_repo_mismatch':
-      return 'Session does not belong to this repository.';
+      return 'Pi session could not be found.';
     case 'invalid_pi_path':
       return 'Set a valid Pi executable path.';
     default:

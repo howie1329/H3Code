@@ -1,12 +1,12 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte';
   import { BubbleChatFreeIcons, FolderGitFreeIcons, PlusSignFreeIcons } from '@hugeicons/core-free-icons';
-  import { dev } from '$app/environment';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import * as Empty from '$lib/components/ui/empty';
   import {
-    openCreateSession,
+    createSession,
+    getTranscriptKey,
     repositoryState,
     sendPrompt,
     stopSelectedSession
@@ -52,11 +52,31 @@
     return blocks;
   }
 
+  function messageToBlock(message: TranscriptMessage): TranscriptBlock {
+    return {
+      id: message.id,
+      kind: message.kind,
+      title: message.title,
+      content: message.content,
+      createdAt: message.createdAt,
+      updatedAt: message.createdAt,
+      isFinal: true
+    };
+  }
+
+  function blockClass(kind: TranscriptBlock['kind']) {
+    if (kind === 'user') return 'border-primary/20 bg-primary/10';
+    if (kind === 'error') return 'border-destructive/40 bg-destructive/5';
+    if (kind === 'tool') return 'border-border bg-muted/30 text-muted-foreground';
+    if (kind === 'diagnostic' || kind === 'system') return 'border-border/70 bg-background text-muted-foreground';
+    return 'border-border bg-muted/40';
+  }
+
   $: selectedSessionId = repositoryState.selectedSession?.id ?? '';
-  $: transcriptEvents = selectedSessionId
-    ? (repositoryState.transcriptEventsBySessionId[selectedSessionId] ?? [])
-    : [];
-  $: transcriptBlocks = deriveTranscriptBlocks(transcriptEvents);
+  $: selectedTranscriptKey = getTranscriptKey(repositoryState.selectedSession);
+  $: messages = selectedTranscriptKey ? (repositoryState.messagesByTranscriptKey[selectedTranscriptKey] ?? []) : [];
+  $: liveEvents = selectedTranscriptKey ? (repositoryState.liveEventsByTranscriptKey[selectedTranscriptKey] ?? []) : [];
+  $: transcriptBlocks = [...messages.map(messageToBlock), ...deriveTranscriptBlocks(liveEvents)];
   $: isLoadingSelectedTranscript = repositoryState.loadingTranscriptSessionId === selectedSessionId;
   $: canSendPrompt =
     !!repositoryState.selectedRepo &&
@@ -78,7 +98,7 @@
             <HugeiconsIcon icon={FolderGitFreeIcons} size={18} color="currentColor" />
           </Empty.Media>
           <Empty.Title>Loading workspace</Empty.Title>
-          <Empty.Description>Restoring your repositories and sessions.</Empty.Description>
+          <Empty.Description>Restoring your repositories.</Empty.Description>
         </Empty.Header>
       </Empty.Root>
     </section>
@@ -90,7 +110,7 @@
             <HugeiconsIcon icon={FolderGitFreeIcons} size={18} color="currentColor" />
           </Empty.Media>
           <Empty.Title>No repository selected</Empty.Title>
-          <Empty.Description>Add a local repository from the sidebar to create Pi sessions.</Empty.Description>
+          <Empty.Description>Add a local repository from the sidebar to view Pi sessions.</Empty.Description>
         </Empty.Header>
       </Empty.Root>
     </section>
@@ -101,15 +121,15 @@
           <Empty.Media variant="icon">
             <HugeiconsIcon icon={BubbleChatFreeIcons} size={18} color="currentColor" />
           </Empty.Media>
-          <Empty.Title>No sessions yet</Empty.Title>
+          <Empty.Title>No Pi sessions</Empty.Title>
           <Empty.Description>
-            Create a Pi session scoped to {repositoryState.selectedRepo.name}.
+            Start a new chat in {repositoryState.selectedRepo.name}.
           </Empty.Description>
         </Empty.Header>
         <Empty.Content>
-          <Button class="h-8 px-3 text-xs" onclick={openCreateSession}>
+          <Button class="h-8 px-3 text-xs" onclick={createSession}>
             <HugeiconsIcon icon={PlusSignFreeIcons} size={12} color="currentColor" />
-            Create session
+            New chat
           </Button>
         </Empty.Content>
       </Empty.Root>
@@ -120,7 +140,7 @@
         <div class="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span class="truncate">{repositoryState.selectedRepo.name}</span>
           <span aria-hidden="true">/</span>
-          <span class="truncate">{repositoryState.selectedSession.harness}</span>
+          <span class="truncate">{repositoryState.selectedSession.isDraft ? 'draft' : 'pi'}</span>
         </div>
         <h1 class="truncate text-xl font-semibold leading-tight">{repositoryState.selectedSession.title}</h1>
       </div>
@@ -131,40 +151,30 @@
           </Button>
         {/if}
         <div class="rounded-full border border-border px-2.5 py-1 text-[11px] capitalize text-muted-foreground">
-          {repositoryState.selectedSession.status}
+          {repositoryState.selectedSession.isDraft ? 'draft' : repositoryState.selectedSession.status}
         </div>
       </div>
     </header>
 
-    <section class="grid gap-4 border-b border-border/50 p-4 text-xs md:grid-cols-2 xl:grid-cols-4">
+    <section class="grid gap-4 border-b border-border/50 p-4 text-xs md:grid-cols-2 xl:grid-cols-3">
       <div class="min-w-0 space-y-1">
         <div class="text-[11px] text-muted-foreground">Repository</div>
         <div class="truncate font-medium">{repositoryState.selectedRepo.name}</div>
         <div class="truncate text-[11px] text-muted-foreground">{repositoryState.selectedRepo.path}</div>
       </div>
       <div class="min-w-0 space-y-1">
-        <div class="text-[11px] text-muted-foreground">Session ID</div>
+        <div class="text-[11px] text-muted-foreground">Session</div>
         <div class="truncate font-mono text-[11px]">{repositoryState.selectedSession.id}</div>
       </div>
       <div class="min-w-0 space-y-1">
-        <div class="text-[11px] text-muted-foreground">Created</div>
-        <div>{formatDate(repositoryState.selectedSession.createdAt)}</div>
-      </div>
-      <div class="min-w-0 space-y-1">
-        <div class="text-[11px] text-muted-foreground">Pi session path</div>
+        <div class="text-[11px] text-muted-foreground">Pi session file</div>
         <div class="truncate font-mono text-[11px] text-muted-foreground">
-          {repositoryState.selectedSession.harnessSessionPath || 'Pending first Pi run'}
+          {repositoryState.selectedSession.harnessSessionPath || 'Created after first prompt'}
         </div>
       </div>
     </section>
 
     <section class="min-h-0 flex-1 overflow-y-auto p-4">
-      {#if dev}
-        <div class="mb-3 rounded-md border border-border bg-muted/30 px-3 py-2 font-mono text-[11px] text-muted-foreground">
-          session={selectedSessionId || 'none'} raw={transcriptEvents.length} blocks={transcriptBlocks.length} loading={repositoryState.loadingTranscriptSessionId || 'none'}
-        </div>
-      {/if}
-
       {#if isLoadingSelectedTranscript && transcriptBlocks.length === 0}
         <div class="flex min-h-80 items-center justify-center">
           <Empty.Root>
@@ -172,8 +182,8 @@
               <Empty.Media variant="icon">
                 <HugeiconsIcon icon={BubbleChatFreeIcons} size={18} color="currentColor" />
               </Empty.Media>
-              <Empty.Title>Loading transcript</Empty.Title>
-              <Empty.Description>Restoring this Pi session transcript.</Empty.Description>
+              <Empty.Title>Loading messages</Empty.Title>
+              <Empty.Description>Asking Pi for this session transcript.</Empty.Description>
             </Empty.Header>
           </Empty.Root>
         </div>
@@ -184,19 +194,15 @@
               <Empty.Media variant="icon">
                 <HugeiconsIcon icon={BubbleChatFreeIcons} size={18} color="currentColor" />
               </Empty.Media>
-              <Empty.Title>Empty transcript</Empty.Title>
-              <Empty.Description>Send a prompt to start or resume this Pi RPC session.</Empty.Description>
+              <Empty.Title>Empty chat</Empty.Title>
+              <Empty.Description>Send a prompt to start or continue with Pi.</Empty.Description>
             </Empty.Header>
           </Empty.Root>
         </div>
       {:else}
         <div class="mx-auto flex max-w-4xl flex-col gap-3">
           {#each transcriptBlocks as block (block.id)}
-            <article
-              class={`rounded-lg border p-3 text-xs leading-5 ${
-                block.kind === 'error' ? 'border-destructive/40' : 'border-border'
-              } ${block.kind === 'user' ? 'bg-primary/10' : 'bg-muted/40'}`}
-            >
+            <article class={`rounded-lg border p-3 text-xs leading-5 ${blockClass(block.kind)}`}>
               <div class="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                 <span class="capitalize">{block.title || block.kind}</span>
                 <time>{formatDate(block.updatedAt)}</time>
@@ -221,7 +227,7 @@
       <div class="flex gap-2">
         <Input
           class="h-9 min-w-0 flex-1 bg-background text-xs"
-          placeholder="Send a prompt to Pi"
+          placeholder="Send directly to Pi"
           bind:value={repositoryState.promptInput}
           disabled={repositoryState.isSendingPrompt}
         />
