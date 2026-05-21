@@ -9,6 +9,7 @@ node_modules/
 .svelte-kit/
 build/
 dist/
+dist-electron/
 coverage/
 
 npm-debug.log*
