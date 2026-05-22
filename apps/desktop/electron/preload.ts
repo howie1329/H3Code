@@ -1,5 +1,25 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
+
+type PiEventListener = (event: unknown) => void;
+type PiStatusListener = (status: unknown) => void;
 
 contextBridge.exposeInMainWorld("h3code", {
   platform: process.platform,
+  selectRepo: () => ipcRenderer.invoke("repo:select"),
+  connectRepo: (repoPath: string) => ipcRenderer.invoke("pi:connect-repo", repoPath),
+  listSessions: () => ipcRenderer.invoke("pi:list-sessions"),
+  switchSession: (sessionPath: string) => ipcRenderer.invoke("pi:switch-session", sessionPath),
+  newSession: (parentSession?: string) => ipcRenderer.invoke("pi:new-session", parentSession),
+  sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => ipcRenderer.invoke("pi:send-prompt", message, streamingBehavior),
+  abort: () => ipcRenderer.invoke("pi:abort"),
+  onPiEvent: (listener: PiEventListener) => {
+    const handler = (_event: Electron.IpcRendererEvent, piEvent: unknown) => listener(piEvent);
+    ipcRenderer.on("pi:event", handler);
+    return () => ipcRenderer.off("pi:event", handler);
+  },
+  onPiStatus: (listener: PiStatusListener) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: unknown) => listener(status);
+    ipcRenderer.on("pi:status", handler);
+    return () => ipcRenderer.off("pi:status", handler);
+  },
 });
