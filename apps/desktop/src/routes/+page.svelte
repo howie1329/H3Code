@@ -15,12 +15,32 @@
   } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
+  import {
+    PromptInput,
+    PromptInputBody,
+    PromptInputSubmit,
+    PromptInputTextarea,
+    PromptInputToolbar,
+    type PromptInputMessage,
+  } from "$lib/components/ai-elements/prompt-input/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
   const platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
+
+  let promptValue = $state("");
+
+  function handlePromptSubmit(message: PromptInputMessage, event: SubmitEvent) {
+    event.preventDefault();
+
+    if (!message.text?.trim()) {
+      return;
+    }
+
+    promptValue = "";
+  }
 
   const navItems = [
     { label: "Workspace", icon: Layout02Icon, active: true },
@@ -245,30 +265,36 @@
           </div>
 
           <div class="border-t border-border/50 px-4 py-3">
-            <div class="flex min-h-24 flex-col rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring/30">
-              <label for="prompt" class="sr-only">Prompt</label>
-              <textarea
-                id="prompt"
-                class="min-h-16 resize-none bg-transparent px-3 py-2 text-xs leading-5 outline-none placeholder:text-muted-foreground"
-                placeholder="Ask PI to inspect this repo, implement a change, or explain the current state..."
-              ></textarea>
-              <div class="flex h-9 items-center justify-between border-t border-border/50 px-2">
+            <PromptInput
+              onSubmit={handlePromptSubmit}
+              class="flex min-h-24 flex-col rounded-md border border-border/50 bg-background shadow-none focus-within:ring-2 focus-within:ring-ring/30"
+            >
+              <PromptInputBody>
+                <label for="prompt" class="sr-only">Prompt</label>
+                <PromptInputTextarea
+                  id="prompt"
+                  bind:value={promptValue}
+                  class="min-h-16 px-3 py-2 text-xs leading-5 placeholder:text-muted-foreground"
+                  placeholder="Ask PI to inspect this repo, implement a change, or explain the current state..."
+                />
+              </PromptInputBody>
+              <PromptInputToolbar class="flex h-9 items-center justify-between border-t border-border/50 px-2">
                 <div class="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <Badge variant="outline">Prompt</Badge>
-                  <span>Idle commands send as prompt. Running sessions can steer or follow up.</span>
+                  <span>Enter to send · Shift+Enter newline</span>
                 </div>
                 <div class="flex items-center gap-1">
                   <Button variant="ghost" size="sm" class="text-muted-foreground">
                     <HugeiconsIcon icon={StopCircleIcon} data-icon="inline-start" />
                     Abort
                   </Button>
-                  <Button size="sm">
+                  <PromptInputSubmit class="h-6 gap-1 px-2 text-xs">
                     <HugeiconsIcon icon={ArrowUp02Icon} data-icon="inline-start" />
                     Send
-                  </Button>
+                  </PromptInputSubmit>
                 </div>
-              </div>
-            </div>
+              </PromptInputToolbar>
+            </PromptInput>
           </div>
         </div>
       </section>
