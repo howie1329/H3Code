@@ -2,12 +2,16 @@
   import {
     AddCircleIcon,
     AiBrain02Icon,
+    AlertCircleIcon,
+    ArrowUp02Icon,
     Clock04Icon,
     FolderCodeIcon,
     GitBranchIcon,
     Layout02Icon,
+    LinkSquare02Icon,
     SearchList01Icon,
     Settings05Icon,
+    StopCircleIcon,
     TerminalIcon,
   } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
@@ -25,13 +29,23 @@
     { label: "Activity", icon: Clock04Icon },
   ];
 
-  const providers = [
-    { name: "OpenAI", status: "Ready" },
-    { name: "Anthropic", status: "Not connected" },
-    { name: "Local", status: "Idle" },
+  const recentRepos = [
+    { name: "H3Code", path: "~/Desktop/H3Code", status: "selected" },
+    { name: "agentkit-labs", path: "~/Code/agentkit-labs", status: "idle" },
+    { name: "desktop-shell", path: "~/Code/desktop-shell", status: "idle" },
   ];
 
-  const recentRepos = ["H3Code", "agentkit-labs", "desktop-shell"];
+  const runtimeRows = [
+    { label: "PI RPC", value: "Not connected" },
+    { label: "Executable", value: "pi" },
+    { label: "Working dir", value: "~/Desktop/H3Code" },
+  ];
+
+  const toolEvents = [
+    { name: "get_state", state: "waiting" },
+    { name: "get_messages", state: "waiting" },
+    { name: "prompt", state: "idle" },
+  ];
 </script>
 
 <svelte:head>
@@ -79,21 +93,23 @@
 
     <Separator />
 
-    <section class="flex flex-col gap-2 px-3 py-3" aria-labelledby="providers-heading">
-      <h2 id="providers-heading" class="px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Providers
-      </h2>
-      <div class="flex flex-col gap-1">
-        {#each providers as provider}
-          <button
-            type="button"
-            class="flex h-8 items-center justify-between gap-2 rounded-md px-2 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span class="truncate">{provider.name}</span>
-            <span class="truncate text-[11px] text-muted-foreground">{provider.status}</span>
-          </button>
-        {/each}
+    <section class="flex flex-col gap-2 px-3 py-3" aria-labelledby="runtime-heading">
+      <div class="flex items-center justify-between gap-2 px-1">
+        <h2 id="runtime-heading" class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Runtime
+        </h2>
+        <Badge variant="outline">Offline</Badge>
       </div>
+      <button
+        type="button"
+        class="flex h-8 items-center justify-between gap-2 rounded-md px-2 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span class="flex min-w-0 items-center gap-2">
+          <HugeiconsIcon icon={TerminalIcon} data-icon />
+          <span class="truncate">PI Agent</span>
+        </span>
+        <span class="truncate text-[11px] text-muted-foreground">Configure</span>
+      </button>
     </section>
 
     <Separator />
@@ -106,10 +122,14 @@
         {#each recentRepos as repo}
           <button
             type="button"
-            class="flex h-8 items-center gap-2 rounded-md px-2 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="flex min-h-9 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-pressed={repo.status === "selected"}
           >
             <HugeiconsIcon icon={FolderCodeIcon} data-icon />
-            <span class="truncate">{repo}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate font-medium">{repo.name}</span>
+              <span class="block truncate font-mono text-[10px] text-muted-foreground">{repo.path}</span>
+            </span>
           </button>
         {/each}
       </div>
@@ -120,21 +140,30 @@
         <HugeiconsIcon icon={Settings05Icon} data-icon="inline-start" />
         Settings
       </Button>
-      <div class="mt-2 px-2 font-mono text-[11px] text-muted-foreground">{platform}</div>
+      <div class="mt-2 flex items-center justify-between px-2 font-mono text-[10px] text-muted-foreground">
+        <span>{platform}</span>
+        <span>local</span>
+      </div>
     </footer>
   </aside>
 
   <section class="flex min-w-0 flex-1 flex-col">
     <header class="flex h-11 items-center justify-between border-b border-border px-4">
       <div class="flex min-w-0 items-center gap-2">
-        <h1 class="truncate text-sm font-semibold">Workspace</h1>
-        <Badge variant="secondary">UI scaffold</Badge>
+        <h1 class="truncate text-sm font-semibold">H3Code</h1>
+        <Badge variant="secondary">H3Code</Badge>
+        <Badge variant="outline">PI offline</Badge>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex min-w-0 items-center gap-2">
+        <Button variant="ghost" size="sm" class="max-w-44 justify-start text-muted-foreground">
+          <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
+          <span class="truncate">~/Desktop/H3Code</span>
+        </Button>
         <Button variant="ghost" size="sm">
           <HugeiconsIcon icon={GitBranchIcon} data-icon="inline-start" />
           main
         </Button>
+        <Button variant="ghost" size="sm">gpt-5.5</Button>
         <Button size="sm">
           <HugeiconsIcon icon={AddCircleIcon} data-icon="inline-start" />
           New session
@@ -142,49 +171,94 @@
       </div>
     </header>
 
-    <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_22rem]">
+    <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_24rem]">
       <section class="flex min-w-0 flex-col">
         <div class="flex h-10 items-center justify-between border-b border-border/50 px-4">
-          <div class="flex items-center gap-2 text-xs text-muted-foreground">
+          <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <HugeiconsIcon icon={TerminalIcon} data-icon />
-            <span>Agent workspace</span>
+            <span class="truncate font-medium text-foreground">Transcript</span>
+            <span class="truncate">No PI session connected</span>
           </div>
-          <Badge variant="outline">No active run</Badge>
+          <div class="flex items-center gap-2">
+            <Badge variant="outline">Idle</Badge>
+            <Button variant="ghost" size="sm" class="text-muted-foreground">
+              <HugeiconsIcon icon={LinkSquare02Icon} data-icon="inline-start" />
+              Connect
+            </Button>
+          </div>
         </div>
 
-        <div class="flex flex-1 items-center justify-center px-6">
-          <div class="max-w-md text-center">
-            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ready for UI wiring</p>
-            <h2 class="mt-3 text-xl font-semibold tracking-tight">Choose a repo and start a session.</h2>
-            <p class="mt-3 text-sm leading-6 text-muted-foreground">
-              This workspace area is intentionally static for now. It gives us the shell for repos,
-              provider-backed sessions, and agent output without adding behavior yet.
-            </p>
-            <div class="mt-5 flex justify-center gap-2">
-              <Button>
-                <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
-                Open repo
-              </Button>
-              <Button variant="outline">
-                <HugeiconsIcon icon={AiBrain02Icon} data-icon="inline-start" />
-                Pick provider
-              </Button>
+        <div class="flex min-h-0 flex-1 flex-col">
+          <div class="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
+            <div class="flex w-full max-w-2xl flex-col items-center text-center">
+              <div class="grid size-9 place-items-center rounded-md bg-muted text-muted-foreground">
+                <HugeiconsIcon icon={TerminalIcon} data-icon />
+              </div>
+              <p class="mt-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Ready for first connection
+              </p>
+              <h2 class="mt-2 text-xl font-semibold tracking-tight">Open a repo, connect PI, then send a prompt.</h2>
+              <p class="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+                H3Code will render PI-owned messages, streaming assistant output, and tool activity here.
+                The desktop shell does not store transcript history.
+              </p>
+              <div class="mt-5 flex flex-wrap justify-center gap-2">
+                <Button>
+                  <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
+                  Open repo
+                </Button>
+                <Button variant="outline">
+                  <HugeiconsIcon icon={TerminalIcon} data-icon="inline-start" />
+                  Connect PI
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div class="border-t border-border/50 px-4 py-3">
+            <div class="flex min-h-24 flex-col rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring/30">
+              <label for="prompt" class="sr-only">Prompt</label>
+              <textarea
+                id="prompt"
+                class="min-h-16 resize-none bg-transparent px-3 py-2 text-xs leading-5 outline-none placeholder:text-muted-foreground"
+                placeholder="Ask PI to inspect this repo, implement a change, or explain the current state..."
+              ></textarea>
+              <div class="flex h-9 items-center justify-between border-t border-border/50 px-2">
+                <div class="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <Badge variant="outline">Prompt</Badge>
+                  <span>Idle commands send as prompt. Running sessions can steer or follow up.</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" class="text-muted-foreground">
+                    <HugeiconsIcon icon={StopCircleIcon} data-icon="inline-start" />
+                    Abort
+                  </Button>
+                  <Button size="sm">
+                    <HugeiconsIcon icon={ArrowUp02Icon} data-icon="inline-start" />
+                    Send
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       <aside class="flex min-w-0 flex-col border-l border-border bg-background">
-        <header class="flex h-10 items-center border-b border-border/50 px-4">
+        <header class="flex h-10 items-center justify-between border-b border-border/50 px-4">
           <h2 class="text-xs font-semibold">Context</h2>
+          <Badge variant="secondary">Static</Badge>
         </header>
 
-        <div class="flex flex-col gap-5 p-4">
+        <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-auto p-4">
           <section class="flex flex-col gap-2">
             <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Current repo</h3>
             <div class="flex items-center justify-between gap-2 text-xs">
-              <span class="truncate font-medium">None selected</span>
-              <Badge variant="secondary">Idle</Badge>
+              <span class="min-w-0">
+                <span class="block truncate font-medium">H3Code</span>
+                <span class="block truncate font-mono text-[10px] text-muted-foreground">~/Desktop/H3Code</span>
+              </span>
+              <Badge variant="outline">Selected</Badge>
             </div>
           </section>
 
@@ -192,9 +266,51 @@
 
           <section class="flex flex-col gap-2">
             <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Session</h3>
-            <p class="text-xs leading-5 text-muted-foreground">
-              No agent session is running. The next pass can connect these controls to real state.
-            </p>
+            <div class="grid gap-2 text-xs">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">State</span>
+                <span class="font-medium">Idle</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">Messages</span>
+                <span class="font-medium">0</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-muted-foreground">Queue</span>
+                <span class="font-medium">Empty</span>
+              </div>
+            </div>
+          </section>
+
+          <Separator />
+
+          <section class="flex flex-col gap-2">
+            <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Runtime diagnostics</h3>
+            <div class="grid gap-2 text-xs">
+              {#each runtimeRows as row}
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-muted-foreground">{row.label}</span>
+                  <span class="truncate text-right font-medium">{row.value}</span>
+                </div>
+              {/each}
+            </div>
+          </section>
+
+          <Separator />
+
+          <section class="flex flex-col gap-2">
+            <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tool activity</h3>
+            <div class="flex flex-col gap-1">
+              {#each toolEvents as event}
+                <div class="flex h-8 items-center justify-between gap-2 rounded-md px-2 text-xs hover:bg-accent">
+                  <span class="flex min-w-0 items-center gap-2">
+                    <HugeiconsIcon icon={AlertCircleIcon} data-icon />
+                    <span class="truncate font-mono text-[11px]">{event.name}</span>
+                  </span>
+                  <span class="text-[11px] text-muted-foreground">{event.state}</span>
+                </div>
+              {/each}
+            </div>
           </section>
         </div>
       </aside>
