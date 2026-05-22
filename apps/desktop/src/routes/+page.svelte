@@ -8,7 +8,6 @@
     FolderCodeIcon,
     GitBranchIcon,
     Layout02Icon,
-    LinkSquare02Icon,
     SearchList01Icon,
     Settings05Icon,
     StopCircleIcon,
@@ -183,43 +182,38 @@
   </Sidebar.Sidebar>
 
   <Sidebar.Inset class="min-w-0 overflow-hidden">
-    <header class="flex h-11 items-center justify-between border-b border-border px-4">
+    <header class="flex h-11 items-center justify-between gap-3 border-b border-border px-4">
       <div class="flex min-w-0 items-center gap-2">
         <h1 class="truncate text-sm font-semibold">H3Code</h1>
-        <Badge variant="secondary">H3Code</Badge>
-        <Badge variant="outline">PI offline</Badge>
+        <Badge variant="outline" class="hidden sm:inline-flex">PI Offline</Badge>
       </div>
       <div class="flex min-w-0 items-center gap-2">
-        <Button variant="ghost" size="sm" class="max-w-44 justify-start text-muted-foreground">
+        <Button variant="ghost" size="sm" class="min-w-0 max-w-56 justify-start px-2 text-left">
           <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
-          <span class="truncate">~/Desktop/H3Code</span>
+          <span class="min-w-0">
+            <span class="block truncate text-xs font-medium leading-tight text-foreground">H3Code</span>
+            <span class="block truncate font-mono text-[10px] leading-tight text-muted-foreground">~/Desktop/H3Code</span>
+          </span>
         </Button>
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" class="hidden shrink-0 sm:inline-flex">
           <HugeiconsIcon icon={GitBranchIcon} data-icon="inline-start" />
           main
         </Button>
-        <Button variant="ghost" size="sm">gpt-5.5</Button>
-        <Button size="sm">
-          <HugeiconsIcon icon={AddCircleIcon} data-icon="inline-start" />
-          New session
+        <Button variant="ghost" size="sm" class="shrink-0">gpt-5.5</Button>
+        <Button size="sm" class="shrink-0">
+          <HugeiconsIcon icon={TerminalIcon} data-icon="inline-start" />
+          Connect PI
         </Button>
       </div>
     </header>
 
     <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_24rem]">
       <section class="flex min-w-0 flex-col">
-        <div class="flex h-10 items-center justify-between border-b border-border/50 px-4">
+        <div class="flex h-10 items-center border-b border-border/50 px-4">
           <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <HugeiconsIcon icon={TerminalIcon} data-icon />
             <span class="truncate font-medium text-foreground">Transcript</span>
             <span class="truncate">No PI session connected</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <Badge variant="outline">Idle</Badge>
-            <Button variant="ghost" size="sm" class="text-muted-foreground">
-              <HugeiconsIcon icon={LinkSquare02Icon} data-icon="inline-start" />
-              Connect
-            </Button>
           </div>
         </div>
 
