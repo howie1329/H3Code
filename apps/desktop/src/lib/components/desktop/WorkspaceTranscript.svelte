@@ -25,43 +25,44 @@
       {/if}
 
       {#if !desktopState.repoPath}
-        <div class="flex min-h-full items-center justify-center py-8">
-          <div class="flex w-full max-w-2xl flex-col items-center text-center">
-            <div class="grid size-9 place-items-center rounded-md bg-muted text-muted-foreground">
+        <div class="flex min-h-full items-center justify-center px-6 py-10">
+          <div class="grid w-full max-w-sm justify-items-center text-center">
+            <div class="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground">
               <HugeiconsIcon icon={FolderCodeIcon} data-icon />
             </div>
-            <p class="mt-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Ready for first connection</p>
-            <h2 class="mt-2 text-xl font-semibold tracking-tight">Select a repo to load PI sessions.</h2>
-            <p class="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">H3Code starts PI RPC in the selected folder and renders PI-owned session messages here.</p>
-            <Button class="mt-5" onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
+            <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No repository selected</p>
+            <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a repo to start.</h2>
+            <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">H3Code will load PI sessions from the selected folder.</p>
+            <Button class="mt-4" onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
               <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
               Select repo
             </Button>
           </div>
         </div>
       {:else if desktopState.sessions.length === 0}
-        <div class="flex min-h-full items-center justify-center py-8">
-          <div class="flex w-full max-w-2xl flex-col items-center text-center">
-            <div class="grid size-9 place-items-center rounded-md bg-muted text-muted-foreground">
+        <div class="flex min-h-full items-center justify-center px-6 py-10">
+          <div class="grid w-full max-w-sm justify-items-center text-center">
+            <div class="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground">
               <HugeiconsIcon icon={AiBrain02Icon} data-icon />
             </div>
-            <p class="mt-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No PI sessions</p>
-            <h2 class="mt-2 text-xl font-semibold tracking-tight">Create a new PI-owned session.</h2>
-            <p class="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">This repo has no PI sessions yet. H3Code will not create one until you ask it to.</p>
-            <Button class="mt-5" onclick={() => desktopState.handleNewSession()} disabled={desktopState.piStatus.state !== "connected" || desktopState.isBusy}>
+            <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No sessions</p>
+            <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Create a PI session.</h2>
+            <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">Start a session for this repository when you are ready.</p>
+            <Button class="mt-4" onclick={() => desktopState.handleNewSession()} disabled={desktopState.piStatus.state !== "connected" || desktopState.isBusy}>
               <HugeiconsIcon icon={AiBrain02Icon} data-icon="inline-start" />
               New session
             </Button>
           </div>
         </div>
       {:else if desktopState.messages.length === 0}
-        <div class="flex min-h-full items-center justify-center py-8">
-          <div class="flex w-full max-w-2xl flex-col items-center text-center">
-            <div class="grid size-9 place-items-center rounded-md bg-muted text-muted-foreground">
+        <div class="flex min-h-full items-center justify-center px-6 py-10">
+          <div class="grid w-full max-w-sm justify-items-center text-center">
+            <div class="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground">
               <HugeiconsIcon icon={TerminalIcon} data-icon />
             </div>
-            <p class="mt-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Empty transcript</p>
-            <h2 class="mt-2 text-xl font-semibold tracking-tight">Send a prompt to PI.</h2>
+            <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Empty transcript</p>
+            <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Send a prompt to PI.</h2>
+            <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">Use the composer below to start this session.</p>
           </div>
         </div>
       {:else}

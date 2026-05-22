@@ -10,36 +10,36 @@
     PromptInputTextarea,
     PromptInputToolbar,
   } from "$lib/components/ai-elements/prompt-input/index.js";
-  import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
 </script>
 
 <div class="border-t border-border/50 px-4 py-3">
   <PromptInput
     onSubmit={(message, event) => desktopState.handlePromptSubmit(message, event)}
-    class="flex min-h-24 flex-col rounded-md border border-border/50 bg-background shadow-none focus-within:ring-2 focus-within:ring-ring/30"
+    class="flex min-h-20 flex-col rounded-lg border border-border/50 bg-background shadow-none transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-border focus-within:ring-2 focus-within:ring-ring/30"
   >
     <PromptInputBody>
       <label for="prompt" class="sr-only">Prompt</label>
       <PromptInputTextarea
         id="prompt"
         bind:value={desktopState.promptValue}
-        class="min-h-16 px-3 py-2 text-xs leading-5 placeholder:text-muted-foreground"
+        class="min-h-12 px-3 py-2 text-xs leading-5 text-foreground placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-100"
         placeholder={desktopState.canUseSession ? "Ask PI to inspect this repo, implement a change, or explain the current state..." : "Select a repo and PI session first..."}
         disabled={!desktopState.canUseSession || desktopState.isBusy}
       />
     </PromptInputBody>
-    <PromptInputToolbar class="flex h-9 items-center justify-between border-t border-border/50 px-2">
-      <div class="flex items-center gap-2 text-[11px] text-muted-foreground">
-        <Badge variant="outline">{desktopState.sessionState?.isStreaming ? "Follow-up" : "Prompt"}</Badge>
-        <span>Enter to send · Shift+Enter newline</span>
+    <PromptInputToolbar class="flex h-8 min-w-0 items-center justify-between gap-3 border-t border-border/50 px-2">
+      <div class="flex min-w-0 items-center gap-2 text-[11px] leading-tight text-muted-foreground">
+        <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true"></span>
+        <span class="shrink-0 font-medium text-foreground/80">{desktopState.sessionState?.isStreaming ? "Follow-up" : "Prompt"}</span>
+        <span class="truncate">Enter send · Shift Enter newline</span>
       </div>
-      <div class="flex items-center gap-1">
-        <Button variant="ghost" size="sm" class="text-muted-foreground" onclick={() => desktopState.handleAbort()} disabled={!desktopState.sessionState?.isStreaming || desktopState.isBusy}>
+      <div class="flex shrink-0 items-center gap-1">
+        <Button variant="ghost" size="sm" class="h-7 px-2 text-xs text-muted-foreground" onclick={() => desktopState.handleAbort()} disabled={!desktopState.sessionState?.isStreaming || desktopState.isBusy}>
           <HugeiconsIcon icon={StopCircleIcon} data-icon="inline-start" />
           Abort
         </Button>
-        <PromptInputSubmit class="h-6 gap-1 px-2 text-xs" disabled={!desktopState.canSubmit}>
+        <PromptInputSubmit class="h-7 min-w-16 gap-1 px-2.5 text-xs" disabled={!desktopState.canSubmit}>
           <HugeiconsIcon icon={ArrowUp02Icon} data-icon="inline-start" />
           Send
         </PromptInputSubmit>
