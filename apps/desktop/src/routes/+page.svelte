@@ -8,7 +8,6 @@
     FolderCodeIcon,
     GitBranchIcon,
     Layout02Icon,
-    LinkSquare02Icon,
     SearchList01Icon,
     Settings05Icon,
     StopCircleIcon,
@@ -16,11 +15,32 @@
   } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
+  import {
+    PromptInput,
+    PromptInputBody,
+    PromptInputSubmit,
+    PromptInputTextarea,
+    PromptInputToolbar,
+    type PromptInputMessage,
+  } from "$lib/components/ai-elements/prompt-input/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
+  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
   const platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
+
+  let promptValue = $state("");
+
+  function handlePromptSubmit(message: PromptInputMessage, event: SubmitEvent) {
+    event.preventDefault();
+
+    if (!message.text?.trim()) {
+      return;
+    }
+
+    promptValue = "";
+  }
 
   const navItems = [
     { label: "Workspace", icon: Layout02Icon, active: true },
@@ -53,138 +73,167 @@
   <meta name="description" content="H3Code desktop scaffold." />
 </svelte:head>
 
-<main class="flex h-screen overflow-hidden bg-background text-foreground">
-  <aside class="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-    <header class="flex h-11 items-center justify-between px-3">
-      <a href="/" class="flex min-w-0 items-center gap-2" aria-label="H3Code workspace">
-        <span class="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground">
-          H3
-        </span>
-        <span class="truncate text-xs font-semibold tracking-tight">H3Code</span>
-      </a>
-      <Button variant="ghost" size="icon-sm" aria-label="New session">
-        <HugeiconsIcon icon={AddCircleIcon} data-icon />
-      </Button>
-    </header>
-
-    <div class="px-3 pb-3">
-      <Button variant="outline" size="sm" class="w-full justify-start text-muted-foreground">
-        <HugeiconsIcon icon={SearchList01Icon} data-icon="inline-start" />
-        Search workspace
-      </Button>
-    </div>
-
-    <Separator />
-
-    <nav class="flex flex-col gap-1 px-2 py-3" aria-label="Primary">
-      {#each navItems as item}
-        <Button
+<Sidebar.Provider class="h-screen min-h-0 overflow-hidden bg-background text-foreground">
+  <Sidebar.Sidebar collapsible="icon">
+    <Sidebar.Header class="gap-2 px-2 py-2">
+      <div class="flex h-8 items-center justify-between gap-1">
+        <a
           href="/"
-          variant={item.active ? "secondary" : "ghost"}
-          size="sm"
-          class="w-full justify-start"
-          aria-current={item.active ? "page" : undefined}
+          class="flex min-w-0 items-center gap-2 rounded-full px-1.5 py-1 text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+          aria-label="H3Code workspace"
         >
-          <HugeiconsIcon icon={item.icon} data-icon="inline-start" />
-          {item.label}
-        </Button>
-      {/each}
-    </nav>
-
-    <Separator />
-
-    <section class="flex flex-col gap-2 px-3 py-3" aria-labelledby="runtime-heading">
-      <div class="flex items-center justify-between gap-2 px-1">
-        <h2 id="runtime-heading" class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Runtime
-        </h2>
-        <Badge variant="outline">Offline</Badge>
+          <span class="grid size-6 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+            H3
+          </span>
+          <span class="truncate text-xs font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+            H3Code
+          </span>
+        </a>
+        <div class="flex shrink-0 items-center gap-1 group-data-[collapsible=icon]:hidden">
+          <Sidebar.Trigger aria-label="Collapse sidebar" />
+          <Button variant="ghost" size="icon-sm" aria-label="New session">
+            <HugeiconsIcon icon={AddCircleIcon} data-icon />
+          </Button>
+        </div>
       </div>
-      <button
-        type="button"
-        class="flex h-8 items-center justify-between gap-2 rounded-md px-2 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span class="flex min-w-0 items-center gap-2">
-          <HugeiconsIcon icon={TerminalIcon} data-icon />
-          <span class="truncate">PI Agent</span>
-        </span>
-        <span class="truncate text-[11px] text-muted-foreground">Configure</span>
-      </button>
-    </section>
 
-    <Separator />
+      <Sidebar.Menu>
+        <Sidebar.MenuItem>
+          <Sidebar.MenuButton size="sm" tooltipContent="Search workspace">
+            <HugeiconsIcon icon={SearchList01Icon} />
+            <span>Search workspace</span>
+          </Sidebar.MenuButton>
+        </Sidebar.MenuItem>
+      </Sidebar.Menu>
+    </Sidebar.Header>
 
-    <section class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3" aria-labelledby="repos-heading">
-      <h2 id="repos-heading" class="px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Recent repos
-      </h2>
-      <div class="flex flex-col gap-1">
-        {#each recentRepos as repo}
-          <button
-            type="button"
-            class="flex min-h-9 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-pressed={repo.status === "selected"}
-          >
-            <HugeiconsIcon icon={FolderCodeIcon} data-icon />
-            <span class="min-w-0 flex-1">
-              <span class="block truncate font-medium">{repo.name}</span>
-              <span class="block truncate font-mono text-[10px] text-muted-foreground">{repo.path}</span>
-            </span>
-          </button>
-        {/each}
-      </div>
-    </section>
+    <Sidebar.Separator />
 
-    <footer class="border-t border-sidebar-border px-3 py-3">
-      <Button variant="ghost" size="sm" class="w-full justify-start text-muted-foreground">
-        <HugeiconsIcon icon={Settings05Icon} data-icon="inline-start" />
-        Settings
-      </Button>
-      <div class="mt-2 flex items-center justify-between px-2 font-mono text-[10px] text-muted-foreground">
+    <Sidebar.Content>
+      <Sidebar.Group>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu aria-label="Primary">
+            {#each navItems as item}
+              <Sidebar.MenuItem>
+                <Sidebar.MenuButton
+                  size="sm"
+                  isActive={item.active}
+                  tooltipContent={item.label}
+                  aria-current={item.active ? "page" : undefined}
+                  class={item.active ? "rounded-full" : "rounded-full text-muted-foreground"}
+                >
+                  <HugeiconsIcon icon={item.icon} />
+                  <span>{item.label}</span>
+                </Sidebar.MenuButton>
+              </Sidebar.MenuItem>
+            {/each}
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+
+      <Sidebar.Separator />
+
+      <Sidebar.Group>
+        <div class="flex items-center justify-between gap-2 group-data-[collapsible=icon]:hidden">
+          <Sidebar.GroupLabel class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide">
+            Runtime
+          </Sidebar.GroupLabel>
+          <Badge variant="outline">Offline</Badge>
+        </div>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            <Sidebar.MenuItem>
+              <Sidebar.MenuButton size="sm" tooltipContent="PI Agent">
+                <HugeiconsIcon icon={TerminalIcon} />
+                <span>PI Agent</span>
+                <span class="ml-auto truncate text-[11px] text-muted-foreground">Configure</span>
+              </Sidebar.MenuButton>
+            </Sidebar.MenuItem>
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+
+      <Sidebar.Separator />
+
+      <Sidebar.Group class="min-h-0 flex-1">
+        <Sidebar.GroupLabel class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide">
+          Recent repos
+        </Sidebar.GroupLabel>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            {#each recentRepos as repo}
+              <Sidebar.MenuItem>
+                <Sidebar.MenuButton
+                  size="lg"
+                  isActive={repo.status === "selected"}
+                  tooltipContent={repo.name}
+                  aria-pressed={repo.status === "selected"}
+                  class="h-9"
+                >
+                  <HugeiconsIcon icon={FolderCodeIcon} />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-medium">{repo.name}</span>
+                    <span class="block truncate font-mono text-[10px] text-muted-foreground">{repo.path}</span>
+                  </span>
+                </Sidebar.MenuButton>
+              </Sidebar.MenuItem>
+            {/each}
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+    </Sidebar.Content>
+
+    <Sidebar.Footer class="border-t border-sidebar-border px-2 py-2">
+      <Sidebar.Menu>
+        <Sidebar.MenuItem>
+          <Sidebar.MenuButton size="sm" tooltipContent="Settings" class="text-muted-foreground">
+            <HugeiconsIcon icon={Settings05Icon} />
+            <span>Settings</span>
+          </Sidebar.MenuButton>
+        </Sidebar.MenuItem>
+      </Sidebar.Menu>
+      <div class="flex items-center justify-between px-2 font-mono text-[10px] text-muted-foreground group-data-[collapsible=icon]:hidden">
         <span>{platform}</span>
         <span>local</span>
       </div>
-    </footer>
-  </aside>
+    </Sidebar.Footer>
 
-  <section class="flex min-w-0 flex-1 flex-col">
-    <header class="flex h-11 items-center justify-between border-b border-border px-4">
+    <Sidebar.Rail />
+  </Sidebar.Sidebar>
+
+  <Sidebar.Inset class="min-w-0 overflow-hidden">
+    <header class="flex h-11 items-center justify-between gap-3 border-b border-border px-4">
       <div class="flex min-w-0 items-center gap-2">
         <h1 class="truncate text-sm font-semibold">H3Code</h1>
-        <Badge variant="secondary">H3Code</Badge>
-        <Badge variant="outline">PI offline</Badge>
+        <Badge variant="outline" class="hidden sm:inline-flex">PI Offline</Badge>
       </div>
       <div class="flex min-w-0 items-center gap-2">
-        <Button variant="ghost" size="sm" class="max-w-44 justify-start text-muted-foreground">
+        <Button variant="ghost" size="sm" class="min-w-0 max-w-56 justify-start px-2 text-left">
           <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
-          <span class="truncate">~/Desktop/H3Code</span>
+          <span class="min-w-0">
+            <span class="block truncate text-xs font-medium leading-tight text-foreground">H3Code</span>
+            <span class="block truncate font-mono text-[10px] leading-tight text-muted-foreground">~/Desktop/H3Code</span>
+          </span>
         </Button>
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" class="hidden shrink-0 sm:inline-flex">
           <HugeiconsIcon icon={GitBranchIcon} data-icon="inline-start" />
           main
         </Button>
-        <Button variant="ghost" size="sm">gpt-5.5</Button>
-        <Button size="sm">
-          <HugeiconsIcon icon={AddCircleIcon} data-icon="inline-start" />
-          New session
+        <Button variant="ghost" size="sm" class="shrink-0">gpt-5.5</Button>
+        <Button size="sm" class="shrink-0">
+          <HugeiconsIcon icon={TerminalIcon} data-icon="inline-start" />
+          Connect PI
         </Button>
       </div>
     </header>
 
     <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_24rem]">
       <section class="flex min-w-0 flex-col">
-        <div class="flex h-10 items-center justify-between border-b border-border/50 px-4">
+        <div class="flex h-10 items-center border-b border-border/50 px-4">
           <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <HugeiconsIcon icon={TerminalIcon} data-icon />
             <span class="truncate font-medium text-foreground">Transcript</span>
             <span class="truncate">No PI session connected</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <Badge variant="outline">Idle</Badge>
-            <Button variant="ghost" size="sm" class="text-muted-foreground">
-              <HugeiconsIcon icon={LinkSquare02Icon} data-icon="inline-start" />
-              Connect
-            </Button>
           </div>
         </div>
 
@@ -216,30 +265,36 @@
           </div>
 
           <div class="border-t border-border/50 px-4 py-3">
-            <div class="flex min-h-24 flex-col rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring/30">
-              <label for="prompt" class="sr-only">Prompt</label>
-              <textarea
-                id="prompt"
-                class="min-h-16 resize-none bg-transparent px-3 py-2 text-xs leading-5 outline-none placeholder:text-muted-foreground"
-                placeholder="Ask PI to inspect this repo, implement a change, or explain the current state..."
-              ></textarea>
-              <div class="flex h-9 items-center justify-between border-t border-border/50 px-2">
+            <PromptInput
+              onSubmit={handlePromptSubmit}
+              class="flex min-h-24 flex-col rounded-md border border-border/50 bg-background shadow-none focus-within:ring-2 focus-within:ring-ring/30"
+            >
+              <PromptInputBody>
+                <label for="prompt" class="sr-only">Prompt</label>
+                <PromptInputTextarea
+                  id="prompt"
+                  bind:value={promptValue}
+                  class="min-h-16 px-3 py-2 text-xs leading-5 placeholder:text-muted-foreground"
+                  placeholder="Ask PI to inspect this repo, implement a change, or explain the current state..."
+                />
+              </PromptInputBody>
+              <PromptInputToolbar class="flex h-9 items-center justify-between border-t border-border/50 px-2">
                 <div class="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <Badge variant="outline">Prompt</Badge>
-                  <span>Idle commands send as prompt. Running sessions can steer or follow up.</span>
+                  <span>Enter to send · Shift+Enter newline</span>
                 </div>
                 <div class="flex items-center gap-1">
                   <Button variant="ghost" size="sm" class="text-muted-foreground">
                     <HugeiconsIcon icon={StopCircleIcon} data-icon="inline-start" />
                     Abort
                   </Button>
-                  <Button size="sm">
+                  <PromptInputSubmit class="h-6 gap-1 px-2 text-xs">
                     <HugeiconsIcon icon={ArrowUp02Icon} data-icon="inline-start" />
                     Send
-                  </Button>
+                  </PromptInputSubmit>
                 </div>
-              </div>
-            </div>
+              </PromptInputToolbar>
+            </PromptInput>
           </div>
         </div>
       </section>
@@ -315,5 +370,5 @@
         </div>
       </aside>
     </div>
-  </section>
-</main>
+  </Sidebar.Inset>
+</Sidebar.Provider>
