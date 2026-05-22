@@ -34,10 +34,16 @@
     detail: string;
   };
 
+  type SidebarRepo = {
+    name: string;
+    path: string;
+  };
+
   const platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
 
   let promptValue = $state("");
   let repoPath = $state<string | undefined>();
+  let repos = $state<SidebarRepo[]>([]);
   let sessions = $state<PiSessionSummary[]>([]);
   let selectedSessionPath = $state<string | undefined>();
   let sessionState = $state<PiSessionState | undefined>();
@@ -51,7 +57,7 @@
   let canUseSession = $derived(piStatus.state === "connected" && Boolean(selectedSessionPath || sessionState?.sessionFile));
   let canSubmit = $derived(canUseSession && !isBusy && promptValue.trim().length > 0);
   let repoName = $derived(repoPath ? basename(repoPath) : "No repo selected");
-  let modelLabel = $derived(formatModel(sessionState));
+  let selectedRepo = $derived(repoPath ? repos.find((repo) => repo.path === repoPath) : undefined);
 
   onMount(() => {
     const removeEventListener = window.h3code?.onPiEvent((event) => {
@@ -94,6 +100,7 @@
       const result = await requireApi().connectRepo(nextRepoPath);
 
       repoPath = result.repoPath;
+      repos = upsertRepo(repos, result.repoPath);
       sessions = result.sessions;
       selectedSessionPath = result.selectedSessionPath;
       sessionState = result.state;
@@ -194,6 +201,11 @@
     return clean.slice(clean.lastIndexOf("/") + 1) || clean;
   }
 
+  function upsertRepo(currentRepos: SidebarRepo[], nextRepoPath: string) {
+    const nextRepo = { name: basename(nextRepoPath), path: nextRepoPath };
+    return [nextRepo, ...currentRepos.filter((repo) => repo.path !== nextRepoPath)];
+  }
+
   function formatDate(value: string) {
     return new Intl.DateTimeFormat(undefined, {
       month: "short",
@@ -201,16 +213,6 @@
       hour: "numeric",
       minute: "2-digit",
     }).format(new Date(value));
-  }
-
-  function formatModel(state: PiSessionState | undefined) {
-    const model = state?.model;
-
-    if (!model) {
-      return "Model unknown";
-    }
-
-    return [model.provider, model.id ?? model.modelId].filter(Boolean).join("/");
   }
 
   function formatMessageRole(message: unknown) {
@@ -351,39 +353,40 @@
 
       <Sidebar.Separator />
 
-      <Sidebar.Group class="min-h-0 flex-1">
+      <Sidebar.Group>
         <Sidebar.GroupLabel class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide">
-          Sessions
+          Repos
         </Sidebar.GroupLabel>
+        <Sidebar.GroupAction aria-label="Select repo" title="Select repo" onclick={handleSelectRepo} disabled={isBusy}>
+          <HugeiconsIcon icon={AddCircleIcon} />
+        </Sidebar.GroupAction>
         <Sidebar.GroupContent>
-          <Sidebar.Menu>
-            {#if sessions.length === 0}
+          <Sidebar.Menu aria-label="Repos">
+            {#if repos.length === 0}
               <Sidebar.MenuItem>
-                <Sidebar.MenuButton size="lg" tooltipContent="No sessions" class="h-9 text-muted-foreground">
-                  <HugeiconsIcon icon={AiBrain02Icon} />
+                <Sidebar.MenuButton size="lg" tooltipContent="Add a repo" class="h-10 text-muted-foreground" aria-disabled={isBusy} onclick={() => !isBusy && handleSelectRepo()}>
+                  <HugeiconsIcon icon={FolderCodeIcon} />
                   <span class="min-w-0 flex-1">
-                    <span class="block truncate font-medium">No sessions</span>
-                    <span class="block truncate text-[10px] text-muted-foreground">Select a repo or create one</span>
+                    <span class="block truncate font-medium">Add a repo</span>
+                    <span class="block truncate text-[10px] text-muted-foreground">Open local folder</span>
                   </span>
                 </Sidebar.MenuButton>
               </Sidebar.MenuItem>
             {:else}
-              {#each sessions as session}
+              {#each repos as repo}
                 <Sidebar.MenuItem>
                   <Sidebar.MenuButton
                     size="lg"
-                    isActive={session.path === selectedSessionPath}
-                    tooltipContent={session.name ?? session.firstMessage ?? session.id}
-                    aria-pressed={session.path === selectedSessionPath}
+                    isActive={repo.path === repoPath}
+                    tooltipContent={repo.path}
+                    aria-pressed={repo.path === repoPath}
                     class="h-11"
-                    onclick={() => handleSwitchSession(session.path)}
+                    onclick={() => connectRepo(repo.path)}
                   >
-                    <HugeiconsIcon icon={AiBrain02Icon} />
+                    <HugeiconsIcon icon={FolderCodeIcon} />
                     <span class="min-w-0 flex-1">
-                      <span class="block truncate font-medium">{session.name ?? (session.firstMessage || "Untitled session")}</span>
-                      <span class="block truncate font-mono text-[10px] text-muted-foreground">
-                        {session.messageCount} messages · {formatDate(session.modified)}
-                      </span>
+                      <span class="block truncate font-medium">{repo.name}</span>
+                      <span class="block truncate font-mono text-[10px] text-muted-foreground">{repo.path}</span>
                     </span>
                   </Sidebar.MenuButton>
                 </Sidebar.MenuItem>
@@ -392,6 +395,55 @@
           </Sidebar.Menu>
         </Sidebar.GroupContent>
       </Sidebar.Group>
+
+      {#if repoPath}
+        <Sidebar.Separator />
+
+        <Sidebar.Group class="min-h-0 flex-1">
+          <Sidebar.GroupLabel class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide" title={selectedRepo?.path ?? repoPath}>
+            {selectedRepo?.name ?? repoName}
+          </Sidebar.GroupLabel>
+          <Sidebar.GroupAction aria-label="New session" title="New session" onclick={handleNewSession} disabled={piStatus.state !== "connected" || isBusy}>
+            <HugeiconsIcon icon={AddCircleIcon} />
+          </Sidebar.GroupAction>
+          <Sidebar.GroupContent>
+            <Sidebar.Menu aria-label={`${repoName} sessions`}>
+              {#if sessions.length === 0}
+                <Sidebar.MenuItem>
+                  <Sidebar.MenuButton size="lg" tooltipContent="No sessions" class="h-9 text-muted-foreground" aria-disabled={piStatus.state !== "connected" || isBusy} onclick={() => piStatus.state === "connected" && !isBusy && handleNewSession()}>
+                    <HugeiconsIcon icon={AiBrain02Icon} />
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate font-medium">No sessions</span>
+                      <span class="block truncate text-[10px] text-muted-foreground">Create one for this repo</span>
+                    </span>
+                  </Sidebar.MenuButton>
+                </Sidebar.MenuItem>
+              {:else}
+                {#each sessions as session}
+                  <Sidebar.MenuItem>
+                    <Sidebar.MenuButton
+                      size="lg"
+                      isActive={session.path === selectedSessionPath}
+                      tooltipContent={session.name ?? session.firstMessage ?? session.id}
+                      aria-pressed={session.path === selectedSessionPath}
+                      class="h-11"
+                      onclick={() => handleSwitchSession(session.path)}
+                    >
+                      <HugeiconsIcon icon={AiBrain02Icon} />
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate font-medium">{session.name ?? (session.firstMessage || "Untitled session")}</span>
+                        <span class="block truncate font-mono text-[10px] text-muted-foreground">
+                          {session.messageCount} messages · {formatDate(session.modified)}
+                        </span>
+                      </span>
+                    </Sidebar.MenuButton>
+                  </Sidebar.MenuItem>
+                {/each}
+              {/if}
+            </Sidebar.Menu>
+          </Sidebar.GroupContent>
+        </Sidebar.Group>
+      {/if}
     </Sidebar.Content>
 
     <Sidebar.Footer class="border-t border-sidebar-border px-2 py-2">
@@ -413,29 +465,22 @@
   </Sidebar.Sidebar>
 
   <Sidebar.Inset class="min-w-0 overflow-hidden">
-    <header class="flex h-11 items-center justify-between gap-3 border-b border-border px-4">
+    <header class="flex h-11 items-center justify-between gap-3 border-b border-border/50 px-4">
       <div class="flex min-w-0 items-center gap-2">
         <h1 class="truncate text-sm font-semibold">H3Code</h1>
         <Badge variant="outline" class="hidden sm:inline-flex">PI {piStatus.state}</Badge>
       </div>
-      <div class="flex min-w-0 items-center gap-2">
-        <Button variant="ghost" size="sm" class="min-w-0 max-w-64 justify-start px-2 text-left" onclick={handleSelectRepo} disabled={isBusy}>
-          <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
+      <div class="flex min-w-0 items-center gap-3 text-xs">
+        <div class="hidden min-w-0 items-center gap-2 sm:flex" title={repoPath ?? "No repo selected"}>
+          <HugeiconsIcon icon={FolderCodeIcon} data-icon />
           <span class="min-w-0">
-            <span class="block truncate text-xs font-medium leading-tight text-foreground">{repoName}</span>
-            <span class="block truncate font-mono text-[10px] leading-tight text-muted-foreground">{repoPath ?? "Select a local folder"}</span>
+            <span class="block truncate font-medium leading-tight text-foreground">{repoName}</span>
+            <span class="block truncate font-mono text-[10px] leading-tight text-muted-foreground">{repoPath ?? "No repo selected"}</span>
           </span>
-        </Button>
+        </div>
         <Button variant="ghost" size="sm" class="hidden shrink-0 sm:inline-flex" disabled>
           <HugeiconsIcon icon={GitBranchIcon} data-icon="inline-start" />
           local
-        </Button>
-        <Button variant="ghost" size="sm" class="hidden max-w-48 shrink-0 sm:inline-flex">
-          <span class="truncate">{modelLabel}</span>
-        </Button>
-        <Button size="sm" class="shrink-0" onclick={handleSelectRepo} disabled={isBusy}>
-          <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
-          Select repo
         </Button>
       </div>
     </header>
