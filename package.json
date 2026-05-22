@@ -13,6 +13,7 @@
     "build": "turbo run build",
     "check": "turbo run check",
     "lint": "turbo run lint",
+    "dev:desktop": "npm run dev --workspace @h3code/desktop",
     "dev:web": "npm run dev --workspace @h3code/web"
   },
   "devDependencies": {
