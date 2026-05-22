@@ -19,6 +19,7 @@
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
+  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
   const platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
 
@@ -53,101 +54,135 @@
   <meta name="description" content="H3Code desktop scaffold." />
 </svelte:head>
 
-<main class="flex h-screen overflow-hidden bg-background text-foreground">
-  <aside class="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-    <header class="flex h-11 items-center justify-between px-3">
-      <a href="/" class="flex min-w-0 items-center gap-2" aria-label="H3Code workspace">
-        <span class="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground">
-          H3
-        </span>
-        <span class="truncate text-xs font-semibold tracking-tight">H3Code</span>
-      </a>
-      <Button variant="ghost" size="icon-sm" aria-label="New session">
-        <HugeiconsIcon icon={AddCircleIcon} data-icon />
-      </Button>
-    </header>
-
-    <div class="px-3 pb-3">
-      <Button variant="outline" size="sm" class="w-full justify-start text-muted-foreground">
-        <HugeiconsIcon icon={SearchList01Icon} data-icon="inline-start" />
-        Search workspace
-      </Button>
-    </div>
-
-    <Separator />
-
-    <nav class="flex flex-col gap-1 px-2 py-3" aria-label="Primary">
-      {#each navItems as item}
-        <Button
+<Sidebar.Provider class="h-screen min-h-0 overflow-hidden bg-background text-foreground">
+  <Sidebar.Sidebar collapsible="icon">
+    <Sidebar.Header class="gap-2 px-2 py-2">
+      <div class="flex h-8 items-center justify-between gap-1">
+        <a
           href="/"
-          variant={item.active ? "secondary" : "ghost"}
-          size="sm"
-          class="w-full justify-start"
-          aria-current={item.active ? "page" : undefined}
+          class="flex min-w-0 items-center gap-2 rounded-full px-1.5 py-1 text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+          aria-label="H3Code workspace"
         >
-          <HugeiconsIcon icon={item.icon} data-icon="inline-start" />
-          {item.label}
-        </Button>
-      {/each}
-    </nav>
-
-    <Separator />
-
-    <section class="flex flex-col gap-2 px-3 py-3" aria-labelledby="runtime-heading">
-      <div class="flex items-center justify-between gap-2 px-1">
-        <h2 id="runtime-heading" class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Runtime
-        </h2>
-        <Badge variant="outline">Offline</Badge>
+          <span class="grid size-6 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+            H3
+          </span>
+          <span class="truncate text-xs font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+            H3Code
+          </span>
+        </a>
+        <div class="flex shrink-0 items-center gap-1 group-data-[collapsible=icon]:hidden">
+          <Sidebar.Trigger aria-label="Collapse sidebar" />
+          <Button variant="ghost" size="icon-sm" aria-label="New session">
+            <HugeiconsIcon icon={AddCircleIcon} data-icon />
+          </Button>
+        </div>
       </div>
-      <button
-        type="button"
-        class="flex h-8 items-center justify-between gap-2 rounded-md px-2 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span class="flex min-w-0 items-center gap-2">
-          <HugeiconsIcon icon={TerminalIcon} data-icon />
-          <span class="truncate">PI Agent</span>
-        </span>
-        <span class="truncate text-[11px] text-muted-foreground">Configure</span>
-      </button>
-    </section>
 
-    <Separator />
+      <Sidebar.Menu>
+        <Sidebar.MenuItem>
+          <Sidebar.MenuButton size="sm" tooltipContent="Search workspace">
+            <HugeiconsIcon icon={SearchList01Icon} />
+            <span>Search workspace</span>
+          </Sidebar.MenuButton>
+        </Sidebar.MenuItem>
+      </Sidebar.Menu>
+    </Sidebar.Header>
 
-    <section class="flex min-h-0 flex-1 flex-col gap-2 px-3 py-3" aria-labelledby="repos-heading">
-      <h2 id="repos-heading" class="px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Recent repos
-      </h2>
-      <div class="flex flex-col gap-1">
-        {#each recentRepos as repo}
-          <button
-            type="button"
-            class="flex min-h-9 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-pressed={repo.status === "selected"}
-          >
-            <HugeiconsIcon icon={FolderCodeIcon} data-icon />
-            <span class="min-w-0 flex-1">
-              <span class="block truncate font-medium">{repo.name}</span>
-              <span class="block truncate font-mono text-[10px] text-muted-foreground">{repo.path}</span>
-            </span>
-          </button>
-        {/each}
-      </div>
-    </section>
+    <Sidebar.Separator />
 
-    <footer class="border-t border-sidebar-border px-3 py-3">
-      <Button variant="ghost" size="sm" class="w-full justify-start text-muted-foreground">
-        <HugeiconsIcon icon={Settings05Icon} data-icon="inline-start" />
-        Settings
-      </Button>
-      <div class="mt-2 flex items-center justify-between px-2 font-mono text-[10px] text-muted-foreground">
+    <Sidebar.Content>
+      <Sidebar.Group>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu aria-label="Primary">
+            {#each navItems as item}
+              <Sidebar.MenuItem>
+                <Sidebar.MenuButton
+                  size="sm"
+                  isActive={item.active}
+                  tooltipContent={item.label}
+                  aria-current={item.active ? "page" : undefined}
+                  class={item.active ? "rounded-full" : "rounded-full text-muted-foreground"}
+                >
+                  <HugeiconsIcon icon={item.icon} />
+                  <span>{item.label}</span>
+                </Sidebar.MenuButton>
+              </Sidebar.MenuItem>
+            {/each}
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+
+      <Sidebar.Separator />
+
+      <Sidebar.Group>
+        <div class="flex items-center justify-between gap-2 group-data-[collapsible=icon]:hidden">
+          <Sidebar.GroupLabel class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide">
+            Runtime
+          </Sidebar.GroupLabel>
+          <Badge variant="outline">Offline</Badge>
+        </div>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            <Sidebar.MenuItem>
+              <Sidebar.MenuButton size="sm" tooltipContent="PI Agent">
+                <HugeiconsIcon icon={TerminalIcon} />
+                <span>PI Agent</span>
+                <span class="ml-auto truncate text-[11px] text-muted-foreground">Configure</span>
+              </Sidebar.MenuButton>
+            </Sidebar.MenuItem>
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+
+      <Sidebar.Separator />
+
+      <Sidebar.Group class="min-h-0 flex-1">
+        <Sidebar.GroupLabel class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide">
+          Recent repos
+        </Sidebar.GroupLabel>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            {#each recentRepos as repo}
+              <Sidebar.MenuItem>
+                <Sidebar.MenuButton
+                  size="lg"
+                  isActive={repo.status === "selected"}
+                  tooltipContent={repo.name}
+                  aria-pressed={repo.status === "selected"}
+                  class="h-9"
+                >
+                  <HugeiconsIcon icon={FolderCodeIcon} />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-medium">{repo.name}</span>
+                    <span class="block truncate font-mono text-[10px] text-muted-foreground">{repo.path}</span>
+                  </span>
+                </Sidebar.MenuButton>
+              </Sidebar.MenuItem>
+            {/each}
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+    </Sidebar.Content>
+
+    <Sidebar.Footer class="border-t border-sidebar-border px-2 py-2">
+      <Sidebar.Menu>
+        <Sidebar.MenuItem>
+          <Sidebar.MenuButton size="sm" tooltipContent="Settings" class="text-muted-foreground">
+            <HugeiconsIcon icon={Settings05Icon} />
+            <span>Settings</span>
+          </Sidebar.MenuButton>
+        </Sidebar.MenuItem>
+      </Sidebar.Menu>
+      <div class="flex items-center justify-between px-2 font-mono text-[10px] text-muted-foreground group-data-[collapsible=icon]:hidden">
         <span>{platform}</span>
         <span>local</span>
       </div>
-    </footer>
-  </aside>
+    </Sidebar.Footer>
 
-  <section class="flex min-w-0 flex-1 flex-col">
+    <Sidebar.Rail />
+  </Sidebar.Sidebar>
+
+  <Sidebar.Inset class="min-w-0 overflow-hidden">
     <header class="flex h-11 items-center justify-between border-b border-border px-4">
       <div class="flex min-w-0 items-center gap-2">
         <h1 class="truncate text-sm font-semibold">H3Code</h1>
@@ -315,5 +350,5 @@
         </div>
       </aside>
     </div>
-  </section>
-</main>
+  </Sidebar.Inset>
+</Sidebar.Provider>
