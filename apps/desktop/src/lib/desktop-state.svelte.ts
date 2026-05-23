@@ -8,6 +8,12 @@ export type ActivityItem = {
 export type SidebarRepo = {
   name: string;
   path: string;
+  expanded?: boolean;
+  sessions?: PiSessionSummary[];
+  sessionsLoaded?: boolean;
+  sessionsLoading?: boolean;
+  sessionsError?: string;
+  showAllSessions?: boolean;
 };
 
 class DesktopState {
@@ -18,15 +24,22 @@ class DesktopState {
   sessions = $state<PiSessionSummary[]>([]);
   selectedSessionPath = $state<string | undefined>();
   sessionState = $state<PiSessionState | undefined>();
+  sessionStats = $state<PiSessionStats | null>(null);
+  sessionStatsLoading = $state(false);
+  sessionStatsError = $state<string | undefined>();
   messages = $state<unknown[]>([]);
+  streamingMessage = $state<unknown | undefined>();
   piStatus = $state<PiStatus>({ state: "disconnected" });
   activity = $state<ActivityItem[]>([]);
   isBusy = $state(false);
+  isSendingPrompt = $state(false);
+  isAgentRunning = $state(false);
   errorMessage = $state<string | undefined>();
 
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
-  canSubmit = $derived(this.canUseSession && !this.isBusy && this.promptValue.trim().length > 0);
+  canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  transcriptMessages = $derived(this.streamingMessage ? [...this.messages, this.streamingMessage] : this.messages);
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
 
@@ -34,10 +47,7 @@ class DesktopState {
     const removeEventListener = window.h3code?.onPiEvent((event) => {
       const item = formatActivity(event);
       this.activity = [item, ...this.activity].slice(0, 8);
-
-      if (item.type === "agent_end") {
-        void this.refreshActiveMessages();
-      }
+      this.handlePiEvent(event, item.type);
     });
 
     const removeStatusListener = window.h3code?.onPiStatus((status) => {
@@ -61,25 +71,91 @@ class DesktopState {
       return;
     }
 
-    await this.connectRepo(selected.path);
+    await this.addRepo(selected.path);
   }
 
-  async connectRepo(nextRepoPath: string) {
-    await this.withBusy(async () => {
-      this.errorMessage = undefined;
-      this.activity = [];
-      const result = await this.requireApi().connectRepo(nextRepoPath);
+  async addRepo(nextRepoPath: string) {
+    this.errorMessage = undefined;
+    this.repos = upsertRepo(this.repos, nextRepoPath, { expanded: true });
+    await this.loadRepoSessions(nextRepoPath);
+  }
 
-      this.repoPath = result.repoPath;
-      this.repos = upsertRepo(this.repos, result.repoPath);
-      this.sessions = result.sessions;
-      this.selectedSessionPath = result.selectedSessionPath;
-      this.sessionState = result.state;
-      this.messages = result.messages ?? [];
+  async toggleRepo(nextRepoPath: string) {
+    const repo = this.repos.find((item) => item.path === nextRepoPath);
+    const expanded = !repo?.expanded;
+
+    this.repos = updateRepo(this.repos, nextRepoPath, { expanded });
+
+    if (expanded && !repo?.sessionsLoaded && !repo?.sessionsLoading) {
+      await this.loadRepoSessions(nextRepoPath);
+    }
+  }
+
+  showAllRepoSessions(nextRepoPath: string) {
+    this.repos = updateRepo(this.repos, nextRepoPath, { showAllSessions: true });
+  }
+
+  async loadRepoSessions(nextRepoPath: string) {
+    this.repos = updateRepo(this.repos, nextRepoPath, {
+      sessionsLoading: true,
+      sessionsError: undefined,
+    });
+
+    try {
+      const sessions = await this.requireApi().listRepoSessions(nextRepoPath);
+      this.repos = updateRepo(this.repos, nextRepoPath, {
+        sessions,
+        sessionsLoaded: true,
+        sessionsLoading: false,
+        sessionsError: undefined,
+      });
+    } catch (error) {
+      this.repos = updateRepo(this.repos, nextRepoPath, {
+        sessionsLoading: false,
+        sessionsError: getErrorMessage(error),
+      });
+    }
+  }
+
+  async connectRepo(nextRepoPath: string, selectedSessionPath?: string) {
+    await this.withBusy(async () => {
+      await this.connectRepoInternal(nextRepoPath, selectedSessionPath);
     });
   }
 
-  async handleSwitchSession(sessionPath: string) {
+  async connectRepoInternal(nextRepoPath: string, selectedSessionPath?: string) {
+    this.errorMessage = undefined;
+    this.activity = [];
+    const result = await this.requireApi().connectRepo(nextRepoPath, selectedSessionPath);
+
+    this.repoPath = result.repoPath;
+    this.repos = upsertRepo(this.repos, result.repoPath, {
+      expanded: true,
+      sessions: result.sessions,
+      sessionsLoaded: true,
+      sessionsLoading: false,
+      sessionsError: undefined,
+    });
+    this.sessions = result.sessions;
+    this.selectedSessionPath = result.selectedSessionPath;
+    this.sessionState = result.state;
+    this.sessionStats = null;
+    this.messages = result.messages ?? [];
+    this.streamingMessage = undefined;
+    this.isAgentRunning = Boolean(result.state?.isStreaming);
+    await this.refreshSessionStats();
+  }
+
+  async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
+    if (!repoPath) {
+      return;
+    }
+
+    if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
+      await this.connectRepo(repoPath, sessionPath);
+      return;
+    }
+
     if (sessionPath === this.selectedSessionPath) {
       return;
     }
@@ -89,18 +165,43 @@ class DesktopState {
       const result = await this.requireApi().switchSession(sessionPath);
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
+      this.sessionStats = null;
       this.messages = result.messages;
+      this.streamingMessage = undefined;
+      this.isAgentRunning = Boolean(result.state?.isStreaming);
+      await this.refreshSessionStats();
     });
   }
 
-  async handleNewSession() {
+  async handleNewSession(repoPath = this.repoPath) {
+    if (!repoPath) {
+      this.errorMessage = "Select a repo before creating a session.";
+      return;
+    }
+
     await this.withBusy(async () => {
       this.errorMessage = undefined;
+
+      if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
+        await this.connectRepoInternal(repoPath);
+      }
+
       const result = await this.requireApi().newSession(this.selectedSessionPath);
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
+      this.sessionStats = null;
       this.messages = result.messages;
+      this.streamingMessage = undefined;
+      this.isAgentRunning = Boolean(result.state.isStreaming);
       this.sessions = await this.requireApi().listSessions();
+      this.repos = upsertRepo(this.repos, repoPath, {
+        expanded: true,
+        sessions: this.sessions,
+        sessionsLoaded: true,
+        sessionsLoading: false,
+        sessionsError: undefined,
+      });
+      await this.refreshSessionStats();
     });
   }
 
@@ -113,20 +214,30 @@ class DesktopState {
       return;
     }
 
-    await this.withBusy(async () => {
+    this.isSendingPrompt = true;
+
+    try {
       this.errorMessage = undefined;
       await this.requireApi().sendPrompt(text, this.sessionState?.isStreaming ? "followUp" : undefined);
       this.promptValue = "";
-      await this.refreshActiveMessages();
-    });
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    } finally {
+      this.isSendingPrompt = false;
+    }
   }
 
   async handleAbort() {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
       await this.requireApi().abort();
-      await this.refreshActiveMessages();
+      await this.refreshActiveSessionData();
     });
+  }
+
+  async refreshActiveSessionData() {
+    await this.refreshActiveMessages();
+    await this.refreshSessionStats();
   }
 
   async refreshActiveMessages() {
@@ -138,9 +249,76 @@ class DesktopState {
       const result = await this.requireApi().switchSession(this.selectedSessionPath);
       this.sessionState = result.state;
       this.messages = result.messages;
+      this.isAgentRunning = Boolean(result.state.isStreaming);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
+  }
+
+  async refreshSessionStats() {
+    if (!this.selectedSessionPath && !this.sessionState?.sessionFile) {
+      this.sessionStats = null;
+      this.sessionStatsError = undefined;
+      this.sessionStatsLoading = false;
+      return;
+    }
+
+    this.sessionStatsLoading = true;
+    this.sessionStatsError = undefined;
+
+    try {
+      this.sessionStats = await this.requireApi().getSessionStats();
+    } catch (error) {
+      this.sessionStatsError = getErrorMessage(error);
+    } finally {
+      this.sessionStatsLoading = false;
+    }
+  }
+
+  handlePiEvent(event: unknown, type: string) {
+    const record = toRecord(event);
+
+    if (type === "agent_start") {
+      this.isAgentRunning = true;
+      this.setSessionStreaming(true);
+      return;
+    }
+
+    if (type === "message_start" || type === "message_update" || type === "message_end") {
+      if (record.message !== undefined) {
+        this.streamingMessage = record.message;
+      }
+
+      const streamingError = getStreamingErrorMessage(record);
+
+      if (streamingError) {
+        this.errorMessage = streamingError;
+      }
+
+      return;
+    }
+
+    if (type === "agent_end") {
+      void this.reconcileAgentEnd();
+    }
+  }
+
+  async reconcileAgentEnd() {
+    await this.refreshActiveSessionData();
+    this.streamingMessage = undefined;
+    this.isAgentRunning = false;
+    this.setSessionStreaming(false);
+  }
+
+  setSessionStreaming(isStreaming: boolean) {
+    if (!this.sessionState) {
+      return;
+    }
+
+    this.sessionState = {
+      ...this.sessionState,
+      isStreaming,
+    };
   }
 
   async withBusy(action: () => Promise<void>) {
@@ -171,9 +349,32 @@ export function basename(value: string) {
   return clean.slice(clean.lastIndexOf("/") + 1) || clean;
 }
 
-function upsertRepo(currentRepos: SidebarRepo[], nextRepoPath: string) {
-  const nextRepo = { name: basename(nextRepoPath), path: nextRepoPath };
+function createRepo(nextRepoPath: string, updates: Partial<SidebarRepo> = {}): SidebarRepo {
+  return {
+    name: basename(nextRepoPath),
+    path: nextRepoPath,
+    expanded: false,
+    sessions: [],
+    sessionsLoaded: false,
+    sessionsLoading: false,
+    showAllSessions: false,
+    ...updates,
+  };
+}
+
+function upsertRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: Partial<SidebarRepo> = {}) {
+  const existingRepo = currentRepos.find((repo) => repo.path === nextRepoPath);
+  const nextRepo = existingRepo ? { ...existingRepo, ...updates, name: basename(nextRepoPath), path: nextRepoPath } : createRepo(nextRepoPath, updates);
+
   return [nextRepo, ...currentRepos.filter((repo) => repo.path !== nextRepoPath)];
+}
+
+function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: Partial<SidebarRepo>) {
+  if (!currentRepos.some((repo) => repo.path === nextRepoPath)) {
+    return [createRepo(nextRepoPath, updates), ...currentRepos];
+  }
+
+  return currentRepos.map((repo) => (repo.path === nextRepoPath ? { ...repo, ...updates } : repo));
 }
 
 function getErrorMessage(error: unknown) {
@@ -226,6 +427,25 @@ function formatActivity(event: unknown): ActivityItem {
     type,
     detail: toolName ?? message ?? type,
   };
+}
+
+function getStreamingErrorMessage(event: Record<string, unknown>) {
+  const assistantEvent = toRecord(event.assistantMessageEvent);
+
+  if (assistantEvent.type !== "error") {
+    return undefined;
+  }
+
+  const error = assistantEvent.error;
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  const errorRecord = toRecord(error);
+  const errorMessage = errorRecord.errorMessage ?? errorRecord.message;
+
+  return typeof errorMessage === "string" ? errorMessage : "PI streaming failed.";
 }
 
 function toRecord(value: unknown): Record<string, unknown> {

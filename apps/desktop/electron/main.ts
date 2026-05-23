@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { stat } from "node:fs/promises";
 import path from "node:path";
@@ -40,6 +40,14 @@ type PendingRequest = {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
+const windowBackground = {
+  light: "rgb(250, 250, 250)",
+  dark: "rgb(31, 31, 31)",
+} as const;
+
+function getWindowBackgroundColor() {
+  return nativeTheme.shouldUseDarkColors ? windowBackground.dark : windowBackground.light;
+}
 
 let mainWindow: BrowserWindow | undefined;
 let piProcess: ChildProcessWithoutNullStreams | undefined;
@@ -56,7 +64,7 @@ function createMainWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "H3Code",
-    backgroundColor: "#ffffff",
+    backgroundColor: getWindowBackgroundColor(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -125,13 +133,18 @@ function serializeSession(session: SessionInfo): PiSessionSummary {
   };
 }
 
+async function listSessionsForRepo(repoPath: string) {
+  await assertDirectory(repoPath);
+  const sessions = await SessionManager.list(repoPath);
+  return sessions.map(serializeSession);
+}
+
 async function listPiSessions() {
   if (!selectedRepoPath) {
     throw new Error("Select a repo before listing sessions.");
   }
 
-  const sessions = await SessionManager.list(selectedRepoPath);
-  return sessions.map(serializeSession);
+  return listSessionsForRepo(selectedRepoPath);
 }
 
 async function stopPiProcess() {
@@ -280,6 +293,11 @@ async function getStateAndMessages() {
   };
 }
 
+async function getSessionStats() {
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_session_stats"; success: true }>>({ type: "get_session_stats" });
+  return response.data;
+}
+
 async function switchPiSession(sessionPath: string) {
   await sendCommand<Extract<RpcResponse, { command: "switch_session"; success: true }>>({
     type: "switch_session",
@@ -301,11 +319,11 @@ ipcMain.handle("repo:select", async () => {
   return { path: result.filePaths[0] };
 });
 
-ipcMain.handle("pi:connect-repo", async (_event, repoPath: string): Promise<ConnectRepoResult> => {
+ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessionPath?: string): Promise<ConnectRepoResult> => {
   await startPiProcess(repoPath);
 
   const sessions = await listPiSessions();
-  const selectedSession = sessions[0];
+  const selectedSession = sessions.find((session) => session.path === selectedSessionPath) ?? sessions[0];
 
   if (!selectedSession) {
     return { repoPath, sessions };
@@ -323,6 +341,8 @@ ipcMain.handle("pi:connect-repo", async (_event, repoPath: string): Promise<Conn
 });
 
 ipcMain.handle("pi:list-sessions", listPiSessions);
+ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string) => listSessionsForRepo(repoPath));
+ipcMain.handle("pi:get-session-stats", getSessionStats);
 
 ipcMain.handle("pi:switch-session", async (_event, sessionPath: string) => switchPiSession(sessionPath));
 
@@ -348,6 +368,10 @@ ipcMain.handle("pi:abort", async () => {
 });
 
 app.whenReady().then(() => {
+  nativeTheme.on("updated", () => {
+    mainWindow?.setBackgroundColor(getWindowBackgroundColor());
+  });
+
   createMainWindow();
 
   app.on("activate", () => {

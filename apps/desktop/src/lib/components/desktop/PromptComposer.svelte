@@ -30,18 +30,18 @@
     </PromptInputBody>
     <PromptInputToolbar class="flex h-8 min-w-0 items-center justify-between gap-3 border-t border-border/50 px-2">
       <div class="flex min-w-0 items-center gap-2 text-[11px] leading-tight text-muted-foreground">
-        <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true"></span>
+        <span class={desktopState.isAgentRunning || desktopState.sessionState?.isStreaming ? "size-1.5 shrink-0 rounded-full bg-primary" : "size-1.5 shrink-0 rounded-full bg-muted-foreground/45"} aria-hidden="true"></span>
         <span class="shrink-0 font-medium text-foreground/80">{desktopState.sessionState?.isStreaming ? "Follow-up" : "Prompt"}</span>
-        <span class="truncate">Enter send · Shift Enter newline</span>
+        <span class="truncate">{desktopState.isSendingPrompt ? "Sending…" : "Enter send · Shift Enter newline"}</span>
       </div>
       <div class="flex shrink-0 items-center gap-1">
-        <Button variant="ghost" size="sm" class="h-7 px-2 text-xs text-muted-foreground" onclick={() => desktopState.handleAbort()} disabled={!desktopState.sessionState?.isStreaming || desktopState.isBusy}>
+        <Button variant="ghost" size="sm" class="h-7 px-2 text-xs text-muted-foreground" onclick={() => desktopState.handleAbort()} disabled={!(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming) || desktopState.isBusy}>
           <HugeiconsIcon icon={StopCircleIcon} data-icon="inline-start" />
           Abort
         </Button>
         <PromptInputSubmit class="h-7 min-w-16 gap-1 px-2.5 text-xs" disabled={!desktopState.canSubmit}>
           <HugeiconsIcon icon={ArrowUp02Icon} data-icon="inline-start" />
-          Send
+          {desktopState.isSendingPrompt ? "Sending" : "Send"}
         </PromptInputSubmit>
       </div>
     </PromptInputToolbar>

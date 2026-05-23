@@ -50,10 +50,13 @@
 
   const messageRoles = new Set<MessageRole>(["user", "assistant", "system", "function", "data", "tool"]);
 
-  const transcriptMessages = $derived(buildTranscriptMessages(desktopState.messages));
+  const transcriptMessages = $derived(buildTranscriptMessages(desktopState.transcriptMessages));
+  const isThinking = $derived(
+    Boolean((desktopState.isAgentRunning || desktopState.sessionState?.isStreaming) && !desktopState.streamingMessage)
+  );
 
   const hasTranscriptMessages = $derived(
-    Boolean(desktopState.repoPath && desktopState.sessions.length > 0 && transcriptMessages.length > 0)
+    Boolean(desktopState.repoPath && desktopState.sessions.length > 0 && (transcriptMessages.length > 0 || isThinking))
   );
 
   function buildTranscriptMessages(messages: unknown[]): TranscriptMessage[] {
@@ -312,6 +315,18 @@
                 </MessageContent>
               </Message>
             {/each}
+
+            {#if isThinking}
+              <Message from="assistant" class="max-w-full border-b border-border/50 pb-4 last:border-b-0">
+                <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Assistant</div>
+                <MessageContent class="w-full max-w-full overflow-visible">
+                  <div class="flex items-center gap-2 text-sm leading-6 text-muted-foreground">
+                    <span class="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true"></span>
+                    <span>Pi is thinking…</span>
+                  </div>
+                </MessageContent>
+              </Message>
+            {/if}
           </div>
         </ConversationContent>
         <ConversationScrollButton class="size-8 border-border/50 bg-background text-muted-foreground shadow-none hover:bg-accent hover:text-foreground" />
@@ -329,15 +344,21 @@
           <div class="flex min-h-full items-center justify-center px-6 py-10">
             <div class="grid w-full max-w-sm justify-items-center text-center">
               <div class="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground">
-                <HugeiconsIcon icon={FolderCodeIcon} data-icon />
+                <HugeiconsIcon icon={desktopState.repos.length > 0 ? AiBrain02Icon : FolderCodeIcon} data-icon />
               </div>
-              <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No repository selected</p>
-              <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a repo to start.</h2>
-              <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">H3Code will load PI sessions from the selected folder.</p>
-              <Button class="mt-4" onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
-                <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
-                Select repo
-              </Button>
+              {#if desktopState.repos.length > 0}
+                <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No session selected</p>
+                <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a session from the sidebar.</h2>
+                <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">Expand a repository, then open an existing session or create a new one.</p>
+              {:else}
+                <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No repository selected</p>
+                <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a repo to start.</h2>
+                <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">H3Code will load PI sessions from the selected folder.</p>
+                <Button class="mt-4" onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
+                  <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
+                  Select repo
+                </Button>
+              {/if}
             </div>
           </div>
         {:else if desktopState.sessions.length === 0}
