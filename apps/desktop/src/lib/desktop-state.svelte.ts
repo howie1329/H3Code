@@ -16,6 +16,26 @@ export type SidebarRepo = {
   showAllSessions?: boolean;
 };
 
+type OptimisticUserMessage = {
+  id: string;
+  role: "user";
+  content: string;
+  timestamp: number;
+  optimistic: true;
+};
+
+type LiveToolExecutionMessage = {
+  id: string;
+  role: "toolExecution";
+  toolCallId: string;
+  toolName: string;
+  content: unknown;
+  args?: unknown;
+  isError: boolean;
+  state: "input-streaming" | "input-available" | "output-available" | "output-error";
+  timestamp: number;
+};
+
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
   promptValue = $state("");
@@ -33,7 +53,9 @@ class DesktopState {
   slashCommandsLoaded = $state(false);
   slashCommandsSessionKey = $state<string | undefined>();
   messages = $state<unknown[]>([]);
+  pendingUserMessages = $state<OptimisticUserMessage[]>([]);
   streamingMessage = $state<unknown | undefined>();
+  liveToolExecutions = $state<Record<string, LiveToolExecutionMessage>>({});
   piStatus = $state<PiStatus>({ state: "disconnected" });
   activity = $state<ActivityItem[]>([]);
   isBusy = $state(false);
@@ -44,7 +66,12 @@ class DesktopState {
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
   canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
-  transcriptMessages = $derived(this.streamingMessage ? [...this.messages, this.streamingMessage] : this.messages);
+  transcriptMessages = $derived([
+    ...this.messages,
+    ...this.pendingUserMessages,
+    ...(this.streamingMessage ? [this.streamingMessage] : []),
+    ...Object.values(this.liveToolExecutions),
+  ]);
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
 
@@ -60,6 +87,7 @@ class DesktopState {
 
       if (status.state !== "connected") {
         this.resetSlashCommands();
+        this.resetTransientTranscript();
       }
 
       if (status.diagnostic) {
@@ -151,7 +179,7 @@ class DesktopState {
     this.sessionStats = null;
     this.resetSlashCommands();
     this.messages = result.messages ?? [];
-    this.streamingMessage = undefined;
+    this.resetTransientTranscript();
     this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
   }
@@ -178,7 +206,7 @@ class DesktopState {
       this.sessionStats = null;
       this.resetSlashCommands();
       this.messages = result.messages;
-      this.streamingMessage = undefined;
+      this.resetTransientTranscript();
       this.isAgentRunning = Boolean(result.state?.isStreaming);
       await this.refreshSessionStats();
     });
@@ -203,7 +231,7 @@ class DesktopState {
       this.sessionStats = null;
       this.resetSlashCommands();
       this.messages = result.messages;
-      this.streamingMessage = undefined;
+      this.resetTransientTranscript();
       this.isAgentRunning = Boolean(result.state.isStreaming);
       this.sessions = await this.requireApi().listSessions();
       this.repos = upsertRepo(this.repos, repoPath, {
@@ -226,6 +254,8 @@ class DesktopState {
       return;
     }
 
+    const optimisticMessage = createOptimisticUserMessage(text);
+    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
     this.isSendingPrompt = true;
 
     try {
@@ -233,6 +263,7 @@ class DesktopState {
       await this.requireApi().sendPrompt(text, this.sessionState?.isStreaming ? "followUp" : undefined);
       this.promptValue = "";
     } catch (error) {
+      this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
       this.errorMessage = getErrorMessage(error);
     } finally {
       this.isSendingPrompt = false;
@@ -244,6 +275,7 @@ class DesktopState {
       this.errorMessage = undefined;
       await this.requireApi().abort();
       await this.refreshActiveSessionData();
+      this.resetTransientTranscript();
     });
   }
 
@@ -344,14 +376,29 @@ class DesktopState {
     }
 
     if (type === "message_start" || type === "message_update" || type === "message_end") {
-      if (record.message !== undefined) {
-        this.streamingMessage = record.message;
+      const nextStreamingMessage = getStreamingMessage(record);
+
+      if (nextStreamingMessage !== undefined) {
+        this.streamingMessage = cloneForState(nextStreamingMessage);
       }
 
       const streamingError = getStreamingErrorMessage(record);
 
       if (streamingError) {
         this.errorMessage = streamingError;
+      }
+
+      return;
+    }
+
+    if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {
+      const toolExecution = createLiveToolExecutionMessage(record, type);
+
+      if (toolExecution) {
+        this.liveToolExecutions = {
+          ...this.liveToolExecutions,
+          [toolExecution.toolCallId]: toolExecution,
+        };
       }
 
       return;
@@ -364,9 +411,15 @@ class DesktopState {
 
   async reconcileAgentEnd() {
     await this.refreshActiveSessionData();
-    this.streamingMessage = undefined;
+    this.resetTransientTranscript();
     this.isAgentRunning = false;
     this.setSessionStreaming(false);
+  }
+
+  resetTransientTranscript() {
+    this.pendingUserMessages = [];
+    this.streamingMessage = undefined;
+    this.liveToolExecutions = {};
   }
 
   setSessionStreaming(isStreaming: boolean) {
@@ -438,6 +491,76 @@ function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: 
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function createOptimisticUserMessage(content: string): OptimisticUserMessage {
+  return {
+    id: `optimistic-user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    role: "user",
+    content,
+    timestamp: Date.now(),
+    optimistic: true,
+  };
+}
+
+function getStreamingMessage(event: Record<string, unknown>) {
+  if (event.message !== undefined) {
+    return event.message;
+  }
+
+  const assistantEvent = toRecord(event.assistantMessageEvent);
+
+  return assistantEvent.partial ?? assistantEvent.message ?? assistantEvent.error;
+}
+
+function createLiveToolExecutionMessage(event: Record<string, unknown>, eventType: string): LiveToolExecutionMessage | undefined {
+  const toolCallId = getString(event.toolCallId);
+
+  if (!toolCallId) {
+    return undefined;
+  }
+
+  const partialResult = toRecord(event.partialResult);
+  const result = toRecord(event.result);
+  const isError = event.isError === true;
+  const content = eventType === "tool_execution_update" ? partialResult.content : eventType === "tool_execution_end" ? result.content : [];
+  const errorText = getString(event.errorText) ?? getString(result.errorText) ?? getString(result.errorMessage);
+
+  return {
+    id: `live-tool-${toolCallId}`,
+    role: "toolExecution",
+    toolCallId,
+    toolName: getString(event.toolName) ?? "tool",
+    content: errorText ? [{ type: "text", text: errorText }] : (content ?? []),
+    args: event.args,
+    isError,
+    state: getToolExecutionState(eventType, isError),
+    timestamp: Date.now(),
+  };
+}
+
+function getToolExecutionState(eventType: string, isError: boolean): LiveToolExecutionMessage["state"] {
+  if (eventType === "tool_execution_start") {
+    return "input-available";
+  }
+
+  if (eventType === "tool_execution_update") {
+    return "input-available";
+  }
+
+  return isError ? "output-error" : "output-available";
+}
+
+function cloneForState(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Array.isArray(value) ? [...value] : { ...(value as Record<string, unknown>) };
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
 }
 
 export function formatDate(value: string) {
