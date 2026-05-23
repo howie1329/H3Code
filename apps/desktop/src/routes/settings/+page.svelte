@@ -1,13 +1,15 @@
 <script lang="ts">
   import { desktopState } from "$lib/desktop-state.svelte";
+  import PageShell from "$lib/components/desktop/PageShell.svelte";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
 </script>
 
 <svelte:head><title>Settings · H3Code Desktop</title></svelte:head>
 
-<div class="min-h-0 flex-1 overflow-auto p-6">
-  <div class="max-w-3xl">
+<PageShell>
+  <div class="min-h-0 flex-1 overflow-auto p-6">
+    <div class="max-w-3xl">
     <header class="space-y-2">
       <h2 class="text-xl font-semibold tracking-tight">Settings</h2>
       <p class="max-w-2xl text-xs leading-5 text-muted-foreground">
@@ -51,5 +53,6 @@
         {/if}
       </dl>
     </section>
+    </div>
   </div>
-</div>
+</PageShell>
