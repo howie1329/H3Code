@@ -2,9 +2,11 @@
 
 H3Code is an MVP-stage local desktop UI shell for PI Agent in RPC mode.
 
-The desktop app is being rewritten from scratch. The previous desktop implementation has been intentionally removed so the new Electron and SvelteKit app can be rebuilt around a thin PI RPC integration instead of older app-owned session behavior.
+The desktop app is an Electron and SvelteKit wrapper around PI Agent. PI owns the agent runtime, sessions, messages, tool execution, model behavior, queueing, compaction, and retry. H3Code owns the local desktop experience around that runtime: process lifecycle, repo selection, connection diagnostics, UI state, rendering, and minimal preferences.
 
-The web and marketing app are preserved.
+The web and marketing app are preserved in `apps/web`.
+
+The canonical MVP brief lives in [docs/h3code-desktop-mvp.md](docs/h3code-desktop-mvp.md).
 
 ## Product Direction
 
@@ -24,11 +26,47 @@ H3Code owns:
 - UI state and rendering.
 - Minimal local preferences.
 
-The canonical MVP brief lives in [docs/h3code-desktop-mvp.md](docs/h3code-desktop-mvp.md).
+## Current Desktop Status
+
+The desktop app currently implements the core PI RPC loop:
+
+- Select a local repo with the native directory picker.
+- Launch `pi --mode rpc` with that repo as the subprocess working directory.
+- List PI sessions for repos.
+- Switch sessions and create new PI-owned sessions.
+- Load PI state, messages, and session stats.
+- Send prompts and follow-up prompts through PI RPC.
+- Abort active runs.
+- Render transcript messages, streaming assistant output, tool blocks, runtime diagnostics, and recent tool activity.
+
+Still planned:
+
+- Persist recent repos, last selected repo/session, and desktop preferences.
+- Make the PI executable path configurable instead of hardcoded to `pi`.
+- Replace placeholder Repos, Sessions, and Activity pages with full product surfaces.
+- Wire up global search.
+- Improve full live activity/tool timeline rendering.
+
+## Architecture
+
+```txt
+Svelte renderer
+  -> preload IPC bridge
+    -> Electron main process
+      -> pi --mode rpc subprocess
+```
+
+Important desktop files:
+
+- `apps/desktop/electron/main.ts` — Electron window, PI subprocess lifecycle, JSONL RPC framing, IPC handlers.
+- `apps/desktop/electron/preload.ts` — safe renderer-facing desktop API.
+- `apps/desktop/src/lib/desktop-state.svelte.ts` — centralized renderer state for repos, sessions, messages, status, activity, and stats.
+- `apps/desktop/src/lib/components/desktop/` — desktop shell, sidebar, transcript, composer, context panel, and page primitives.
+- `apps/desktop/src/routes/` — SvelteKit routes for workspace, repos, sessions, activity, and settings.
 
 ## MVP Focus
 
-The first desktop rebuild should prove one loop:
+The desktop rebuild proves one loop:
 
 1. Select a local repo.
 2. Launch or connect to `pi --mode rpc` with that repo as the working directory.
@@ -43,21 +81,23 @@ The MVP explicitly defers SQL indexing, multi-provider support, Codex support, c
 
 ```txt
 apps/
-  web/            # SvelteKit marketing site
+  desktop/       # Electron + SvelteKit desktop app
+  web/           # SvelteKit marketing site
 docs/
   h3code-desktop-mvp.md
+  SvelteKitAiElements.md
+  SvelteKitShadcn.md
 ```
 
-`apps/desktop` is intentionally absent until the clean desktop rebuild is scaffolded.
-
-## Planned Desktop Stack
+## Desktop Stack
 
 - Electron
 - SvelteKit
 - TypeScript
 - Tailwind CSS
+- shadcn-svelte / Bits UI
 - PI Agent RPC over stdin/stdout JSONL
-- Minimal local JSON preferences for desktop settings
+- Minimal local JSON preferences for desktop settings, planned
 
 ## Local Development
 
@@ -71,6 +111,12 @@ Run all workspace dev tasks:
 
 ```bash
 npm run dev
+```
+
+Run the desktop app:
+
+```bash
+npm run dev:desktop
 ```
 
 Run the web app:
@@ -87,4 +133,4 @@ npm run lint
 npm run build
 ```
 
-Desktop commands will be added back when the new desktop app is scaffolded.
+Desktop-specific scripts are defined in `apps/desktop/package.json`.

@@ -8,6 +8,10 @@ The MVP proves one loop: a user selects a local repo, starts or connects to PI A
 
 H3Code is not the agent runtime, session system, message store, model router, or tool executor. PI Agent owns those responsibilities. H3Code owns the desktop experience around them.
 
+## Implementation Status
+
+This document describes the MVP target. The current `apps/desktop` app has been scaffolded and implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt sending, abort, transcript rendering, session stats, diagnostics, and recent activity. Remaining MVP gaps include persisted local preferences, configurable PI executable path, richer full-page repo/session/activity surfaces, and stronger live tool activity rendering.
+
 ## Product Boundary
 
 PI Agent owns:
