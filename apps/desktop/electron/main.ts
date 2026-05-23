@@ -293,6 +293,11 @@ async function getStateAndMessages() {
   };
 }
 
+async function getSessionStats() {
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_session_stats"; success: true }>>({ type: "get_session_stats" });
+  return response.data;
+}
+
 async function switchPiSession(sessionPath: string) {
   await sendCommand<Extract<RpcResponse, { command: "switch_session"; success: true }>>({
     type: "switch_session",
@@ -337,6 +342,7 @@ ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessi
 
 ipcMain.handle("pi:list-sessions", listPiSessions);
 ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string) => listSessionsForRepo(repoPath));
+ipcMain.handle("pi:get-session-stats", getSessionStats);
 
 ipcMain.handle("pi:switch-session", async (_event, sessionPath: string) => switchPiSession(sessionPath));
 

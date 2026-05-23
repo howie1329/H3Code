@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("h3code", {
   listRepoSessions: (repoPath: string) => ipcRenderer.invoke("pi:list-repo-sessions", repoPath),
   switchSession: (sessionPath: string) => ipcRenderer.invoke("pi:switch-session", sessionPath),
   newSession: (parentSession?: string) => ipcRenderer.invoke("pi:new-session", parentSession),
+  getSessionStats: () => ipcRenderer.invoke("pi:get-session-stats"),
   sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => ipcRenderer.invoke("pi:send-prompt", message, streamingBehavior),
   abort: () => ipcRenderer.invoke("pi:abort"),
   onPiEvent: (listener: PiEventListener) => {

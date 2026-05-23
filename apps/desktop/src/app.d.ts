@@ -37,6 +37,29 @@ declare global {
     pendingMessageCount: number;
   };
 
+  type PiSessionStats = {
+    sessionFile?: string;
+    sessionId: string;
+    userMessages: number;
+    assistantMessages: number;
+    toolCalls: number;
+    toolResults: number;
+    totalMessages: number;
+    tokens: {
+      input: number;
+      output: number;
+      cacheRead: number;
+      cacheWrite: number;
+      total: number;
+    };
+    cost: number;
+    contextUsage?: {
+      tokens: number | null;
+      contextWindow: number;
+      percent: number | null;
+    };
+  };
+
   type PiConnectRepoResult = {
     repoPath: string;
     sessions: PiSessionSummary[];
@@ -54,6 +77,7 @@ declare global {
       listRepoSessions: (repoPath: string) => Promise<PiSessionSummary[]>;
       switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
+      getSessionStats: () => Promise<PiSessionStats | null>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
       abort: () => Promise<void>;
       onPiEvent: (listener: (event: unknown) => void) => () => void;

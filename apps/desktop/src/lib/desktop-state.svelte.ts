@@ -24,6 +24,9 @@ class DesktopState {
   sessions = $state<PiSessionSummary[]>([]);
   selectedSessionPath = $state<string | undefined>();
   sessionState = $state<PiSessionState | undefined>();
+  sessionStats = $state<PiSessionStats | null>(null);
+  sessionStatsLoading = $state(false);
+  sessionStatsError = $state<string | undefined>();
   messages = $state<unknown[]>([]);
   piStatus = $state<PiStatus>({ state: "disconnected" });
   activity = $state<ActivityItem[]>([]);
@@ -42,7 +45,7 @@ class DesktopState {
       this.activity = [item, ...this.activity].slice(0, 8);
 
       if (item.type === "agent_end") {
-        void this.refreshActiveMessages();
+        void this.refreshActiveSessionData();
       }
     });
 
@@ -135,7 +138,9 @@ class DesktopState {
     this.sessions = result.sessions;
     this.selectedSessionPath = result.selectedSessionPath;
     this.sessionState = result.state;
+    this.sessionStats = null;
     this.messages = result.messages ?? [];
+    await this.refreshSessionStats();
   }
 
   async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
@@ -157,7 +162,9 @@ class DesktopState {
       const result = await this.requireApi().switchSession(sessionPath);
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
+      this.sessionStats = null;
       this.messages = result.messages;
+      await this.refreshSessionStats();
     });
   }
 
@@ -177,6 +184,7 @@ class DesktopState {
       const result = await this.requireApi().newSession(this.selectedSessionPath);
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
+      this.sessionStats = null;
       this.messages = result.messages;
       this.sessions = await this.requireApi().listSessions();
       this.repos = upsertRepo(this.repos, repoPath, {
@@ -186,6 +194,7 @@ class DesktopState {
         sessionsLoading: false,
         sessionsError: undefined,
       });
+      await this.refreshSessionStats();
     });
   }
 
@@ -202,7 +211,7 @@ class DesktopState {
       this.errorMessage = undefined;
       await this.requireApi().sendPrompt(text, this.sessionState?.isStreaming ? "followUp" : undefined);
       this.promptValue = "";
-      await this.refreshActiveMessages();
+      await this.refreshActiveSessionData();
     });
   }
 
@@ -210,8 +219,13 @@ class DesktopState {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
       await this.requireApi().abort();
-      await this.refreshActiveMessages();
+      await this.refreshActiveSessionData();
     });
+  }
+
+  async refreshActiveSessionData() {
+    await this.refreshActiveMessages();
+    await this.refreshSessionStats();
   }
 
   async refreshActiveMessages() {
@@ -225,6 +239,26 @@ class DesktopState {
       this.messages = result.messages;
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  async refreshSessionStats() {
+    if (!this.selectedSessionPath && !this.sessionState?.sessionFile) {
+      this.sessionStats = null;
+      this.sessionStatsError = undefined;
+      this.sessionStatsLoading = false;
+      return;
+    }
+
+    this.sessionStatsLoading = true;
+    this.sessionStatsError = undefined;
+
+    try {
+      this.sessionStats = await this.requireApi().getSessionStats();
+    } catch (error) {
+      this.sessionStatsError = getErrorMessage(error);
+    } finally {
+      this.sessionStatsLoading = false;
     }
   }
 
