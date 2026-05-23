@@ -50,10 +50,13 @@
 
   const messageRoles = new Set<MessageRole>(["user", "assistant", "system", "function", "data", "tool"]);
 
-  const transcriptMessages = $derived(buildTranscriptMessages(desktopState.messages));
+  const transcriptMessages = $derived(buildTranscriptMessages(desktopState.transcriptMessages));
+  const isThinking = $derived(
+    Boolean((desktopState.isAgentRunning || desktopState.sessionState?.isStreaming) && !desktopState.streamingMessage)
+  );
 
   const hasTranscriptMessages = $derived(
-    Boolean(desktopState.repoPath && desktopState.sessions.length > 0 && transcriptMessages.length > 0)
+    Boolean(desktopState.repoPath && desktopState.sessions.length > 0 && (transcriptMessages.length > 0 || isThinking))
   );
 
   function buildTranscriptMessages(messages: unknown[]): TranscriptMessage[] {
@@ -312,6 +315,18 @@
                 </MessageContent>
               </Message>
             {/each}
+
+            {#if isThinking}
+              <Message from="assistant" class="max-w-full border-b border-border/50 pb-4 last:border-b-0">
+                <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Assistant</div>
+                <MessageContent class="w-full max-w-full overflow-visible">
+                  <div class="flex items-center gap-2 text-sm leading-6 text-muted-foreground">
+                    <span class="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true"></span>
+                    <span>Pi is thinking…</span>
+                  </div>
+                </MessageContent>
+              </Message>
+            {/if}
           </div>
         </ConversationContent>
         <ConversationScrollButton class="size-8 border-border/50 bg-background text-muted-foreground shadow-none hover:bg-accent hover:text-foreground" />

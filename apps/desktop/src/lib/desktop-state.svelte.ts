@@ -28,14 +28,18 @@ class DesktopState {
   sessionStatsLoading = $state(false);
   sessionStatsError = $state<string | undefined>();
   messages = $state<unknown[]>([]);
+  streamingMessage = $state<unknown | undefined>();
   piStatus = $state<PiStatus>({ state: "disconnected" });
   activity = $state<ActivityItem[]>([]);
   isBusy = $state(false);
+  isSendingPrompt = $state(false);
+  isAgentRunning = $state(false);
   errorMessage = $state<string | undefined>();
 
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
-  canSubmit = $derived(this.canUseSession && !this.isBusy && this.promptValue.trim().length > 0);
+  canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  transcriptMessages = $derived(this.streamingMessage ? [...this.messages, this.streamingMessage] : this.messages);
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
 
@@ -43,10 +47,7 @@ class DesktopState {
     const removeEventListener = window.h3code?.onPiEvent((event) => {
       const item = formatActivity(event);
       this.activity = [item, ...this.activity].slice(0, 8);
-
-      if (item.type === "agent_end") {
-        void this.refreshActiveSessionData();
-      }
+      this.handlePiEvent(event, item.type);
     });
 
     const removeStatusListener = window.h3code?.onPiStatus((status) => {
@@ -140,6 +141,8 @@ class DesktopState {
     this.sessionState = result.state;
     this.sessionStats = null;
     this.messages = result.messages ?? [];
+    this.streamingMessage = undefined;
+    this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
   }
 
@@ -164,6 +167,8 @@ class DesktopState {
       this.sessionState = result.state;
       this.sessionStats = null;
       this.messages = result.messages;
+      this.streamingMessage = undefined;
+      this.isAgentRunning = Boolean(result.state?.isStreaming);
       await this.refreshSessionStats();
     });
   }
@@ -186,6 +191,8 @@ class DesktopState {
       this.selectedSessionPath = result.state.sessionFile;
       this.sessionStats = null;
       this.messages = result.messages;
+      this.streamingMessage = undefined;
+      this.isAgentRunning = Boolean(result.state.isStreaming);
       this.sessions = await this.requireApi().listSessions();
       this.repos = upsertRepo(this.repos, repoPath, {
         expanded: true,
@@ -207,12 +214,17 @@ class DesktopState {
       return;
     }
 
-    await this.withBusy(async () => {
+    this.isSendingPrompt = true;
+
+    try {
       this.errorMessage = undefined;
       await this.requireApi().sendPrompt(text, this.sessionState?.isStreaming ? "followUp" : undefined);
       this.promptValue = "";
-      await this.refreshActiveSessionData();
-    });
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    } finally {
+      this.isSendingPrompt = false;
+    }
   }
 
   async handleAbort() {
@@ -237,6 +249,7 @@ class DesktopState {
       const result = await this.requireApi().switchSession(this.selectedSessionPath);
       this.sessionState = result.state;
       this.messages = result.messages;
+      this.isAgentRunning = Boolean(result.state.isStreaming);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
@@ -260,6 +273,52 @@ class DesktopState {
     } finally {
       this.sessionStatsLoading = false;
     }
+  }
+
+  handlePiEvent(event: unknown, type: string) {
+    const record = toRecord(event);
+
+    if (type === "agent_start") {
+      this.isAgentRunning = true;
+      this.setSessionStreaming(true);
+      return;
+    }
+
+    if (type === "message_start" || type === "message_update" || type === "message_end") {
+      if (record.message !== undefined) {
+        this.streamingMessage = record.message;
+      }
+
+      const streamingError = getStreamingErrorMessage(record);
+
+      if (streamingError) {
+        this.errorMessage = streamingError;
+      }
+
+      return;
+    }
+
+    if (type === "agent_end") {
+      void this.reconcileAgentEnd();
+    }
+  }
+
+  async reconcileAgentEnd() {
+    await this.refreshActiveSessionData();
+    this.streamingMessage = undefined;
+    this.isAgentRunning = false;
+    this.setSessionStreaming(false);
+  }
+
+  setSessionStreaming(isStreaming: boolean) {
+    if (!this.sessionState) {
+      return;
+    }
+
+    this.sessionState = {
+      ...this.sessionState,
+      isStreaming,
+    };
   }
 
   async withBusy(action: () => Promise<void>) {
@@ -368,6 +427,25 @@ function formatActivity(event: unknown): ActivityItem {
     type,
     detail: toolName ?? message ?? type,
   };
+}
+
+function getStreamingErrorMessage(event: Record<string, unknown>) {
+  const assistantEvent = toRecord(event.assistantMessageEvent);
+
+  if (assistantEvent.type !== "error") {
+    return undefined;
+  }
+
+  const error = assistantEvent.error;
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  const errorRecord = toRecord(error);
+  const errorMessage = errorRecord.errorMessage ?? errorRecord.message;
+
+  return typeof errorMessage === "string" ? errorMessage : "PI streaming failed.";
 }
 
 function toRecord(value: unknown): Record<string, unknown> {
