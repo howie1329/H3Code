@@ -329,15 +329,21 @@
           <div class="flex min-h-full items-center justify-center px-6 py-10">
             <div class="grid w-full max-w-sm justify-items-center text-center">
               <div class="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground">
-                <HugeiconsIcon icon={FolderCodeIcon} data-icon />
+                <HugeiconsIcon icon={desktopState.repos.length > 0 ? AiBrain02Icon : FolderCodeIcon} data-icon />
               </div>
-              <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No repository selected</p>
-              <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a repo to start.</h2>
-              <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">H3Code will load PI sessions from the selected folder.</p>
-              <Button class="mt-4" onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
-                <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
-                Select repo
-              </Button>
+              {#if desktopState.repos.length > 0}
+                <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No session selected</p>
+                <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a session from the sidebar.</h2>
+                <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">Expand a repository, then open an existing session or create a new one.</p>
+              {:else}
+                <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No repository selected</p>
+                <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a repo to start.</h2>
+                <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">H3Code will load PI sessions from the selected folder.</p>
+                <Button class="mt-4" onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
+                  <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
+                  Select repo
+                </Button>
+              {/if}
             </div>
           </div>
         {:else if desktopState.sessions.length === 0}

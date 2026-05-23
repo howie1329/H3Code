@@ -49,8 +49,9 @@ declare global {
     h3code?: {
       platform: NodeJS.Platform;
       selectRepo: () => Promise<{ path: string } | null>;
-      connectRepo: (repoPath: string) => Promise<PiConnectRepoResult>;
+      connectRepo: (repoPath: string, selectedSessionPath?: string) => Promise<PiConnectRepoResult>;
       listSessions: () => Promise<PiSessionSummary[]>;
+      listRepoSessions: (repoPath: string) => Promise<PiSessionSummary[]>;
       switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;

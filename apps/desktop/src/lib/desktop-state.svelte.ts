@@ -8,6 +8,11 @@ export type ActivityItem = {
 export type SidebarRepo = {
   name: string;
   path: string;
+  expanded?: boolean;
+  sessions?: PiSessionSummary[];
+  sessionsLoaded?: boolean;
+  sessionsLoading?: boolean;
+  sessionsError?: string;
 };
 
 class DesktopState {
@@ -61,25 +66,83 @@ class DesktopState {
       return;
     }
 
-    await this.connectRepo(selected.path);
+    await this.addRepo(selected.path);
   }
 
-  async connectRepo(nextRepoPath: string) {
-    await this.withBusy(async () => {
-      this.errorMessage = undefined;
-      this.activity = [];
-      const result = await this.requireApi().connectRepo(nextRepoPath);
+  async addRepo(nextRepoPath: string) {
+    this.errorMessage = undefined;
+    this.repos = upsertRepo(this.repos, nextRepoPath, { expanded: true });
+    await this.loadRepoSessions(nextRepoPath);
+  }
 
-      this.repoPath = result.repoPath;
-      this.repos = upsertRepo(this.repos, result.repoPath);
-      this.sessions = result.sessions;
-      this.selectedSessionPath = result.selectedSessionPath;
-      this.sessionState = result.state;
-      this.messages = result.messages ?? [];
+  async toggleRepo(nextRepoPath: string) {
+    const repo = this.repos.find((item) => item.path === nextRepoPath);
+    const expanded = !repo?.expanded;
+
+    this.repos = updateRepo(this.repos, nextRepoPath, { expanded });
+
+    if (expanded && !repo?.sessionsLoaded && !repo?.sessionsLoading) {
+      await this.loadRepoSessions(nextRepoPath);
+    }
+  }
+
+  async loadRepoSessions(nextRepoPath: string) {
+    this.repos = updateRepo(this.repos, nextRepoPath, {
+      sessionsLoading: true,
+      sessionsError: undefined,
+    });
+
+    try {
+      const sessions = await this.requireApi().listRepoSessions(nextRepoPath);
+      this.repos = updateRepo(this.repos, nextRepoPath, {
+        sessions,
+        sessionsLoaded: true,
+        sessionsLoading: false,
+        sessionsError: undefined,
+      });
+    } catch (error) {
+      this.repos = updateRepo(this.repos, nextRepoPath, {
+        sessionsLoading: false,
+        sessionsError: getErrorMessage(error),
+      });
+    }
+  }
+
+  async connectRepo(nextRepoPath: string, selectedSessionPath?: string) {
+    await this.withBusy(async () => {
+      await this.connectRepoInternal(nextRepoPath, selectedSessionPath);
     });
   }
 
-  async handleSwitchSession(sessionPath: string) {
+  async connectRepoInternal(nextRepoPath: string, selectedSessionPath?: string) {
+    this.errorMessage = undefined;
+    this.activity = [];
+    const result = await this.requireApi().connectRepo(nextRepoPath, selectedSessionPath);
+
+    this.repoPath = result.repoPath;
+    this.repos = upsertRepo(this.repos, result.repoPath, {
+      expanded: true,
+      sessions: result.sessions,
+      sessionsLoaded: true,
+      sessionsLoading: false,
+      sessionsError: undefined,
+    });
+    this.sessions = result.sessions;
+    this.selectedSessionPath = result.selectedSessionPath;
+    this.sessionState = result.state;
+    this.messages = result.messages ?? [];
+  }
+
+  async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
+    if (!repoPath) {
+      return;
+    }
+
+    if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
+      await this.connectRepo(repoPath, sessionPath);
+      return;
+    }
+
     if (sessionPath === this.selectedSessionPath) {
       return;
     }
@@ -93,14 +156,31 @@ class DesktopState {
     });
   }
 
-  async handleNewSession() {
+  async handleNewSession(repoPath = this.repoPath) {
+    if (!repoPath) {
+      this.errorMessage = "Select a repo before creating a session.";
+      return;
+    }
+
     await this.withBusy(async () => {
       this.errorMessage = undefined;
+
+      if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
+        await this.connectRepoInternal(repoPath);
+      }
+
       const result = await this.requireApi().newSession(this.selectedSessionPath);
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
       this.messages = result.messages;
       this.sessions = await this.requireApi().listSessions();
+      this.repos = upsertRepo(this.repos, repoPath, {
+        expanded: true,
+        sessions: this.sessions,
+        sessionsLoaded: true,
+        sessionsLoading: false,
+        sessionsError: undefined,
+      });
     });
   }
 
@@ -171,9 +251,31 @@ export function basename(value: string) {
   return clean.slice(clean.lastIndexOf("/") + 1) || clean;
 }
 
-function upsertRepo(currentRepos: SidebarRepo[], nextRepoPath: string) {
-  const nextRepo = { name: basename(nextRepoPath), path: nextRepoPath };
+function createRepo(nextRepoPath: string, updates: Partial<SidebarRepo> = {}): SidebarRepo {
+  return {
+    name: basename(nextRepoPath),
+    path: nextRepoPath,
+    expanded: false,
+    sessions: [],
+    sessionsLoaded: false,
+    sessionsLoading: false,
+    ...updates,
+  };
+}
+
+function upsertRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: Partial<SidebarRepo> = {}) {
+  const existingRepo = currentRepos.find((repo) => repo.path === nextRepoPath);
+  const nextRepo = existingRepo ? { ...existingRepo, ...updates, name: basename(nextRepoPath), path: nextRepoPath } : createRepo(nextRepoPath, updates);
+
   return [nextRepo, ...currentRepos.filter((repo) => repo.path !== nextRepoPath)];
+}
+
+function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: Partial<SidebarRepo>) {
+  if (!currentRepos.some((repo) => repo.path === nextRepoPath)) {
+    return [createRepo(nextRepoPath, updates), ...currentRepos];
+  }
+
+  return currentRepos.map((repo) => (repo.path === nextRepoPath ? { ...repo, ...updates } : repo));
 }
 
 function getErrorMessage(error: unknown) {

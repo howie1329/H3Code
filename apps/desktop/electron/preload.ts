@@ -6,8 +6,9 @@ type PiStatusListener = (status: unknown) => void;
 contextBridge.exposeInMainWorld("h3code", {
   platform: process.platform,
   selectRepo: () => ipcRenderer.invoke("repo:select"),
-  connectRepo: (repoPath: string) => ipcRenderer.invoke("pi:connect-repo", repoPath),
+  connectRepo: (repoPath: string, selectedSessionPath?: string) => ipcRenderer.invoke("pi:connect-repo", repoPath, selectedSessionPath),
   listSessions: () => ipcRenderer.invoke("pi:list-sessions"),
+  listRepoSessions: (repoPath: string) => ipcRenderer.invoke("pi:list-repo-sessions", repoPath),
   switchSession: (sessionPath: string) => ipcRenderer.invoke("pi:switch-session", sessionPath),
   newSession: (parentSession?: string) => ipcRenderer.invoke("pi:new-session", parentSession),
   sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => ipcRenderer.invoke("pi:send-prompt", message, streamingBehavior),
