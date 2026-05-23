@@ -13,7 +13,7 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
 
-  import { desktopState, formatDate } from "$lib/desktop-state.svelte";
+  import { desktopState } from "$lib/desktop-state.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
@@ -101,8 +101,9 @@
           {:else}
             {#each desktopState.repos as repo}
               {@const isRepoActive = repo.path === desktopState.repoPath}
-              {@const visibleSessions = (repo.sessions ?? []).slice(0, visibleSessionCount)}
-              {@const hiddenSessionCount = Math.max((repo.sessions?.length ?? 0) - visibleSessionCount, 0)}
+              {@const sessionLimit = repo.showAllSessions ? (repo.sessions?.length ?? 0) : visibleSessionCount}
+              {@const visibleSessions = (repo.sessions ?? []).slice(0, sessionLimit)}
+              {@const hiddenSessionCount = Math.max((repo.sessions?.length ?? 0) - sessionLimit, 0)}
               <Sidebar.MenuItem>
                 <Sidebar.MenuButton
                   size="lg"
@@ -122,7 +123,7 @@
                 </Sidebar.MenuButton>
 
                 {#if repo.expanded}
-                  <Sidebar.MenuSub>
+                  <Sidebar.MenuSub class="overflow-hidden">
                     {#if repo.sessionsLoading}
                       <Sidebar.MenuSubItem>
                         <div class="flex h-7 items-center gap-2 px-2 text-xs text-muted-foreground">
@@ -141,11 +142,11 @@
                         <div class="px-2 py-1 text-xs leading-5 text-muted-foreground">No sessions</div>
                       </Sidebar.MenuSubItem>
                       <Sidebar.MenuSubItem>
-                        <Sidebar.MenuSubButton aria-disabled={desktopState.isBusy} class="text-muted-foreground">
+                        <Sidebar.MenuSubButton aria-disabled={desktopState.isBusy} class="w-full max-w-full text-muted-foreground">
                           {#snippet child({ props })}
                             <button {...props} type="button" onclick={() => !desktopState.isBusy && desktopState.handleNewSession(repo.path)}>
                               <HugeiconsIcon icon={AddCircleIcon} />
-                              <span>New session</span>
+                              <span class="truncate">New session</span>
                             </button>
                           {/snippet}
                         </Sidebar.MenuSubButton>
@@ -154,14 +155,11 @@
                       {#each visibleSessions as session}
                         {@const isSessionActive = session.path === desktopState.selectedSessionPath}
                         <Sidebar.MenuSubItem>
-                          <Sidebar.MenuSubButton isActive={isSessionActive} aria-disabled={desktopState.isBusy} class={isSessionActive ? "font-medium" : "text-muted-foreground"}>
+                          <Sidebar.MenuSubButton isActive={isSessionActive} aria-disabled={desktopState.isBusy} class={isSessionActive ? "w-full max-w-full font-medium" : "w-full max-w-full text-muted-foreground"}>
                             {#snippet child({ props })}
                               <button {...props} type="button" title={session.name ?? session.firstMessage ?? session.id} onclick={() => !desktopState.isBusy && desktopState.handleSwitchSession(session.path, repo.path)}>
                                 <HugeiconsIcon icon={AiBrain02Icon} />
-                                <span class="min-w-0 flex-1">
-                                  <span class="block truncate">{session.name ?? (session.firstMessage || "Untitled session")}</span>
-                                  <span class="block truncate font-mono text-[10px] text-muted-foreground">{session.messageCount} messages · {formatDate(session.modified)}</span>
-                                </span>
+                                <span class="block min-w-0 flex-1 truncate">{session.name ?? (session.firstMessage || "Untitled session")}</span>
                               </button>
                             {/snippet}
                           </Sidebar.MenuSubButton>
@@ -170,19 +168,23 @@
 
                       {#if hiddenSessionCount > 0}
                         <Sidebar.MenuSubItem>
-                          <div class="flex h-7 items-center gap-2 px-2 text-xs text-muted-foreground">
-                            <span class="font-mono">···</span>
-                            <span>{hiddenSessionCount} more</span>
-                          </div>
+                          <Sidebar.MenuSubButton class="w-full max-w-full text-muted-foreground">
+                            {#snippet child({ props })}
+                              <button {...props} type="button" aria-label={`Show ${hiddenSessionCount} more sessions for ${repo.name}`} onclick={() => desktopState.showAllRepoSessions(repo.path)}>
+                                <span class="font-mono">···</span>
+                                <span class="truncate">{hiddenSessionCount} more</span>
+                              </button>
+                            {/snippet}
+                          </Sidebar.MenuSubButton>
                         </Sidebar.MenuSubItem>
                       {/if}
 
                       <Sidebar.MenuSubItem>
-                        <Sidebar.MenuSubButton aria-disabled={desktopState.isBusy} class="text-muted-foreground">
+                        <Sidebar.MenuSubButton aria-disabled={desktopState.isBusy} class="w-full max-w-full text-muted-foreground">
                           {#snippet child({ props })}
                             <button {...props} type="button" onclick={() => !desktopState.isBusy && desktopState.handleNewSession(repo.path)}>
                               <HugeiconsIcon icon={AddCircleIcon} />
-                              <span>New session</span>
+                              <span class="truncate">New session</span>
                             </button>
                           {/snippet}
                         </Sidebar.MenuSubButton>
