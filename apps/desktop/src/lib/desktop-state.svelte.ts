@@ -27,6 +27,11 @@ class DesktopState {
   sessionStats = $state<PiSessionStats | null>(null);
   sessionStatsLoading = $state(false);
   sessionStatsError = $state<string | undefined>();
+  slashCommands = $state<PiSlashCommand[]>([]);
+  slashCommandsLoading = $state(false);
+  slashCommandsError = $state<string | undefined>();
+  slashCommandsLoaded = $state(false);
+  slashCommandsSessionKey = $state<string | undefined>();
   messages = $state<unknown[]>([]);
   streamingMessage = $state<unknown | undefined>();
   piStatus = $state<PiStatus>({ state: "disconnected" });
@@ -52,6 +57,10 @@ class DesktopState {
 
     const removeStatusListener = window.h3code?.onPiStatus((status) => {
       this.piStatus = status;
+
+      if (status.state !== "connected") {
+        this.resetSlashCommands();
+      }
 
       if (status.diagnostic) {
         this.errorMessage = status.diagnostic;
@@ -140,6 +149,7 @@ class DesktopState {
     this.selectedSessionPath = result.selectedSessionPath;
     this.sessionState = result.state;
     this.sessionStats = null;
+    this.resetSlashCommands();
     this.messages = result.messages ?? [];
     this.streamingMessage = undefined;
     this.isAgentRunning = Boolean(result.state?.isStreaming);
@@ -166,6 +176,7 @@ class DesktopState {
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
       this.sessionStats = null;
+      this.resetSlashCommands();
       this.messages = result.messages;
       this.streamingMessage = undefined;
       this.isAgentRunning = Boolean(result.state?.isStreaming);
@@ -190,6 +201,7 @@ class DesktopState {
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
       this.sessionStats = null;
+      this.resetSlashCommands();
       this.messages = result.messages;
       this.streamingMessage = undefined;
       this.isAgentRunning = Boolean(result.state.isStreaming);
@@ -273,6 +285,53 @@ class DesktopState {
     } finally {
       this.sessionStatsLoading = false;
     }
+  }
+
+  async ensureSlashCommands(refresh = false) {
+    const sessionKey = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+
+    if (!this.canUseSession || !sessionKey) {
+      this.slashCommands = [];
+      this.slashCommandsLoaded = false;
+      this.slashCommandsError = "Slash commands unavailable for this session.";
+      return;
+    }
+
+    if (!refresh && this.slashCommandsLoaded && this.slashCommandsSessionKey === sessionKey) {
+      return;
+    }
+
+    if (this.slashCommandsLoading) {
+      return;
+    }
+
+    this.slashCommandsLoading = true;
+    this.slashCommandsError = undefined;
+
+    try {
+      const commands = await this.requireApi().getCommands();
+
+      if (sessionKey !== (this.selectedSessionPath ?? this.sessionState?.sessionFile)) {
+        return;
+      }
+
+      this.slashCommands = commands.filter((command) => command.name.length > 0);
+      this.slashCommandsLoaded = true;
+      this.slashCommandsSessionKey = sessionKey;
+    } catch (error) {
+      this.slashCommandsError = getErrorMessage(error);
+      this.slashCommandsLoaded = false;
+    } finally {
+      this.slashCommandsLoading = false;
+    }
+  }
+
+  resetSlashCommands() {
+    this.slashCommands = [];
+    this.slashCommandsLoading = false;
+    this.slashCommandsError = undefined;
+    this.slashCommandsLoaded = false;
+    this.slashCommandsSessionKey = undefined;
   }
 
   handlePiEvent(event: unknown, type: string) {

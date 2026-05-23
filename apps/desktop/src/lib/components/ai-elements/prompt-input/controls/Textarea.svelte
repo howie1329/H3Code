@@ -20,6 +20,8 @@
 		placeholder = "What would you like to know?",
 		value = $bindable(""),
 		onchange,
+		oninput,
+		onkeydown,
 		...props
 	}: Props = $props();
 
@@ -49,6 +51,12 @@
 	});
 
 	let handleKeyDown = (e: KeyboardEvent) => {
+		onkeydown?.(e as never);
+
+		if (e.defaultPrevented) {
+			return;
+		}
+
 		if (e.key === "Enter") {
 			// Don't submit if IME composition is in progress
 			if (e.isComposing) {
@@ -97,6 +105,7 @@
 		let nextValue = (event.currentTarget as HTMLTextAreaElement).value;
 		value = nextValue;
 		controller?.textInput.setInput(nextValue);
+		oninput?.(event as never);
 	};
 
 	let handlePaste = (e: ClipboardEvent) => {

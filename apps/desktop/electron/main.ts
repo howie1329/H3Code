@@ -33,6 +33,21 @@ type ConnectRepoResult = {
   messages?: unknown[];
 };
 
+type PiSlashCommand = {
+  name: string;
+  description?: string;
+  source: "extension" | "prompt" | "skill";
+  location?: string;
+  path?: string;
+  sourceInfo?: {
+    path?: string;
+    source?: string;
+    scope?: string;
+    origin?: string;
+    baseDir?: string;
+  };
+};
+
 type PendingRequest = {
   resolve: (response: RpcResponse) => void;
   reject: (error: Error) => void;
@@ -298,6 +313,41 @@ async function getSessionStats() {
   return response.data;
 }
 
+async function getPiCommands() {
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_commands"; success: true }>>({ type: "get_commands" });
+  return response.data.commands.map(normalizeSlashCommand);
+}
+
+function normalizeSlashCommand(command: unknown): PiSlashCommand {
+  const record = toRecord(command);
+  const sourceInfo = toRecord(record.sourceInfo);
+
+  return {
+    name: typeof record.name === "string" ? record.name : "",
+    description: typeof record.description === "string" ? record.description : undefined,
+    source: isSlashCommandSource(record.source) ? record.source : "prompt",
+    location: typeof record.location === "string" ? record.location : typeof sourceInfo.scope === "string" ? sourceInfo.scope : undefined,
+    path: typeof record.path === "string" ? record.path : typeof sourceInfo.path === "string" ? sourceInfo.path : undefined,
+    sourceInfo: Object.keys(sourceInfo).length > 0
+      ? {
+          path: typeof sourceInfo.path === "string" ? sourceInfo.path : undefined,
+          source: typeof sourceInfo.source === "string" ? sourceInfo.source : undefined,
+          scope: typeof sourceInfo.scope === "string" ? sourceInfo.scope : undefined,
+          origin: typeof sourceInfo.origin === "string" ? sourceInfo.origin : undefined,
+          baseDir: typeof sourceInfo.baseDir === "string" ? sourceInfo.baseDir : undefined,
+        }
+      : undefined,
+  };
+}
+
+function isSlashCommandSource(value: unknown): value is PiSlashCommand["source"] {
+  return value === "extension" || value === "prompt" || value === "skill";
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
 async function switchPiSession(sessionPath: string) {
   await sendCommand<Extract<RpcResponse, { command: "switch_session"; success: true }>>({
     type: "switch_session",
@@ -343,6 +393,7 @@ ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessi
 ipcMain.handle("pi:list-sessions", listPiSessions);
 ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string) => listSessionsForRepo(repoPath));
 ipcMain.handle("pi:get-session-stats", getSessionStats);
+ipcMain.handle("pi:get-commands", getPiCommands);
 
 ipcMain.handle("pi:switch-session", async (_event, sessionPath: string) => switchPiSession(sessionPath));
 
