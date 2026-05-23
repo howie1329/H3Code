@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import AppHeader from "$lib/components/desktop/AppHeader.svelte";
   import AppSidebar from "$lib/components/desktop/AppSidebar.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
@@ -16,7 +15,6 @@
   <AppSidebar />
 
   <Sidebar.Inset class="min-w-0 overflow-hidden">
-    <AppHeader />
     {@render children()}
   </Sidebar.Inset>
 </Sidebar.Provider>
