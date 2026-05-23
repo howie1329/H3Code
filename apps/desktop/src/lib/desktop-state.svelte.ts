@@ -291,6 +291,7 @@ class DesktopState {
 
     try {
       const result = await this.requireApi().switchSession(this.selectedSessionPath);
+      this.pendingUserMessages = [];
       this.sessionState = result.state;
       this.messages = result.messages;
       this.isAgentRunning = Boolean(result.state.isStreaming);
