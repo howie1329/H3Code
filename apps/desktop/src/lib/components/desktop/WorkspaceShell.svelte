@@ -29,8 +29,8 @@
 
 <div
   class={isContextPanelOpen
-    ? "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_24rem]"
-    : "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)]"}
+    ? "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_24rem] overflow-hidden"
+    : "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden"}
 >
   <WorkspaceTranscript>
     <PromptComposer />

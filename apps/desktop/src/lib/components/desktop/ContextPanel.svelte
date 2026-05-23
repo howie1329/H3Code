@@ -85,7 +85,7 @@
   }
 </script>
 
-<aside class="flex min-w-0 flex-col border-l border-border bg-background">
+<aside class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-background">
   <header class="flex h-10 items-center justify-between border-b border-border/50 px-4">
     <h2 class="text-xs font-semibold">Context</h2>
     <Badge variant="secondary">PI</Badge>
