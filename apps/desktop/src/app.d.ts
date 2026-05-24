@@ -60,6 +60,21 @@ declare global {
     };
   };
 
+  type PiSlashCommand = {
+    name: string;
+    description?: string;
+    source: "extension" | "prompt" | "skill";
+    location?: string;
+    path?: string;
+    sourceInfo?: {
+      path?: string;
+      source?: string;
+      scope?: string;
+      origin?: string;
+      baseDir?: string;
+    };
+  };
+
   type PiConnectRepoResult = {
     repoPath: string;
     sessions: PiSessionSummary[];
@@ -78,6 +93,7 @@ declare global {
       switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       getSessionStats: () => Promise<PiSessionStats | null>;
+      getCommands: () => Promise<PiSlashCommand[]>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
       abort: () => Promise<void>;
       onPiEvent: (listener: (event: unknown) => void) => () => void;

@@ -26,6 +26,12 @@
     text: string;
   };
 
+  type TranscriptThinkingBlock = {
+    kind: "thinking";
+    id: string;
+    text: string;
+  };
+
   type TranscriptToolBlock = {
     kind: "tool";
     id: string;
@@ -37,7 +43,7 @@
     errorText?: string;
   };
 
-  type TranscriptBlock = TranscriptTextBlock | TranscriptToolBlock;
+  type TranscriptBlock = TranscriptTextBlock | TranscriptThinkingBlock | TranscriptToolBlock;
 
   type TranscriptMessage = {
     id: string;
@@ -150,6 +156,15 @@
         continue;
       }
 
+      if (partType === "thinking" && typeof partRecord.thinking === "string" && partRecord.thinking.trim()) {
+        blocks.push({
+          kind: "thinking",
+          id: `message-${messageIndex}-thinking-${partIndex}`,
+          text: partRecord.thinking,
+        });
+        continue;
+      }
+
       if (partType === "toolCall") {
         const toolCallId = getString(partRecord.id) ?? `message-${messageIndex}-tool-${partIndex}`;
         const toolBlock: TranscriptToolBlock = {
@@ -170,23 +185,33 @@
   }
 
   function isToolResultMessage(record: Record<string, unknown>) {
-    return record.role === "toolResult";
+    return record.role === "toolResult" || record.role === "toolExecution";
   }
 
   function normalizeToolResult(record: Record<string, unknown>, index: number): TranscriptToolBlock {
     const toolCallId = getString(record.toolCallId) ?? `tool-result-${index}`;
     const outputText = extractTextContent(record.content);
     const isError = record.isError === true;
+    const state = normalizeToolState(record.state, isError);
 
     return {
       kind: "tool",
       id: `tool-result-${toolCallId}`,
       toolCallId,
       type: getString(record.toolName) ?? "tool",
-      state: isError ? "output-error" : "output-available",
+      state,
+      input: record.args,
       output: isError ? undefined : outputText,
       errorText: isError ? outputText || "Tool execution failed." : undefined,
     };
+  }
+
+  function normalizeToolState(value: unknown, isError: boolean): ToolUIPartState {
+    if (value === "input-streaming" || value === "input-available" || value === "output-available" || value === "output-error") {
+      return value;
+    }
+
+    return isError ? "output-error" : "output-available";
   }
 
   function extractTextContent(content: unknown): string {
@@ -247,6 +272,7 @@
 
   function formatRoleLabel(role: string) {
     return role
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
       .replace(/[_-]/g, " ")
       .replace(/\s+/g, " ")
       .trim()
@@ -292,6 +318,11 @@
                   {#each message.blocks as block (block.id)}
                     {#if block.kind === "text"}
                       <pre class="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">{block.text}</pre>
+                    {:else if block.kind === "thinking"}
+                      <div class="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                        <div class="mb-1 text-[10px] font-medium uppercase tracking-wide">Thinking</div>
+                        <pre class="whitespace-pre-wrap break-words font-sans">{block.text}</pre>
+                      </div>
                     {:else}
                       <Tool class="mt-1 mb-0 rounded-md border-border/50 bg-background">
                         <ToolHeader type={block.type} state={block.state} class="px-3 py-2 text-xs" />
