@@ -1,7 +1,7 @@
 <!-- agentkit:start design-system -->
-# H3Code Design System - Linear-Inspired Foundations
+# [Project Name] Design System - Linear-Inspired Foundations
 
-This design system codifies the visual and interaction principles for H3Code.
+This design system codifies the visual and interaction principles for [Project Name].
 
 It is the default source of truth for app shell layout, navigation, lists, controls, and page chrome in this repository.
 
