@@ -44,15 +44,15 @@ Use clear severity when reviewing or explaining issues:
 
 Run the narrowest useful checks first, then broaden verification for larger changes.
 
-Document project commands here:
+There is no `npm test` script in this repository yet.
 
 ```bash
-npm test
+npm run check    # preferred first pass (types + Svelte)
 npm run lint
-npm run build
+npm run build    # broader / release-bound changes
 ```
 
-Remove commands that do not apply.
+Per-app: `npm run check --workspace @h3code/desktop` or `@h3code/web` when changes are isolated to one app.
 
 For deeper testing guidance, use `TESTING.md` when present.
 

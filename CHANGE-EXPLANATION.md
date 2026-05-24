@@ -65,7 +65,8 @@ Tell the developer where to focus review attention.
 
 Examples:
 
-- Review the validation path in `[path]`.
+- Review the validation path in `apps/desktop/electron/main.ts` (PI RPC / IPC boundary).
+- Review renderer state changes in `apps/desktop/src/lib/desktop-state.svelte.ts`.
 - Confirm the empty/error states match product intent.
 - Check whether the authorization behavior matches policy.
 - Verify the new abstraction is worth keeping.
