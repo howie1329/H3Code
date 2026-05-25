@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ModeWatcher } from "mode-watcher";
   import { onMount } from "svelte";
 
   import AppSidebar from "$lib/components/desktop/AppSidebar.svelte";
@@ -15,6 +16,8 @@
     return cleanup;
   });
 </script>
+
+<ModeWatcher />
 
 <Sidebar.Provider
   open={desktopState.desktopSettings.sidebarOpen}
