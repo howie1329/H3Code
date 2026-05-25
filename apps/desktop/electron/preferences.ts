@@ -128,6 +128,49 @@ export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
   }
 }
 
+export function removeIndexedRepo(repoPath: string) {
+  const db = getDatabase();
+  const lastSelectedRepoPath = getSetting(db, "lastSelectedRepoPath");
+  const lastSelectedSessionPath = getSetting(db, "lastSelectedSessionPath");
+  const repoSessionPaths = new Set(
+    db.prepare("SELECT session_path AS path FROM repo_sessions WHERE repo_path = ?")
+      .all(repoPath)
+      .map((row) => String(row.path)),
+  );
+
+  db.exec("BEGIN");
+
+  try {
+    db.prepare("DELETE FROM recent_repos WHERE path = ?").run(repoPath);
+
+    if (lastSelectedRepoPath === repoPath) {
+      deleteSetting(db, "lastSelectedRepoPath");
+    }
+
+    if (lastSelectedSessionPath && repoSessionPaths.has(lastSelectedSessionPath)) {
+      deleteSetting(db, "lastSelectedSessionPath");
+    }
+
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  return getPreferences();
+}
+
+export function removeIndexedSession(sessionPath: string) {
+  const db = getDatabase();
+  const lastSelectedSessionPath = getSetting(db, "lastSelectedSessionPath");
+
+  db.prepare("DELETE FROM repo_sessions WHERE session_path = ?").run(sessionPath);
+
+  if (lastSelectedSessionPath === sessionPath) {
+    deleteSetting(db, "lastSelectedSessionPath");
+  }
+}
+
 export function updateDesktopSettings(settings: Partial<DesktopSettings>) {
   const db = getDatabase();
   const current = getDesktopSettings(db);
@@ -264,6 +307,10 @@ function setSetting(db: DatabaseSync, key: string, value: string) {
     VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(key, value);
+}
+
+function deleteSetting(db: DatabaseSync, key: string) {
+  db.prepare("DELETE FROM app_settings WHERE key = ?").run(key);
 }
 
 function trimRecentRepos(db: DatabaseSync) {

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
+import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +9,8 @@ import { SessionManager, type RpcCommand, type RpcResponse, type RpcSessionState
 import {
   closePreferencesDatabase,
   getPreferences,
+  removeIndexedRepo,
+  removeIndexedSession,
   recordRepoSessions,
   recordRepoUsage,
   updateDesktopSettings,
@@ -164,6 +167,70 @@ async function listSessionsForRepo(repoPath: string, markRecent = false) {
   }
   recordRepoSessions(repoPath, sessions);
   return sessions.map(serializeSession);
+}
+
+async function deleteSessionFile(sessionPath: string): Promise<"trash" | "unlink"> {
+  const trashArgs = sessionPath.startsWith("-") ? ["--", sessionPath] : [sessionPath];
+  const trashResult = spawnSync("trash", trashArgs, { encoding: "utf-8" });
+
+  if (trashResult.status === 0 || !existsSync(sessionPath)) {
+    return "trash";
+  }
+
+  try {
+    await unlink(sessionPath);
+    return "unlink";
+  } catch (error) {
+    const unlinkError = error instanceof Error ? error.message : String(error);
+    const trashError = getTrashErrorMessage(trashResult);
+    throw new Error(trashError ? `${unlinkError} (${trashError})` : unlinkError);
+  }
+}
+
+function getTrashErrorMessage(result: ReturnType<typeof spawnSync>) {
+  const parts: string[] = [];
+
+  if (result.error) {
+    parts.push(result.error.message);
+  }
+
+  const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+
+  if (stderr) {
+    parts.push(stderr.split("\n")[0] ?? stderr);
+  }
+
+  return parts.length > 0 ? `trash: ${parts.join(" · ").slice(0, 200)}` : undefined;
+}
+
+async function deletePiSession(repoPath: string, sessionPath: string) {
+  await assertDirectory(repoPath);
+  const sessions = await SessionManager.list(repoPath);
+  const session = sessions.find((item) => item.path === sessionPath);
+
+  if (!session) {
+    throw new Error("Session does not belong to this repo.");
+  }
+
+  if (selectedRepoPath === repoPath && sessionPath === await getActiveSessionPath()) {
+    await stopPiProcess();
+    selectedRepoPath = undefined;
+    emitStatus({ state: "disconnected" });
+  }
+
+  await deleteSessionFile(sessionPath);
+  removeIndexedSession(sessionPath);
+
+  return listSessionsForRepo(repoPath, true);
+}
+
+async function getActiveSessionPath() {
+  if (!piProcess || status.state !== "connected") {
+    return undefined;
+  }
+
+  const { state } = await getStateAndMessages();
+  return state.sessionFile;
 }
 
 async function listPiSessions() {
@@ -408,6 +475,7 @@ ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessi
 
 ipcMain.handle("pi:list-sessions", listPiSessions);
 ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string, markRecent?: boolean) => listSessionsForRepo(repoPath, markRecent));
+ipcMain.handle("pi:delete-session", async (_event, repoPath: string, sessionPath: string) => deletePiSession(repoPath, sessionPath));
 ipcMain.handle("pi:get-session-stats", getSessionStats);
 ipcMain.handle("pi:get-commands", getPiCommands);
 
@@ -441,6 +509,15 @@ ipcMain.handle("pi:abort", async () => {
 });
 
 ipcMain.handle("preferences:get", () => getPreferences());
+ipcMain.handle("preferences:remove-repo", async (_event, repoPath: string) => {
+  if (selectedRepoPath === repoPath) {
+    await stopPiProcess();
+    selectedRepoPath = undefined;
+    emitStatus({ state: "disconnected" });
+  }
+
+  return removeIndexedRepo(repoPath);
+});
 ipcMain.handle("preferences:update-desktop-settings", async (_event, settings: Partial<DesktopSettings>) => updateDesktopSettings(settings));
 
 app.whenReady().then(() => {

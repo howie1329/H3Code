@@ -8,21 +8,41 @@
     Layout02Icon,
     SearchList01Icon,
     Settings05Icon,
+    WasteIcon,
   } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
 
-  import { desktopState } from "$lib/desktop-state.svelte";
+  import { desktopState, type SidebarRepo } from "$lib/desktop-state.svelte";
+  import ConfirmDeleteDialog from "$lib/components/desktop/ConfirmDeleteDialog.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
   const visibleSessionCount = 5;
+  let repoRemovalOpen = $state(false);
+  let repoRemovalTarget = $state<SidebarRepo | undefined>();
+  let sessionDeletionOpen = $state(false);
+  let sessionDeletionTarget = $state<{ repo: SidebarRepo; session: PiSessionSummary } | undefined>();
   const navItems = [
     { label: "Workspace", href: "/workspace", icon: Layout02Icon },
     { label: "Sessions", href: "/sessions", icon: AiBrain02Icon },
     { label: "Activity", href: "/activity", icon: Clock04Icon },
   ];
+
+  function handleRepoRemoveClick(event: MouseEvent, repo: SidebarRepo) {
+    event.preventDefault();
+    event.stopPropagation();
+    repoRemovalTarget = repo;
+    repoRemovalOpen = true;
+  }
+
+  function handleSessionDeleteClick(event: MouseEvent, repo: SidebarRepo, session: PiSessionSummary) {
+    event.preventDefault();
+    event.stopPropagation();
+    sessionDeletionTarget = { repo, session };
+    sessionDeletionOpen = true;
+  }
 </script>
 
 <Sidebar.Sidebar collapsible="icon">
@@ -121,6 +141,16 @@
                   <HugeiconsIcon icon={FolderCodeIcon} />
                   <span class="min-w-0 flex-1 truncate font-medium">{repo.name}</span>
                 </Sidebar.MenuButton>
+                <Sidebar.MenuAction
+                  showOnHover
+                  aria-label={`Remove ${repo.name} from startup`}
+                  title="Remove from startup"
+                  disabled={desktopState.isBusy}
+                  class="text-muted-foreground hover:text-destructive"
+                  onclick={(event) => handleRepoRemoveClick(event, repo)}
+                >
+                  <HugeiconsIcon icon={WasteIcon} />
+                </Sidebar.MenuAction>
 
                 {#if repo.expanded}
                   <Sidebar.MenuSub class="overflow-hidden">
@@ -155,7 +185,7 @@
                       {#each visibleSessions as session}
                         {@const isSessionActive = session.path === desktopState.selectedSessionPath}
                         <Sidebar.MenuSubItem>
-                          <Sidebar.MenuSubButton isActive={isSessionActive} aria-disabled={desktopState.isBusy} class={isSessionActive ? "w-full max-w-full font-medium" : "w-full max-w-full text-muted-foreground"}>
+                          <Sidebar.MenuSubButton isActive={isSessionActive} aria-disabled={desktopState.isBusy} class={isSessionActive ? "w-full max-w-full pr-7 font-medium" : "w-full max-w-full pr-7 text-muted-foreground"}>
                             {#snippet child({ props })}
                               <button {...props} type="button" title={session.name ?? session.firstMessage ?? session.id} onclick={() => !desktopState.isBusy && desktopState.handleSwitchSession(session.path, repo.path)}>
                                 <HugeiconsIcon icon={AiBrain02Icon} />
@@ -163,6 +193,16 @@
                               </button>
                             {/snippet}
                           </Sidebar.MenuSubButton>
+                          <button
+                            type="button"
+                            class="absolute right-1 top-1 grid size-5 place-items-center rounded-[calc(var(--radius-sm)-2px)] text-muted-foreground opacity-0 outline-none transition-colors hover:bg-sidebar-accent hover:text-destructive focus-visible:ring-2 focus-visible:ring-sidebar-ring group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:opacity-100 disabled:pointer-events-none disabled:opacity-50"
+                            aria-label={`Delete ${session.name ?? session.firstMessage ?? "session"}`}
+                            title="Delete PI session"
+                            disabled={desktopState.isBusy}
+                            onclick={(event) => handleSessionDeleteClick(event, repo, session)}
+                          >
+                            <HugeiconsIcon icon={WasteIcon} />
+                          </button>
                         </Sidebar.MenuSubItem>
                       {/each}
 
@@ -217,3 +257,31 @@
 
   <Sidebar.Rail />
 </Sidebar.Sidebar>
+
+<ConfirmDeleteDialog
+  bind:open={repoRemovalOpen}
+  title="Remove repo from startup?"
+  description={`H3Code will remove ${repoRemovalTarget?.name ?? "this repo"} from the local index. PI sessions stay on disk and can be loaded again by adding the repo.`}
+  confirmLabel="Remove from startup"
+  busy={desktopState.isBusy}
+  onConfirm={async () => {
+    if (repoRemovalTarget) {
+      await desktopState.removeRepoFromIndex(repoRemovalTarget.path);
+      repoRemovalTarget = undefined;
+    }
+  }}
+/>
+
+<ConfirmDeleteDialog
+  bind:open={sessionDeletionOpen}
+  title="Delete PI session?"
+  description={`This deletes ${sessionDeletionTarget?.session.name ?? sessionDeletionTarget?.session.firstMessage ?? "this session"} from PI. This cannot be undone.`}
+  confirmLabel="Delete session"
+  busy={desktopState.isBusy}
+  onConfirm={async () => {
+    if (sessionDeletionTarget) {
+      await desktopState.deleteSession(sessionDeletionTarget.session.path, sessionDeletionTarget.repo.path);
+      sessionDeletionTarget = undefined;
+    }
+  }}
+/>

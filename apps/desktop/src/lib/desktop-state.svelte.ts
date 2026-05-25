@@ -292,6 +292,71 @@ class DesktopState {
     });
   }
 
+  async removeRepoFromIndex(repoPath: string) {
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      const preferences = await this.requireApi().removeIndexedRepo(repoPath);
+      const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
+      this.preferencesDatabasePath = preferences.databasePath;
+      this.desktopSettings = preferences.desktopSettings;
+      this.repos = preferences.recentRepos.map((repo) =>
+        createRepo(repo.path, {
+          name: repo.name,
+          expanded: repo.path === preferences.lastSelectedRepoPath,
+          sessions: indexedSessionsByRepo.get(repo.path) ?? [],
+          sessionsLoaded: Boolean(indexedSessionsByRepo.get(repo.path)?.length),
+          sessionsLoading: false,
+          sessionsError: undefined,
+        }),
+      );
+
+      if (this.repoPath === repoPath) {
+        this.repoPath = undefined;
+        this.sessions = [];
+        this.selectedSessionPath = undefined;
+        this.sessionState = undefined;
+        this.sessionStats = null;
+        this.resetSlashCommands();
+        this.messages = [];
+        this.resetTransientTranscript();
+        this.isAgentRunning = false;
+      }
+    });
+  }
+
+  async deleteSession(sessionPath: string, repoPath = this.repoPath) {
+    if (!repoPath) {
+      this.errorMessage = "Select a repo before deleting a session.";
+      return;
+    }
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      const deletingActiveSession = sessionPath === this.selectedSessionPath || sessionPath === this.sessionState?.sessionFile;
+      const sessions = await this.requireApi().deletePiSession(repoPath, sessionPath);
+      this.repos = upsertRepo(this.repos, repoPath, {
+        sessions,
+        sessionsLoaded: true,
+        sessionsLoading: false,
+        sessionsError: undefined,
+      });
+
+      if (repoPath === this.repoPath) {
+        this.sessions = sessions;
+      }
+
+      if (deletingActiveSession) {
+        this.selectedSessionPath = undefined;
+        this.sessionState = undefined;
+        this.sessionStats = null;
+        this.resetSlashCommands();
+        this.messages = [];
+        this.resetTransientTranscript();
+        this.isAgentRunning = false;
+      }
+    });
+  }
+
   async handlePromptSubmit(message: PromptInputMessage, event: SubmitEvent) {
     event.preventDefault();
 
