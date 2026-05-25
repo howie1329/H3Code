@@ -45,6 +45,14 @@
           <dt class="text-muted-foreground">Platform</dt>
           <dd class="truncate text-right font-medium">{desktopState.platform}</dd>
         </div>
+        <div class="flex items-center justify-between gap-4">
+          <dt class="text-muted-foreground">Preferences DB</dt>
+          <dd class="truncate text-right font-medium">{desktopState.preferencesDatabasePath ?? "Loading"}</dd>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <dt class="text-muted-foreground">Recent repos</dt>
+          <dd class="truncate text-right font-medium">{desktopState.repos.length}</dd>
+        </div>
         {#if desktopState.piStatus.diagnostic || desktopState.errorMessage}
           <div class="flex items-start justify-between gap-4">
             <dt class="text-muted-foreground">Diagnostic</dt>

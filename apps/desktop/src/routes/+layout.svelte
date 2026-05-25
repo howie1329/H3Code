@@ -8,10 +8,19 @@
 
   let { children } = $props();
 
-  onMount(() => desktopState.initializeListeners());
+  onMount(() => {
+    const cleanup = desktopState.initializeListeners();
+    void desktopState.initializePreferences();
+
+    return cleanup;
+  });
 </script>
 
-<Sidebar.Provider class="h-screen min-h-0 overflow-hidden bg-background text-foreground">
+<Sidebar.Provider
+  open={desktopState.desktopSettings.sidebarOpen}
+  onOpenChange={(open) => desktopState.setSidebarOpen(open)}
+  class="h-screen min-h-0 overflow-hidden bg-background text-foreground"
+>
   <AppSidebar />
 
   <Sidebar.Inset class="min-w-0 overflow-hidden">

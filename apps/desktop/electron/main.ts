@@ -5,6 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { SessionManager, type RpcCommand, type RpcResponse, type RpcSessionState, type SessionInfo } from "@earendil-works/pi-coding-agent";
+import {
+  closePreferencesDatabase,
+  getPreferences,
+  recordRepoSessions,
+  recordRepoUsage,
+  updateDesktopSettings,
+  type DesktopSettings,
+} from "./preferences.js";
 
 type PiConnectionState = "disconnected" | "starting" | "connected" | "exited" | "error";
 
@@ -148,9 +156,13 @@ function serializeSession(session: SessionInfo): PiSessionSummary {
   };
 }
 
-async function listSessionsForRepo(repoPath: string) {
+async function listSessionsForRepo(repoPath: string, markRecent = false) {
   await assertDirectory(repoPath);
   const sessions = await SessionManager.list(repoPath);
+  if (markRecent) {
+    recordRepoUsage(repoPath);
+  }
+  recordRepoSessions(repoPath, sessions);
   return sessions.map(serializeSession);
 }
 
@@ -159,7 +171,7 @@ async function listPiSessions() {
     throw new Error("Select a repo before listing sessions.");
   }
 
-  return listSessionsForRepo(selectedRepoPath);
+  return listSessionsForRepo(selectedRepoPath, true);
 }
 
 async function stopPiProcess() {
@@ -354,6 +366,10 @@ async function switchPiSession(sessionPath: string) {
     sessionPath,
   });
 
+  if (selectedRepoPath) {
+    recordRepoUsage(selectedRepoPath, sessionPath);
+  }
+
   return getStateAndMessages();
 }
 
@@ -391,7 +407,7 @@ ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessi
 });
 
 ipcMain.handle("pi:list-sessions", listPiSessions);
-ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string) => listSessionsForRepo(repoPath));
+ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string, markRecent?: boolean) => listSessionsForRepo(repoPath, markRecent));
 ipcMain.handle("pi:get-session-stats", getSessionStats);
 ipcMain.handle("pi:get-commands", getPiCommands);
 
@@ -403,7 +419,13 @@ ipcMain.handle("pi:new-session", async (_event, parentSession?: string) => {
     parentSession,
   });
 
-  return getStateAndMessages();
+  const result = await getStateAndMessages();
+
+  if (selectedRepoPath && result.state.sessionFile) {
+    recordRepoUsage(selectedRepoPath, result.state.sessionFile);
+  }
+
+  return result;
 });
 
 ipcMain.handle("pi:send-prompt", async (_event, message: string, streamingBehavior?: "steer" | "followUp") => {
@@ -417,6 +439,9 @@ ipcMain.handle("pi:send-prompt", async (_event, message: string, streamingBehavi
 ipcMain.handle("pi:abort", async () => {
   await sendCommand<Extract<RpcResponse, { command: "abort"; success: true }>>({ type: "abort" });
 });
+
+ipcMain.handle("preferences:get", () => getPreferences());
+ipcMain.handle("preferences:update-desktop-settings", async (_event, settings: Partial<DesktopSettings>) => updateDesktopSettings(settings));
 
 app.whenReady().then(() => {
   nativeTheme.on("updated", () => {
@@ -434,6 +459,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   void stopPiProcess();
+  closePreferencesDatabase();
 });
 
 app.on("window-all-closed", () => {

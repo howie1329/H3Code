@@ -83,19 +83,53 @@ declare global {
     messages?: unknown[];
   };
 
+  type DesktopSettings = {
+    sidebarOpen: boolean;
+    contextPanelOpen: boolean;
+  };
+
+  type RecentRepoPreference = {
+    path: string;
+    name: string;
+    lastOpenedAt: string;
+    lastSessionPath?: string;
+  };
+
+  type IndexedSessionPreference = {
+    path: string;
+    repoPath: string;
+    id: string;
+    name?: string;
+    created: string;
+    modified: string;
+    messageCount: number;
+    firstMessage: string;
+  };
+
+  type DesktopPreferences = {
+    recentRepos: RecentRepoPreference[];
+    indexedSessions: IndexedSessionPreference[];
+    lastSelectedRepoPath?: string;
+    lastSelectedSessionPath?: string;
+    desktopSettings: DesktopSettings;
+    databasePath: string;
+  };
+
   interface Window {
     h3code?: {
       platform: NodeJS.Platform;
       selectRepo: () => Promise<{ path: string } | null>;
       connectRepo: (repoPath: string, selectedSessionPath?: string) => Promise<PiConnectRepoResult>;
       listSessions: () => Promise<PiSessionSummary[]>;
-      listRepoSessions: (repoPath: string) => Promise<PiSessionSummary[]>;
+      listRepoSessions: (repoPath: string, markRecent?: boolean) => Promise<PiSessionSummary[]>;
       switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       getSessionStats: () => Promise<PiSessionStats | null>;
       getCommands: () => Promise<PiSlashCommand[]>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
       abort: () => Promise<void>;
+      getPreferences: () => Promise<DesktopPreferences>;
+      updateDesktopSettings: (settings: Partial<DesktopSettings>) => Promise<DesktopSettings>;
       onPiEvent: (listener: (event: unknown) => void) => () => void;
       onPiStatus: (listener: (status: PiStatus) => void) => () => void;
     };
