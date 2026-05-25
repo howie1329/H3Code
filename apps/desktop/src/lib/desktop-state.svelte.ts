@@ -52,6 +52,10 @@ class DesktopState {
   sessionStats = $state<PiSessionStats | null>(null);
   sessionStatsLoading = $state(false);
   sessionStatsError = $state<string | undefined>();
+  sessionDiff = $state<PiSessionDiff>({ patch: "", changedFiles: 0 });
+  sessionDiffLoading = $state(false);
+  sessionDiffError = $state<string | undefined>();
+  sessionDiffPanelOpen = $state(false);
   slashCommands = $state<PiSlashCommand[]>([]);
   slashCommandsLoading = $state(false);
   slashCommandsError = $state<string | undefined>();
@@ -82,6 +86,7 @@ class DesktopState {
   ]);
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
+  hasSessionDiff = $derived(this.sessionDiff.patch.trim().length > 0);
 
   initializeListeners() {
     const removeEventListener = window.h3code?.onPiEvent((event) => {
@@ -96,6 +101,7 @@ class DesktopState {
       if (status.state !== "connected") {
         this.resetSlashCommands();
         this.resetTransientTranscript();
+        this.resetSessionDiff();
       }
 
       if (status.diagnostic) {
@@ -224,11 +230,13 @@ class DesktopState {
     this.selectedSessionPath = result.selectedSessionPath;
     this.sessionState = result.state;
     this.sessionStats = null;
+    this.resetSessionDiff();
     this.resetSlashCommands();
     this.messages = result.messages ?? [];
     this.resetTransientTranscript();
     this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
+    await this.refreshSessionDiff();
   }
 
   async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
@@ -251,11 +259,13 @@ class DesktopState {
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
       this.sessionStats = null;
+      this.resetSessionDiff();
       this.resetSlashCommands();
       this.messages = result.messages;
       this.resetTransientTranscript();
       this.isAgentRunning = Boolean(result.state?.isStreaming);
       await this.refreshSessionStats();
+      await this.refreshSessionDiff();
     });
   }
 
@@ -276,6 +286,7 @@ class DesktopState {
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
       this.sessionStats = null;
+      this.resetSessionDiff();
       this.resetSlashCommands();
       this.messages = result.messages;
       this.resetTransientTranscript();
@@ -289,6 +300,7 @@ class DesktopState {
         sessionsError: undefined,
       });
       await this.refreshSessionStats();
+      await this.refreshSessionDiff();
     });
   }
 
@@ -316,6 +328,7 @@ class DesktopState {
         this.selectedSessionPath = undefined;
         this.sessionState = undefined;
         this.sessionStats = null;
+        this.resetSessionDiff();
         this.resetSlashCommands();
         this.messages = [];
         this.resetTransientTranscript();
@@ -349,6 +362,7 @@ class DesktopState {
         this.selectedSessionPath = undefined;
         this.sessionState = undefined;
         this.sessionStats = null;
+        this.resetSessionDiff();
         this.resetSlashCommands();
         this.messages = [];
         this.resetTransientTranscript();
@@ -394,6 +408,7 @@ class DesktopState {
   async refreshActiveSessionData() {
     await this.refreshActiveMessages();
     await this.refreshSessionStats();
+    await this.refreshSessionDiff();
   }
 
   async refreshActiveMessages() {
@@ -430,6 +445,43 @@ class DesktopState {
     } finally {
       this.sessionStatsLoading = false;
     }
+  }
+
+  async refreshSessionDiff() {
+    if (!this.selectedSessionPath && !this.sessionState?.sessionFile) {
+      this.resetSessionDiff();
+      return;
+    }
+
+    this.sessionDiffLoading = true;
+    this.sessionDiffError = undefined;
+
+    try {
+      this.sessionDiff = await this.requireApi().getSessionDiff();
+
+      if (!this.hasSessionDiff) {
+        this.sessionDiffPanelOpen = false;
+      }
+    } catch (error) {
+      this.sessionDiffError = getErrorMessage(error);
+    } finally {
+      this.sessionDiffLoading = false;
+    }
+  }
+
+  setSessionDiffPanelOpen(open: boolean) {
+    if (open && !this.hasSessionDiff) {
+      return;
+    }
+
+    this.sessionDiffPanelOpen = open;
+  }
+
+  resetSessionDiff() {
+    this.sessionDiff = { patch: "", changedFiles: 0 };
+    this.sessionDiffLoading = false;
+    this.sessionDiffError = undefined;
+    this.sessionDiffPanelOpen = false;
   }
 
   async ensureSlashCommands(refresh = false) {

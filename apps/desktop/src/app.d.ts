@@ -60,6 +60,11 @@ declare global {
     };
   };
 
+  type PiSessionDiff = {
+    patch: string;
+    changedFiles: number;
+  };
+
   type PiSlashCommand = {
     name: string;
     description?: string;
@@ -126,6 +131,7 @@ declare global {
       switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       getSessionStats: () => Promise<PiSessionStats | null>;
+      getSessionDiff: () => Promise<PiSessionDiff>;
       getCommands: () => Promise<PiSlashCommand[]>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
       abort: () => Promise<void>;
