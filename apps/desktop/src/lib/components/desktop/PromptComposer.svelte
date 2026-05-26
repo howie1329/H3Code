@@ -39,6 +39,7 @@
   const isSlashMenuOpen = $derived(activeMenu === "slash" && Boolean(slashToken && tokenKey !== dismissedTokenKey));
   const isRunning = $derived(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming);
   const showAbort = $derived(isRunning);
+  const showSessionControls = $derived(desktopState.canUseSession);
   const showSlashHint = $derived(
     desktopState.canUseSession && desktopState.slashCommands.length > 0 && !desktopState.slashCommandsLoading
   );
@@ -91,26 +92,6 @@
               : "size-1.5 shrink-0 rounded-full bg-muted-foreground/60";
 
       return { showDot, dotClass, text: phase.text };
-    }
-
-    const stripLines = desktopState.statusStripLines;
-
-    if (stripLines.length > 0) {
-      return { showDot: false, dotClass: "", text: stripLines.join(" · ") };
-    }
-
-    if (!desktopState.canUseSession) {
-      if (!desktopState.repoPath) {
-        return { showDot: false, dotClass: "", text: "Select a repository to send prompts" };
-      }
-
-      if (desktopState.piStatus.state !== "connected") {
-        return { showDot: false, dotClass: "", text: "Connect Pi to send prompts" };
-      }
-
-      if (!desktopState.selectedSessionPath && !desktopState.sessionState?.sessionFile) {
-        return { showDot: false, dotClass: "", text: "Select a session to send prompts" };
-      }
     }
 
     if (desktopState.isBusy) {
@@ -481,7 +462,7 @@
             id="prompt"
             bind:ref={textareaRef}
             bind:value={desktopState.promptValue}
-            class="max-h-40 min-h-5! w-full resize-none border-none bg-transparent p-0 text-[11px] leading-tight text-foreground shadow-none placeholder:text-[11px] placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            class="max-h-40 min-h-6! w-full resize-none border-none bg-transparent p-0 text-xs leading-snug text-foreground shadow-none placeholder:text-xs placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             placeholder={promptPlaceholder}
             title={textareaTitle}
             disabled={!desktopState.canUseSession || desktopState.isBusy}
@@ -497,26 +478,30 @@
         {/snippet}
 
         {#snippet trailing()}
-          <ModelSelector
-            open={activeMenu === "model"}
-            disabled={selectorsDisabled}
-            variant="inline"
-            bind:anchor={modelAnchor}
-            onToggle={toggleModelMenu}
-          />
-          <ThinkingLevelSelector
-            open={activeMenu === "thinking"}
-            disabled={selectorsDisabled}
-            variant="inline"
-            bind:anchor={thinkingAnchor}
-            onToggle={toggleThinkingMenu}
-          />
-          <span class="mx-0.5 h-4 w-px shrink-0 bg-border/50" aria-hidden="true"></span>
+          {#if showSessionControls}
+            <div class="flex shrink-0 items-center gap-0.5 rounded-md bg-transparent" role="group" aria-label="Prompt settings">
+              <ModelSelector
+                open={activeMenu === "model"}
+                disabled={selectorsDisabled}
+                variant="inline"
+                bind:anchor={modelAnchor}
+                onToggle={toggleModelMenu}
+              />
+              <ThinkingLevelSelector
+                open={activeMenu === "thinking"}
+                disabled={selectorsDisabled}
+                variant="inline"
+                bind:anchor={thinkingAnchor}
+                onToggle={toggleThinkingMenu}
+              />
+            </div>
+            <span class="mx-0.5 h-5 w-px shrink-0 bg-border/50" aria-hidden="true"></span>
+          {/if}
           {#if showAbort}
             <Button
               variant="ghost"
               size="icon-sm"
-              class="size-7 text-muted-foreground hover:text-foreground"
+              class="size-7 text-muted-foreground shadow-none transition-[background-color,color,opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-foreground active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
               aria-label="Abort run"
               title="Abort run"
               onclick={() => desktopState.handleAbort()}
@@ -529,7 +514,7 @@
             variant={desktopState.canSubmit ? "default" : "ghost"}
             size="icon"
             data-prompt-input-submit
-            class="size-7 shrink-0 rounded-full shadow-none {desktopState.canSubmit
+            class="size-7 shrink-0 rounded-full shadow-none transition-[background-color,color,opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 {desktopState.canSubmit
               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
               : 'text-muted-foreground'}"
             title="Send prompt"

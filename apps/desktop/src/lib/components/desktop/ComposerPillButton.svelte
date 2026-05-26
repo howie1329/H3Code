@@ -37,7 +37,7 @@
       "disabled:pointer-events-none disabled:opacity-50",
       variant === "inline"
         ? cn(
-            "h-6 gap-0.5 rounded-md px-1 text-[10px] leading-tight font-normal text-muted-foreground",
+            "h-7 gap-1 rounded-md px-1.5 text-[11px] leading-tight font-normal text-muted-foreground",
             maxWidthClass,
             "hover:bg-accent/50",
             open && "bg-accent/50"
@@ -78,7 +78,7 @@
     {#if showChevron}
       <HugeiconsIcon
         icon={ArrowDown01Icon}
-        class={cn("shrink-0 opacity-50", variant === "inline" ? "size-2" : "size-2.5")}
+        class="size-2.5 shrink-0 opacity-50"
         data-icon
       />
     {/if}
