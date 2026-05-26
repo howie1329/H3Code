@@ -16,6 +16,11 @@ export type SidebarRepo = {
   showAllSessions?: boolean;
 };
 
+const defaultDesktopSettings: DesktopSettings = {
+  sidebarOpen: true,
+  contextPanelOpen: true,
+};
+
 type OptimisticUserMessage = {
   id: string;
   role: "user";
@@ -62,6 +67,9 @@ class DesktopState {
   isSendingPrompt = $state(false);
   isAgentRunning = $state(false);
   errorMessage = $state<string | undefined>();
+  preferencesLoaded = $state(false);
+  preferencesDatabasePath = $state<string | undefined>();
+  desktopSettings = $state<DesktopSettings>(defaultDesktopSettings);
 
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
@@ -101,6 +109,41 @@ class DesktopState {
     };
   }
 
+  async initializePreferences() {
+    if (!window.h3code) {
+      return;
+    }
+
+    try {
+      const preferences = await window.h3code.getPreferences();
+      this.preferencesLoaded = true;
+      this.preferencesDatabasePath = preferences.databasePath;
+      this.desktopSettings = preferences.desktopSettings;
+
+      const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
+      this.repos = preferences.recentRepos.map((repo) =>
+        createRepo(repo.path, {
+          name: repo.name,
+          expanded: repo.path === preferences.lastSelectedRepoPath,
+          sessions: indexedSessionsByRepo.get(repo.path) ?? [],
+          sessionsLoaded: Boolean(indexedSessionsByRepo.get(repo.path)?.length),
+          sessionsLoading: false,
+          sessionsError: undefined,
+        }),
+      );
+
+      if (preferences.lastSelectedRepoPath) {
+        this.repoPath = preferences.lastSelectedRepoPath;
+        this.selectedSessionPath = preferences.lastSelectedSessionPath;
+        this.sessions = indexedSessionsByRepo.get(preferences.lastSelectedRepoPath) ?? [];
+        await this.loadRepoSessions(preferences.lastSelectedRepoPath);
+      }
+    } catch (error) {
+      this.preferencesLoaded = true;
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
   async handleSelectRepo() {
     const selected = await window.h3code?.selectRepo();
 
@@ -114,7 +157,7 @@ class DesktopState {
   async addRepo(nextRepoPath: string) {
     this.errorMessage = undefined;
     this.repos = upsertRepo(this.repos, nextRepoPath, { expanded: true });
-    await this.loadRepoSessions(nextRepoPath);
+    await this.loadRepoSessions(nextRepoPath, true);
   }
 
   async toggleRepo(nextRepoPath: string) {
@@ -132,20 +175,24 @@ class DesktopState {
     this.repos = updateRepo(this.repos, nextRepoPath, { showAllSessions: true });
   }
 
-  async loadRepoSessions(nextRepoPath: string) {
+  async loadRepoSessions(nextRepoPath: string, markRecent = false) {
     this.repos = updateRepo(this.repos, nextRepoPath, {
       sessionsLoading: true,
       sessionsError: undefined,
     });
 
     try {
-      const sessions = await this.requireApi().listRepoSessions(nextRepoPath);
+      const sessions = await this.requireApi().listRepoSessions(nextRepoPath, markRecent);
       this.repos = updateRepo(this.repos, nextRepoPath, {
         sessions,
         sessionsLoaded: true,
         sessionsLoading: false,
         sessionsError: undefined,
       });
+
+      if (nextRepoPath === this.repoPath) {
+        this.sessions = sessions;
+      }
     } catch (error) {
       this.repos = updateRepo(this.repos, nextRepoPath, {
         sessionsLoading: false,
@@ -367,6 +414,32 @@ class DesktopState {
     this.slashCommandsSessionKey = undefined;
   }
 
+  setSidebarOpen(open: boolean) {
+    if (this.desktopSettings.sidebarOpen === open) {
+      return;
+    }
+
+    this.desktopSettings = { ...this.desktopSettings, sidebarOpen: open };
+    void this.persistDesktopSettings({ sidebarOpen: open });
+  }
+
+  setContextPanelOpen(open: boolean) {
+    if (this.desktopSettings.contextPanelOpen === open) {
+      return;
+    }
+
+    this.desktopSettings = { ...this.desktopSettings, contextPanelOpen: open };
+    void this.persistDesktopSettings({ contextPanelOpen: open });
+  }
+
+  async persistDesktopSettings(settings: Partial<DesktopSettings>) {
+    try {
+      this.desktopSettings = await this.requireApi().updateDesktopSettings(settings);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
   handlePiEvent(event: unknown, type: string) {
     const record = toRecord(event);
 
@@ -488,6 +561,27 @@ function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: 
   }
 
   return currentRepos.map((repo) => (repo.path === nextRepoPath ? { ...repo, ...updates } : repo));
+}
+
+function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[]) {
+  const sessionsByRepo = new Map<string, PiSessionSummary[]>();
+
+  for (const session of indexedSessions) {
+    const sessions = sessionsByRepo.get(session.repoPath) ?? [];
+    sessions.push({
+      path: session.path,
+      id: session.id,
+      cwd: session.repoPath,
+      name: session.name,
+      created: session.created,
+      modified: session.modified,
+      messageCount: session.messageCount,
+      firstMessage: session.firstMessage,
+    });
+    sessionsByRepo.set(session.repoPath, sessions);
+  }
+
+  return sessionsByRepo;
 }
 
 function getErrorMessage(error: unknown) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ModeWatcher } from "mode-watcher";
   import { onMount } from "svelte";
 
   import AppSidebar from "$lib/components/desktop/AppSidebar.svelte";
@@ -8,10 +9,21 @@
 
   let { children } = $props();
 
-  onMount(() => desktopState.initializeListeners());
+  onMount(() => {
+    const cleanup = desktopState.initializeListeners();
+    void desktopState.initializePreferences();
+
+    return cleanup;
+  });
 </script>
 
-<Sidebar.Provider class="h-screen min-h-0 overflow-hidden bg-background text-foreground">
+<ModeWatcher />
+
+<Sidebar.Provider
+  open={desktopState.desktopSettings.sidebarOpen}
+  onOpenChange={(open) => desktopState.setSidebarOpen(open)}
+  class="h-screen min-h-0 overflow-hidden bg-background text-foreground"
+>
   <AppSidebar />
 
   <Sidebar.Inset class="min-w-0 overflow-hidden">

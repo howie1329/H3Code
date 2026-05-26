@@ -7,8 +7,9 @@
   import PromptComposer from "$lib/components/desktop/PromptComposer.svelte";
   import WorkspaceTranscript from "$lib/components/desktop/WorkspaceTranscript.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
+  import { desktopState } from "$lib/desktop-state.svelte";
 
-  let isContextPanelOpen = $state(true);
+  const isContextPanelOpen = $derived(desktopState.desktopSettings.contextPanelOpen);
   const toggleLabel = $derived(isContextPanelOpen ? "Hide context panel" : "Show context panel");
 </script>
 
@@ -20,7 +21,7 @@
       aria-label={toggleLabel}
       aria-pressed={isContextPanelOpen}
       title={toggleLabel}
-      onclick={() => (isContextPanelOpen = !isContextPanelOpen)}
+      onclick={() => desktopState.setContextPanelOpen(!isContextPanelOpen)}
     >
       <HugeiconsIcon icon={isContextPanelOpen ? PanelRightCloseIcon : PanelRightOpenIcon} data-icon />
     </Button>
