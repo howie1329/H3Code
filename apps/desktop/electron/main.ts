@@ -554,6 +554,31 @@ async function getPiCommands() {
   return response.data.commands.map(normalizeSlashCommand);
 }
 
+async function getAvailableModels() {
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_available_models"; success: true }>>({
+    type: "get_available_models",
+  });
+  return response.data.models;
+}
+
+async function setPiModel(provider: string, modelId: string) {
+  const response = await sendCommand<Extract<RpcResponse, { command: "set_model"; success: true }>>({
+    type: "set_model",
+    provider,
+    modelId,
+  });
+  return response.data;
+}
+
+type PiThinkingLevel = Extract<RpcCommand, { type: "set_thinking_level" }>["level"];
+
+async function setPiThinkingLevel(level: PiThinkingLevel) {
+  await sendCommand<Extract<RpcResponse, { command: "set_thinking_level"; success: true }>>({
+    type: "set_thinking_level",
+    level,
+  });
+}
+
 function normalizeSlashCommand(command: unknown): PiSlashCommand {
   const record = toRecord(command);
   const sourceInfo = toRecord(record.sourceInfo);
@@ -637,6 +662,11 @@ ipcMain.handle("pi:delete-session", async (_event, repoPath: string, sessionPath
 ipcMain.handle("pi:get-session-stats", getSessionStats);
 ipcMain.handle("pi:get-session-diff", getSessionDiff);
 ipcMain.handle("pi:get-commands", getPiCommands);
+ipcMain.handle("pi:get-available-models", getAvailableModels);
+ipcMain.handle("pi:set-model", async (_event, provider: string, modelId: string) => setPiModel(provider, modelId));
+ipcMain.handle("pi:set-thinking-level", async (_event, level: PiThinkingLevel) => {
+  await setPiThinkingLevel(level);
+});
 ipcMain.handle("pi:get-session-snapshot", getStateAndMessages);
 ipcMain.handle("pi:get-session-state", getSessionState);
 

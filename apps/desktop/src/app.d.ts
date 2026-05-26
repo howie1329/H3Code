@@ -18,13 +18,19 @@ declare global {
     firstMessage: string;
   };
 
+  type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+  type PiModel = {
+    id: string;
+    name?: string;
+    provider: string;
+    modelId?: string;
+    reasoning?: boolean;
+  };
+
   type PiSessionState = {
-    model?: {
-      provider?: string;
-      id?: string;
-      modelId?: string;
-    };
-    thinkingLevel: string;
+    model?: PiModel;
+    thinkingLevel: PiThinkingLevel | string;
     isStreaming: boolean;
     isCompacting: boolean;
     steeringMode: "all" | "one-at-a-time";
@@ -175,6 +181,9 @@ declare global {
       getSessionStats: () => Promise<PiSessionStats | null>;
       getSessionDiff: () => Promise<PiSessionDiff>;
       getCommands: () => Promise<PiSlashCommand[]>;
+      getAvailableModels: () => Promise<PiModel[]>;
+      setModel: (provider: string, modelId: string) => Promise<PiModel>;
+      setThinkingLevel: (level: PiThinkingLevel) => Promise<void>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
       sendSteer: (message: string) => Promise<void>;
       sendFollowUp: (message: string) => Promise<void>;

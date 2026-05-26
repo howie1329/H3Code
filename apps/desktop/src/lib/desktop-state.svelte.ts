@@ -2,6 +2,7 @@ import { goto } from "$app/navigation";
 import { page } from "$app/state";
 
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
+import { normalizeThinkingLevel } from "$lib/pi-model.js";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -66,6 +67,11 @@ class DesktopState {
   slashCommandsError = $state<string | undefined>();
   slashCommandsLoaded = $state(false);
   slashCommandsSessionKey = $state<string | undefined>();
+  availableModels = $state<PiModel[]>([]);
+  modelsLoading = $state(false);
+  modelsError = $state<string | undefined>();
+  modelsLoaded = $state(false);
+  modelsSessionKey = $state<string | undefined>();
   messages = $state<unknown[]>([]);
   pendingUserMessages = $state<OptimisticUserMessage[]>([]);
   streamingMessage = $state<unknown | undefined>();
@@ -85,6 +91,9 @@ class DesktopState {
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
   canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  canChangeSessionSettings = $derived(
+    this.canUseSession && !this.isBusy && !this.isSendingPrompt && !this.isAgentRunning && !this.sessionState?.isStreaming,
+  );
   transcriptMessages = $derived([
     ...this.messages,
     ...this.pendingUserMessages,
@@ -129,6 +138,7 @@ class DesktopState {
       if (status.state !== "connected") {
         this.isAgentRunning = false;
         this.resetSlashCommands();
+        this.resetModels();
         this.resetTransientTranscript();
         this.resetSessionDiff();
         this.clearExtensionUiRequest();
@@ -268,11 +278,13 @@ class DesktopState {
     this.sessionStats = null;
     this.resetSessionDiff();
     this.resetSlashCommands();
+    this.resetModels();
     this.messages = result.messages ?? [];
     this.resetTransientTranscript();
     this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
+    void this.ensureAvailableModels(true);
     this.ensureWorkspaceRoute();
   }
 
@@ -300,11 +312,13 @@ class DesktopState {
       this.sessionStats = null;
       this.resetSessionDiff();
       this.resetSlashCommands();
+      this.resetModels();
       this.messages = result.messages;
       this.resetTransientTranscript();
       this.isAgentRunning = Boolean(result.state?.isStreaming);
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
+      void this.ensureAvailableModels(true);
     });
   }
 
@@ -327,6 +341,7 @@ class DesktopState {
       this.sessionStats = null;
       this.resetSessionDiff();
       this.resetSlashCommands();
+      this.resetModels();
       this.messages = result.messages;
       this.resetTransientTranscript();
       this.isAgentRunning = Boolean(result.state.isStreaming);
@@ -340,6 +355,7 @@ class DesktopState {
       });
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
+      void this.ensureAvailableModels(true);
       this.ensureWorkspaceRoute();
     });
   }
@@ -639,6 +655,93 @@ class DesktopState {
     this.slashCommandsError = undefined;
     this.slashCommandsLoaded = false;
     this.slashCommandsSessionKey = undefined;
+  }
+
+  async ensureAvailableModels(refresh = false) {
+    const sessionKey = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+
+    if (!this.canUseSession || !sessionKey) {
+      this.availableModels = [];
+      this.modelsLoaded = false;
+      this.modelsError = undefined;
+      return;
+    }
+
+    if (!refresh && this.modelsLoaded && this.modelsSessionKey === sessionKey) {
+      return;
+    }
+
+    if (this.modelsLoading) {
+      return;
+    }
+
+    this.modelsLoading = true;
+    this.modelsError = undefined;
+
+    try {
+      const models = await this.requireApi().getAvailableModels();
+
+      if (sessionKey !== (this.selectedSessionPath ?? this.sessionState?.sessionFile)) {
+        return;
+      }
+
+      this.availableModels = models;
+      this.modelsLoaded = true;
+      this.modelsSessionKey = sessionKey;
+    } catch (error) {
+      this.modelsError = getErrorMessage(error);
+      this.modelsLoaded = false;
+    } finally {
+      this.modelsLoading = false;
+    }
+  }
+
+  resetModels() {
+    this.availableModels = [];
+    this.modelsLoading = false;
+    this.modelsError = undefined;
+    this.modelsLoaded = false;
+    this.modelsSessionKey = undefined;
+  }
+
+  async setModel(provider: string, modelId: string) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      const model = await this.requireApi().setModel(provider, modelId);
+
+      if (this.sessionState) {
+        this.sessionState = {
+          ...this.sessionState,
+          model,
+        };
+      }
+
+      void this.refreshSessionStats();
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  async setThinkingLevel(level: PiThinkingLevel) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      await this.requireApi().setThinkingLevel(level);
+
+      if (this.sessionState) {
+        this.sessionState = {
+          ...this.sessionState,
+          thinkingLevel: normalizeThinkingLevel(level),
+        };
+      }
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
   }
 
   setSidebarOpen(open: boolean) {
