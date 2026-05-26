@@ -3,6 +3,7 @@
 
   import { getActivityIcon } from "$lib/components/desktop/activity-icons.js";
   import { desktopState } from "$lib/desktop-state.svelte";
+  import { getModelLabel } from "$lib/pi-model.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
 
@@ -83,9 +84,6 @@
     return value >= 85 ? "bg-destructive" : "bg-primary";
   }
 
-  function getModelName(model: PiSessionState["model"] | undefined) {
-    return model?.id ?? model?.modelId ?? "Unknown";
-  }
 </script>
 
 <aside
@@ -123,7 +121,7 @@
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Model</span>
-          <span class="truncate text-right font-medium">{getModelName(desktopState.sessionState?.model)}</span>
+          <span class="truncate text-right font-medium">{getModelLabel(desktopState.sessionState?.model)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Messages</span>

@@ -2,6 +2,7 @@ import { goto } from "$app/navigation";
 import { page } from "$app/state";
 
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
+import { normalizeThinkingLevel } from "$lib/pi-model.js";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -18,12 +19,13 @@ export type SidebarRepo = {
   sessionsLoaded?: boolean;
   sessionsLoading?: boolean;
   sessionsError?: string;
-  showAllSessions?: boolean;
 };
 
 const defaultDesktopSettings: DesktopSettings = {
   sidebarOpen: true,
   contextPanelOpen: true,
+  preferDiffPanel: false,
+  autoConnectOnLaunch: false,
 };
 
 type OptimisticUserMessage = {
@@ -66,6 +68,11 @@ class DesktopState {
   slashCommandsError = $state<string | undefined>();
   slashCommandsLoaded = $state(false);
   slashCommandsSessionKey = $state<string | undefined>();
+  availableModels = $state<PiModel[]>([]);
+  modelsLoading = $state(false);
+  modelsError = $state<string | undefined>();
+  modelsLoaded = $state(false);
+  modelsSessionKey = $state<string | undefined>();
   messages = $state<unknown[]>([]);
   pendingUserMessages = $state<OptimisticUserMessage[]>([]);
   streamingMessage = $state<unknown | undefined>();
@@ -78,11 +85,16 @@ class DesktopState {
   errorMessage = $state<string | undefined>();
   preferencesLoaded = $state(false);
   preferencesDatabasePath = $state<string | undefined>();
+  piExecutablePath = $state("pi");
+  extensionUiRequest = $state<PiExtensionUiRequest | undefined>();
   desktopSettings = $state<DesktopSettings>(defaultDesktopSettings);
 
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
   canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  canChangeSessionSettings = $derived(
+    this.canUseSession && !this.isBusy && !this.isSendingPrompt && !this.isAgentRunning && !this.sessionState?.isStreaming,
+  );
   transcriptMessages = $derived([
     ...this.messages,
     ...this.pendingUserMessages,
@@ -125,9 +137,12 @@ class DesktopState {
       this.piStatus = status;
 
       if (status.state !== "connected") {
+        this.isAgentRunning = false;
         this.resetSlashCommands();
+        this.resetModels();
         this.resetTransientTranscript();
         this.resetSessionDiff();
+        this.clearExtensionUiRequest();
       }
 
       if (status.diagnostic) {
@@ -135,9 +150,14 @@ class DesktopState {
       }
     });
 
+    const removeExtensionUiListener = window.h3code?.onExtensionUiRequest((request) => {
+      this.extensionUiRequest = request;
+    });
+
     return () => {
       removeEventListener?.();
       removeStatusListener?.();
+      removeExtensionUiListener?.();
     };
   }
 
@@ -150,6 +170,7 @@ class DesktopState {
       const preferences = await window.h3code.getPreferences();
       this.preferencesLoaded = true;
       this.preferencesDatabasePath = preferences.databasePath;
+      this.piExecutablePath = preferences.piExecutablePath;
       this.desktopSettings = preferences.desktopSettings;
 
       const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
@@ -158,7 +179,7 @@ class DesktopState {
           name: repo.name,
           expanded: repo.path === preferences.lastSelectedRepoPath,
           sessions: indexedSessionsByRepo.get(repo.path) ?? [],
-          sessionsLoaded: Boolean(indexedSessionsByRepo.get(repo.path)?.length),
+          sessionsLoaded: Boolean(repo.sessionsIndexedAt),
           sessionsLoading: false,
           sessionsError: undefined,
         }),
@@ -169,6 +190,13 @@ class DesktopState {
         this.selectedSessionPath = preferences.lastSelectedSessionPath;
         this.sessions = indexedSessionsByRepo.get(preferences.lastSelectedRepoPath) ?? [];
         await this.loadRepoSessions(preferences.lastSelectedRepoPath);
+
+        if (
+          preferences.desktopSettings.autoConnectOnLaunch &&
+          this.piStatus.state !== "connected"
+        ) {
+          await this.connectRepo(preferences.lastSelectedRepoPath, preferences.lastSelectedSessionPath);
+        }
       }
     } catch (error) {
       this.preferencesLoaded = true;
@@ -201,10 +229,6 @@ class DesktopState {
     if (expanded && !repo?.sessionsLoaded && !repo?.sessionsLoading) {
       await this.loadRepoSessions(nextRepoPath);
     }
-  }
-
-  showAllRepoSessions(nextRepoPath: string) {
-    this.repos = updateRepo(this.repos, nextRepoPath, { showAllSessions: true });
   }
 
   async loadRepoSessions(nextRepoPath: string, markRecent = false) {
@@ -258,11 +282,13 @@ class DesktopState {
     this.sessionStats = null;
     this.resetSessionDiff();
     this.resetSlashCommands();
+    this.resetModels();
     this.messages = result.messages ?? [];
     this.resetTransientTranscript();
     this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
+    void this.ensureAvailableModels(true);
     this.ensureWorkspaceRoute();
   }
 
@@ -290,11 +316,13 @@ class DesktopState {
       this.sessionStats = null;
       this.resetSessionDiff();
       this.resetSlashCommands();
+      this.resetModels();
       this.messages = result.messages;
       this.resetTransientTranscript();
       this.isAgentRunning = Boolean(result.state?.isStreaming);
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
+      void this.ensureAvailableModels(true);
     });
   }
 
@@ -317,6 +345,7 @@ class DesktopState {
       this.sessionStats = null;
       this.resetSessionDiff();
       this.resetSlashCommands();
+      this.resetModels();
       this.messages = result.messages;
       this.resetTransientTranscript();
       this.isAgentRunning = Boolean(result.state.isStreaming);
@@ -330,6 +359,7 @@ class DesktopState {
       });
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
+      void this.ensureAvailableModels(true);
       this.ensureWorkspaceRoute();
     });
   }
@@ -346,7 +376,7 @@ class DesktopState {
           name: repo.name,
           expanded: repo.path === preferences.lastSelectedRepoPath,
           sessions: indexedSessionsByRepo.get(repo.path) ?? [],
-          sessionsLoaded: Boolean(indexedSessionsByRepo.get(repo.path)?.length),
+          sessionsLoaded: Boolean(repo.sessionsIndexedAt),
           sessionsLoading: false,
           sessionsError: undefined,
         }),
@@ -401,11 +431,7 @@ class DesktopState {
     });
   }
 
-  async handlePromptSubmit(message: PromptInputMessage, event: SubmitEvent) {
-    event.preventDefault();
-
-    const text = message.text?.trim();
-
+  async handleSteerSubmit(text: string) {
     if (!text || !this.canUseSession) {
       return;
     }
@@ -416,7 +442,39 @@ class DesktopState {
 
     try {
       this.errorMessage = undefined;
-      await this.requireApi().sendPrompt(text, this.sessionState?.isStreaming ? "followUp" : undefined);
+      await this.requireApi().sendSteer(text);
+      this.promptValue = "";
+    } catch (error) {
+      this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
+      this.errorMessage = getErrorMessage(error);
+    } finally {
+      this.isSendingPrompt = false;
+    }
+  }
+
+  async handlePromptSubmit(message: PromptInputMessage, event: SubmitEvent) {
+    event.preventDefault();
+
+    const text = message.text?.trim();
+
+    if (!text || !this.canUseSession) {
+      return;
+    }
+
+    const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
+    const optimisticMessage = createOptimisticUserMessage(text);
+    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
+    this.isSendingPrompt = true;
+
+    try {
+      this.errorMessage = undefined;
+
+      if (isRunning) {
+        await this.requireApi().sendFollowUp(text);
+      } else {
+        await this.requireApi().sendPrompt(text);
+      }
+
       this.promptValue = "";
     } catch (error) {
       this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
@@ -442,19 +500,50 @@ class DesktopState {
   }
 
   async refreshActiveMessages() {
-    if (!this.selectedSessionPath) {
+    if (!this.canUseSession) {
       return;
     }
 
     try {
-      const result = await this.requireApi().switchSession(this.selectedSessionPath);
-      this.pendingUserMessages = [];
-      this.sessionState = result.state;
-      this.messages = result.messages;
-      this.isAgentRunning = Boolean(result.state.isStreaming);
+      const result = await this.requireApi().getSessionSnapshot();
+      this.applySessionSnapshot(result);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
+  }
+
+  async refreshSessionStateFromPi() {
+    if (!this.canUseSession) {
+      return;
+    }
+
+    try {
+      const state = await this.requireApi().getSessionState();
+      this.sessionState = state;
+      this.isAgentRunning = Boolean(state.isStreaming);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  applySessionSnapshot(result: { state: PiSessionState; messages: unknown[] }) {
+    this.pendingUserMessages = [];
+    this.sessionState = result.state;
+
+    if (result.state.sessionFile) {
+      this.selectedSessionPath = result.state.sessionFile;
+    }
+
+    this.messages = result.messages;
+    this.isAgentRunning = Boolean(result.state.isStreaming);
+  }
+
+  async syncSidebarSessionsForActiveRepo() {
+    if (!this.repoPath || this.piStatus.state !== "connected") {
+      return;
+    }
+
+    await this.loadRepoSessions(this.repoPath);
   }
 
   async refreshSessionStats() {
@@ -491,6 +580,8 @@ class DesktopState {
 
       if (!this.hasSessionDiff) {
         this.sessionDiffPanelOpen = false;
+      } else if (this.desktopSettings.preferDiffPanel) {
+        this.sessionDiffPanelOpen = true;
       }
     } catch (error) {
       this.sessionDiffError = getErrorMessage(error);
@@ -508,10 +599,10 @@ class DesktopState {
       this.sessionDiffPanelOpen = true;
 
       if (this.desktopSettings.contextPanelOpen) {
-        this.desktopSettings = { ...this.desktopSettings, contextPanelOpen: false };
         void this.persistDesktopSettings({ contextPanelOpen: false });
       }
 
+      void this.refreshSessionDiff();
       return;
     }
 
@@ -572,12 +663,98 @@ class DesktopState {
     this.slashCommandsSessionKey = undefined;
   }
 
+  async ensureAvailableModels(refresh = false) {
+    const sessionKey = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+
+    if (!this.canUseSession || !sessionKey) {
+      this.availableModels = [];
+      this.modelsLoaded = false;
+      this.modelsError = undefined;
+      return;
+    }
+
+    if (!refresh && this.modelsLoaded && this.modelsSessionKey === sessionKey) {
+      return;
+    }
+
+    if (this.modelsLoading) {
+      return;
+    }
+
+    this.modelsLoading = true;
+    this.modelsError = undefined;
+
+    try {
+      const models = await this.requireApi().getAvailableModels();
+
+      if (sessionKey !== (this.selectedSessionPath ?? this.sessionState?.sessionFile)) {
+        return;
+      }
+
+      this.availableModels = models;
+      this.modelsLoaded = true;
+      this.modelsSessionKey = sessionKey;
+    } catch (error) {
+      this.modelsError = getErrorMessage(error);
+      this.modelsLoaded = false;
+    } finally {
+      this.modelsLoading = false;
+    }
+  }
+
+  resetModels() {
+    this.availableModels = [];
+    this.modelsLoading = false;
+    this.modelsError = undefined;
+    this.modelsLoaded = false;
+    this.modelsSessionKey = undefined;
+  }
+
+  async setModel(provider: string, modelId: string) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      const model = await this.requireApi().setModel(provider, modelId);
+
+      if (this.sessionState) {
+        this.sessionState = {
+          ...this.sessionState,
+          model,
+        };
+      }
+
+      void this.refreshSessionStats();
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  async setThinkingLevel(level: PiThinkingLevel) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      await this.requireApi().setThinkingLevel(level);
+
+      if (this.sessionState) {
+        this.sessionState = {
+          ...this.sessionState,
+          thinkingLevel: normalizeThinkingLevel(level),
+        };
+      }
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
   setSidebarOpen(open: boolean) {
     if (this.desktopSettings.sidebarOpen === open) {
       return;
     }
 
-    this.desktopSettings = { ...this.desktopSettings, sidebarOpen: open };
     void this.persistDesktopSettings({ sidebarOpen: open });
   }
 
@@ -590,20 +767,122 @@ class DesktopState {
       return;
     }
 
-    this.desktopSettings = { ...this.desktopSettings, contextPanelOpen: open };
     void this.persistDesktopSettings({ contextPanelOpen: open });
   }
 
-  async persistDesktopSettings(settings: Partial<DesktopSettings>) {
+  setPreferDiffPanel(enabled: boolean) {
+    if (this.desktopSettings.preferDiffPanel === enabled) {
+      return;
+    }
+
+    void this.persistDesktopSettings({ preferDiffPanel: enabled });
+
+    if (enabled && this.hasSessionDiff) {
+      this.sessionDiffPanelOpen = true;
+    }
+  }
+
+  setAutoConnectOnLaunch(enabled: boolean) {
+    if (this.desktopSettings.autoConnectOnLaunch === enabled) {
+      return;
+    }
+
+    void this.persistDesktopSettings({ autoConnectOnLaunch: enabled });
+  }
+
+  async pickPiExecutable() {
+    const selected = await this.requireApi().pickExecutable();
+    return selected?.path;
+  }
+
+  async revealPreferencesDatabase() {
+    return this.requireApi().revealPreferencesDatabase();
+  }
+
+  async clearAllIndexedData() {
+    const preferences = await this.requireApi().clearAllIndexedData();
+    this.applyPreferencesSnapshot(preferences);
+    this.repoPath = undefined;
+    this.selectedSessionPath = undefined;
+    this.sessions = [];
+    this.sessionState = undefined;
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+  }
+
+  applyPreferencesSnapshot(preferences: DesktopPreferences) {
+    this.preferencesDatabasePath = preferences.databasePath;
+    this.piExecutablePath = preferences.piExecutablePath;
+    this.desktopSettings = preferences.desktopSettings;
+
+    const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
+    this.repos = preferences.recentRepos.map((repo) =>
+      createRepo(repo.path, {
+        name: repo.name,
+        expanded: false,
+        sessions: indexedSessionsByRepo.get(repo.path) ?? [],
+        sessionsLoaded: Boolean(repo.sessionsIndexedAt),
+        sessionsLoading: false,
+        sessionsError: undefined,
+      }),
+    );
+  }
+
+  async setSteeringMode(mode: PiQueueMode) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
     try {
-      this.desktopSettings = await this.requireApi().updateDesktopSettings(settings);
+      this.sessionState = await this.requireApi().setSteeringMode(mode);
     } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  async setFollowUpMode(mode: PiQueueMode) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      this.sessionState = await this.requireApi().setFollowUpMode(mode);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  async setAutoCompaction(enabled: boolean) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      this.sessionState = await this.requireApi().setAutoCompaction(enabled);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  async persistDesktopSettings(settings: Partial<DesktopSettings>) {
+    const previous = this.desktopSettings;
+    this.desktopSettings = { ...this.desktopSettings, ...settings };
+
+    try {
+      await this.requireApi().updateDesktopSettings(settings);
+    } catch (error) {
+      this.desktopSettings = previous;
       this.errorMessage = getErrorMessage(error);
     }
   }
 
   handlePiEvent(event: unknown, type: string) {
     const record = toRecord(event);
+
+    if (shouldRefreshSessionStateFromEvent(type)) {
+      void this.refreshSessionStateFromPi();
+    }
 
     if (type === "agent_start") {
       this.isAgentRunning = true;
@@ -647,9 +926,25 @@ class DesktopState {
 
   async reconcileAgentEnd() {
     await this.refreshActiveSessionData();
+    await this.syncSidebarSessionsForActiveRepo();
     this.resetTransientTranscript();
     this.isAgentRunning = false;
     this.setSessionStreaming(false);
+    void this.ensureSlashCommands(true);
+  }
+
+  clearExtensionUiRequest() {
+    this.extensionUiRequest = undefined;
+  }
+
+  async respondToExtensionUi(response: PiExtensionUiResponse) {
+    await this.requireApi().respondToExtensionUi(response);
+    this.clearExtensionUiRequest();
+  }
+
+  async setPiExecutablePath(executablePath: string) {
+    const result = await this.requireApi().setPiExecutablePath(executablePath);
+    this.piExecutablePath = result.piExecutablePath;
   }
 
   resetTransientTranscript() {
@@ -705,7 +1000,6 @@ function createRepo(nextRepoPath: string, updates: Partial<SidebarRepo> = {}): S
     sessions: [],
     sessionsLoaded: false,
     sessionsLoading: false,
-    showAllSessions: false,
     ...updates,
   };
 }
@@ -748,6 +1042,16 @@ function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[])
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function shouldRefreshSessionStateFromEvent(type: string) {
+  return (
+    type === "compaction_start" ||
+    type === "compaction_end" ||
+    type === "queue_update" ||
+    type === "auto_retry_start" ||
+    type === "auto_retry_end"
+  );
 }
 
 function createOptimisticUserMessage(content: string): OptimisticUserMessage {

@@ -57,8 +57,10 @@
 <main class="min-h-screen bg-background text-foreground">
   <div class="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-5 sm:px-8 lg:px-10">
     <header class="flex items-center justify-between gap-4">
-      <a href="/" class="text-xs font-semibold tracking-tight text-foreground" aria-label="H3 Code home">
-        H3 Code
+      <a href="/" class="flex items-center gap-2 text-xs font-semibold tracking-tight text-foreground" aria-label="H3 Code home">
+        <img src="/icons/h3code-light.svg" alt="" class="size-6 shrink-0 rounded-md dark:hidden" />
+        <img src="/icons/h3code-dark.svg" alt="" class="hidden size-6 shrink-0 rounded-md dark:block" />
+        <span>H3 Code</span>
       </a>
       <Button variant="ghost" size="icon" onclick={toggleMode} aria-label="Toggle theme">
         <span class="relative grid size-4 place-items-center">

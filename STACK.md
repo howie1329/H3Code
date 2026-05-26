@@ -34,13 +34,14 @@ Svelte renderer
       -> pi --mode rpc subprocess
 ```
 
-PI communicates over stdin/stdout JSONL RPC. The MVP does not use app-owned SQL, custom session storage, or multi-provider routing.
+PI communicates over stdin/stdout JSONL RPC. H3Code stores **session-list metadata** (recent repos, indexed session summaries, UI toggles) in local SQLite (`h3code.sqlite` under Electron user data)—not transcripts or messages. PI remains the source of truth for sessions and chat history.
 
 ## Key Desktop Files
 
 | Path | Role |
 | --- | --- |
 | `apps/desktop/electron/main.ts` | Window, PI subprocess lifecycle, JSONL RPC framing, IPC handlers |
+| `apps/desktop/electron/preferences.ts` | SQLite metadata index and desktop settings |
 | `apps/desktop/electron/preload.ts` | Renderer-facing desktop API |
 | `apps/desktop/src/lib/desktop-state.svelte.ts` | Central renderer state (repos, sessions, messages, status, activity) |
 | `apps/desktop/src/lib/components/desktop/` | Shell, sidebar, transcript, composer, context panel |
@@ -76,7 +77,7 @@ npm run build
 ## Environment And External Tools
 
 - `VITE_DEV_SERVER_URL` — desktop dev only; Electron loads the Vite dev server URL.
-- `pi` on `PATH` — required for `pi --mode rpc` (configurable executable path is planned).
+- `pi` on `PATH` — default for `pi --mode rpc`; override in desktop Settings (stored in SQLite `app_settings`).
 - Model/API credentials — configured in PI Agent, not in H3Code `.env` files.
 
 ## Further Reading

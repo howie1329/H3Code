@@ -18,13 +18,19 @@ declare global {
     firstMessage: string;
   };
 
+  type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+  type PiModel = {
+    id: string;
+    name?: string;
+    provider: string;
+    modelId?: string;
+    reasoning?: boolean;
+  };
+
   type PiSessionState = {
-    model?: {
-      provider?: string;
-      id?: string;
-      modelId?: string;
-    };
-    thinkingLevel: string;
+    model?: PiModel;
+    thinkingLevel: PiThinkingLevel | string;
     isStreaming: boolean;
     isCompacting: boolean;
     steeringMode: "all" | "one-at-a-time";
@@ -88,9 +94,13 @@ declare global {
     messages?: unknown[];
   };
 
+  type PiQueueMode = "all" | "one-at-a-time";
+
   type DesktopSettings = {
     sidebarOpen: boolean;
     contextPanelOpen: boolean;
+    preferDiffPanel: boolean;
+    autoConnectOnLaunch: boolean;
   };
 
   type RecentRepoPreference = {
@@ -98,6 +108,7 @@ declare global {
     name: string;
     lastOpenedAt: string;
     lastSessionPath?: string;
+    sessionsIndexedAt?: string;
   };
 
   type IndexedSessionPreference = {
@@ -111,6 +122,44 @@ declare global {
     firstMessage: string;
   };
 
+  type PiExtensionUiRequest =
+    | {
+        type: "extension_ui_request";
+        id: string;
+        method: "select";
+        title: string;
+        options: string[];
+        timeout?: number;
+      }
+    | {
+        type: "extension_ui_request";
+        id: string;
+        method: "confirm";
+        title: string;
+        message: string;
+        timeout?: number;
+      }
+    | {
+        type: "extension_ui_request";
+        id: string;
+        method: "input";
+        title: string;
+        placeholder?: string;
+        timeout?: number;
+      }
+    | {
+        type: "extension_ui_request";
+        id: string;
+        method: "editor";
+        title: string;
+        prefill?: string;
+      };
+
+  type PiExtensionUiResponse =
+    | { type: "extension_ui_response"; id: string; value: string }
+    | { type: "extension_ui_response"; id: string; confirmed: boolean }
+    | { type: "extension_ui_response"; id: string; cancelled: true };
+
   type DesktopPreferences = {
     recentRepos: RecentRepoPreference[];
     indexedSessions: IndexedSessionPreference[];
@@ -118,11 +167,14 @@ declare global {
     lastSelectedSessionPath?: string;
     desktopSettings: DesktopSettings;
     databasePath: string;
+    piExecutablePath: string;
   };
 
   interface Window {
     h3code?: {
       platform: NodeJS.Platform;
+      getAppVersion: () => Promise<string>;
+      pickExecutable: () => Promise<{ path: string } | null>;
       selectRepo: () => Promise<{ path: string } | null>;
       connectRepo: (repoPath: string, selectedSessionPath?: string) => Promise<PiConnectRepoResult>;
       listSessions: () => Promise<PiSessionSummary[]>;
@@ -130,16 +182,31 @@ declare global {
       deletePiSession: (repoPath: string, sessionPath: string) => Promise<PiSessionSummary[]>;
       switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
+      getSessionSnapshot: () => Promise<{ state: PiSessionState; messages: unknown[] }>;
+      getSessionState: () => Promise<PiSessionState>;
       getSessionStats: () => Promise<PiSessionStats | null>;
       getSessionDiff: () => Promise<PiSessionDiff>;
       getCommands: () => Promise<PiSlashCommand[]>;
+      getAvailableModels: () => Promise<PiModel[]>;
+      setModel: (provider: string, modelId: string) => Promise<PiModel>;
+      setThinkingLevel: (level: PiThinkingLevel) => Promise<void>;
+      setSteeringMode: (mode: PiQueueMode) => Promise<PiSessionState>;
+      setFollowUpMode: (mode: PiQueueMode) => Promise<PiSessionState>;
+      setAutoCompaction: (enabled: boolean) => Promise<PiSessionState>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
+      sendSteer: (message: string) => Promise<void>;
+      sendFollowUp: (message: string) => Promise<void>;
       abort: () => Promise<void>;
+      respondToExtensionUi: (response: PiExtensionUiResponse) => Promise<void>;
       getPreferences: () => Promise<DesktopPreferences>;
       removeIndexedRepo: (repoPath: string) => Promise<DesktopPreferences>;
       updateDesktopSettings: (settings: Partial<DesktopSettings>) => Promise<DesktopSettings>;
+      setPiExecutablePath: (executablePath: string) => Promise<{ piExecutablePath: string }>;
+      clearAllIndexedData: () => Promise<DesktopPreferences>;
+      revealPreferencesDatabase: () => Promise<string>;
       onPiEvent: (listener: (event: unknown) => void) => () => void;
       onPiStatus: (listener: (status: PiStatus) => void) => () => void;
+      onExtensionUiRequest: (listener: (request: PiExtensionUiRequest) => void) => () => void;
     };
   }
 }

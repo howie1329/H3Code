@@ -10,26 +10,33 @@
   let renderError = $state<string | undefined>();
   let fileCount = $state(0);
 
+  const patch = $derived(desktopState.sessionDiff.patch);
+  const hasPatch = $derived(patch.trim().length > 0);
+  const showLoading = $derived(desktopState.sessionDiffLoading && !hasPatch);
+  const showError = $derived(Boolean(renderError || desktopState.sessionDiffError));
+  const showEmpty = $derived(!showLoading && !showError && !hasPatch);
+
   function getThemeType() {
     return mode.current === "light" || mode.current === "dark" ? mode.current : "system";
   }
 
   $effect(() => {
-    const patch = desktopState.sessionDiff.patch;
     const themeType = getThemeType();
+    const mount = container;
 
-    if (!browser || !container) {
+    if (!browser || !mount) {
       return;
     }
 
+    const el = mount;
     let cancelled = false;
     const instances: FileDiff[] = [];
 
     async function renderDiff() {
       renderError = undefined;
-      container!.replaceChildren();
+      el.replaceChildren();
 
-      if (!patch.trim()) {
+      if (!hasPatch) {
         fileCount = 0;
         return;
       }
@@ -47,7 +54,7 @@
         for (const fileDiff of files) {
           const wrapper = document.createElement("div");
           wrapper.className = "session-diff-file";
-          container!.append(wrapper);
+          el.append(wrapper);
 
           const instance = new FileDiff({
             diffStyle: "unified",
@@ -93,10 +100,12 @@
     <div class="min-w-0">
       <h3 class="truncate text-xs font-medium">Session diff</h3>
       <p class="truncate text-[11px] text-muted-foreground">
-        {#if desktopState.sessionDiffLoading}
+        {#if showLoading}
           Refreshing changes
-        {:else if renderError || desktopState.sessionDiffError}
+        {:else if showError}
           Diff unavailable
+        {:else if showEmpty}
+          No uncommitted changes
         {:else}
           {fileCount || desktopState.sessionDiff.changedFiles} changed {(fileCount || desktopState.sessionDiff.changedFiles) === 1 ? "file" : "files"}
         {/if}
@@ -107,13 +116,19 @@
     </Button>
   </div>
 
-  {#if renderError || desktopState.sessionDiffError}
+  {#if showError}
     <div class="p-3 text-xs leading-5 text-muted-foreground">{renderError ?? desktopState.sessionDiffError}</div>
-  {:else if desktopState.sessionDiffLoading && !desktopState.sessionDiff.patch}
+  {:else if showLoading}
     <div class="p-3 text-xs text-muted-foreground">Loading diff...</div>
-  {:else}
-    <div bind:this={container} class="session-diff-container min-h-0 flex-1 overflow-auto p-2"></div>
+  {:else if showEmpty}
+    <div class="p-3 text-xs leading-5 text-muted-foreground">No uncommitted changes in this repo.</div>
   {/if}
+
+  <div
+    bind:this={container}
+    class="session-diff-container min-h-0 flex-1 overflow-auto p-2"
+    class:hidden={showError || showLoading || showEmpty}
+  ></div>
 </aside>
 
 <style>

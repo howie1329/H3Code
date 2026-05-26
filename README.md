@@ -35,14 +35,12 @@ The desktop app currently implements the core PI RPC loop:
 - List PI sessions for repos.
 - Switch sessions and create new PI-owned sessions.
 - Load PI state, messages, and session stats.
-- Send prompts and follow-up prompts through PI RPC.
+- Send prompts, steer, and follow-up messages through PI RPC.
 - Abort active runs.
 - Render transcript messages, streaming assistant output, tool blocks, runtime diagnostics, and recent tool activity.
 
 Still planned:
 
-- Persist recent repos, last selected repo/session, and desktop preferences.
-- Make the PI executable path configurable instead of hardcoded to `pi`.
 - Replace placeholder Repos, Sessions, and Activity pages with full product surfaces.
 - Wire up global search.
 - Improve full live activity/tool timeline rendering.
@@ -59,6 +57,7 @@ Svelte renderer
 Important desktop files:
 
 - `apps/desktop/electron/main.ts` — Electron window, PI subprocess lifecycle, JSONL RPC framing, IPC handlers.
+- `apps/desktop/electron/preferences.ts` — SQLite metadata index and desktop settings.
 - `apps/desktop/electron/preload.ts` — safe renderer-facing desktop API.
 - `apps/desktop/src/lib/desktop-state.svelte.ts` — centralized renderer state for repos, sessions, messages, status, activity, and stats.
 - `apps/desktop/src/lib/components/desktop/` — desktop shell, sidebar, transcript, composer, context panel, and page primitives.
@@ -75,7 +74,7 @@ The desktop rebuild proves one loop:
 5. Stream assistant output and tool activity into the UI.
 6. Abort active runs and start fresh PI-owned sessions.
 
-The MVP explicitly defers SQL indexing, multi-provider support, Codex support, custom message storage, custom session storage, and app-owned transcript persistence.
+The MVP uses SQLite for recent-repo and session-list metadata only (not transcripts). It defers full-text indexing, multi-provider routing, Codex support, custom message storage, and app-owned transcript persistence.
 
 ## Current Repository Shape
 
@@ -97,7 +96,7 @@ docs/
 - Tailwind CSS
 - shadcn-svelte / Bits UI
 - PI Agent RPC over stdin/stdout JSONL
-- Minimal local JSON preferences for desktop settings, planned
+- SQLite metadata index and desktop settings (`apps/desktop/electron/preferences.ts`)
 
 ## Local Development
 

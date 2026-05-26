@@ -5,14 +5,26 @@ import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { SessionManager, type RpcCommand, type RpcResponse, type RpcSessionState, type SessionInfo } from "@earendil-works/pi-coding-agent";
 import {
+  SessionManager,
+  type RpcCommand,
+  type RpcResponse,
+  type RpcSessionState,
+  type SessionInfo,
+} from "@earendil-works/pi-coding-agent";
+import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
+import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "./pi-extension-ui-types.js";
+import {
+  clearAllIndexedData,
   closePreferencesDatabase,
+  getPiExecutablePath,
   getPreferences,
   removeIndexedRepo,
   removeIndexedSession,
   recordRepoSessions,
   recordRepoUsage,
+  revealPreferencesDatabase,
+  setPiExecutablePath,
   updateDesktopSettings,
   type DesktopSettings,
 } from "./preferences.js";
@@ -69,6 +81,11 @@ type PendingRequest = {
   reject: (error: Error) => void;
 };
 
+type SessionSnapshot = {
+  state: RpcSessionState;
+  messages: unknown[];
+};
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const windowBackground = {
@@ -80,14 +97,21 @@ function getWindowBackgroundColor() {
   return nativeTheme.shouldUseDarkColors ? windowBackground.dark : windowBackground.light;
 }
 
+function getWindowIconPath() {
+  return isDev
+    ? path.join(__dirname, "../static/icons/h3code-light.png")
+    : path.join(__dirname, "../build/icons/h3code-light.png");
+}
+
 let mainWindow: BrowserWindow | undefined;
 let piProcess: ChildProcessWithoutNullStreams | undefined;
 let selectedRepoPath: string | undefined;
-let stdoutBuffer = "";
 let nextRequestId = 1;
 let status: PiStatus = { state: "disconnected" };
+let stopReadingStdout: (() => void) | undefined;
 const pendingRequests = new Map<string, PendingRequest>();
 const maxDiffBytes = 8 * 1024 * 1024;
+const RPC_REQUEST_TIMEOUT_MS = 30_000;
 
 function createMainWindow() {
   const window = new BrowserWindow({
@@ -97,6 +121,7 @@ function createMainWindow() {
     minHeight: 600,
     title: "H3Code",
     backgroundColor: getWindowBackgroundColor(),
+    icon: getWindowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -134,6 +159,10 @@ function emitStatus(nextStatus: PiStatus) {
 
 function emitEvent(event: unknown) {
   mainWindow?.webContents.send("pi:event", event);
+}
+
+function emitExtensionUiRequest(request: RpcExtensionUIRequest) {
+  mainWindow?.webContents.send("pi:extension-ui-request", request);
 }
 
 function rejectPendingRequests(error: Error) {
@@ -303,7 +332,13 @@ async function getUntrackedFileDiff(repoPath: string, filePath: string) {
 }
 
 function countChangedFiles(patch: string) {
-  return patch.split("\n").filter((line) => line.startsWith("diff --git ")).length;
+  const gitDiffHeaders = patch.split("\n").filter((line) => line.startsWith("diff --git ")).length;
+
+  if (gitDiffHeaders > 0) {
+    return gitDiffHeaders;
+  }
+
+  return patch.split("\n").filter((line) => line.startsWith("diff ")).length;
 }
 
 function runGit(args: string[], cwd: string) {
@@ -347,7 +382,8 @@ async function stopPiProcess() {
 
   const processToStop = piProcess;
   piProcess = undefined;
-  stdoutBuffer = "";
+  stopReadingStdout?.();
+  stopReadingStdout = undefined;
   processToStop.removeAllListeners();
   processToStop.stdout.removeAllListeners();
   processToStop.stderr.removeAllListeners();
@@ -360,16 +396,27 @@ async function startPiProcess(repoPath: string) {
   await assertDirectory(repoPath);
 
   selectedRepoPath = repoPath;
-  stdoutBuffer = "";
   emitStatus({ state: "starting", repoPath });
 
-  piProcess = spawn("pi", ["--mode", "rpc"], {
+  const piExecutable = getPiExecutablePath();
+  piProcess = spawn(piExecutable, ["--mode", "rpc"], {
     cwd: repoPath,
     env: process.env,
   });
 
-  piProcess.stdout.setEncoding("utf8");
-  piProcess.stdout.on("data", handleStdout);
+  stopReadingStdout?.();
+  stopReadingStdout = attachJsonlLineReader(piProcess.stdout, (line: string) => {
+    try {
+      handleRpcMessage(JSON.parse(line) as RpcResponse | unknown);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      emitStatus({
+        state: "error",
+        repoPath: selectedRepoPath,
+        diagnostic: `Malformed PI RPC JSON: ${message}`,
+      });
+    }
+  });
 
   piProcess.stderr.setEncoding("utf8");
   piProcess.stderr.on("data", (chunk: string) => {
@@ -391,39 +438,11 @@ async function startPiProcess(repoPath: string) {
     rejectPendingRequests(new Error(diagnostic));
     emitStatus({ state: "exited", repoPath, diagnostic });
   });
-
-  emitStatus({ state: "connected", repoPath });
 }
 
-function handleStdout(chunk: string) {
-  stdoutBuffer += chunk;
-
-  while (true) {
-    const newlineIndex = stdoutBuffer.indexOf("\n");
-
-    if (newlineIndex === -1) {
-      return;
-    }
-
-    const rawLine = stdoutBuffer.slice(0, newlineIndex);
-    stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
-    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-
-    if (!line.trim()) {
-      continue;
-    }
-
-    try {
-      handleRpcMessage(JSON.parse(line) as RpcResponse | unknown);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      emitStatus({
-        state: "error",
-        repoPath: selectedRepoPath,
-        diagnostic: `Malformed PI RPC JSON: ${message}`,
-      });
-    }
-  }
+async function ensurePiHandshake(repoPath: string) {
+  await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
+  emitStatus({ state: "connected", repoPath });
 }
 
 function handleRpcMessage(message: RpcResponse | unknown) {
@@ -437,7 +456,39 @@ function handleRpcMessage(message: RpcResponse | unknown) {
     }
   }
 
+  if (isExtensionUiRequest(message)) {
+    handleExtensionUiRequest(message);
+    return;
+  }
+
   emitEvent(message);
+}
+
+function isExtensionUiRequest(message: unknown): message is RpcExtensionUIRequest {
+  return Boolean(message && typeof message === "object" && "type" in message && message.type === "extension_ui_request");
+}
+
+function handleExtensionUiRequest(request: RpcExtensionUIRequest) {
+  if (request.method === "notify") {
+    emitEvent(request);
+    return;
+  }
+
+  if (request.method === "setStatus" || request.method === "setWidget" || request.method === "setTitle") {
+    emitEvent(request);
+    return;
+  }
+
+  emitExtensionUiRequest(request);
+}
+
+function sendExtensionUiResponse(response: RpcExtensionUIResponse) {
+  if (!piProcess || !piProcess.stdin.writable) {
+    throw new Error("PI RPC is not connected.");
+  }
+
+  const id = `h3code-${nextRequestId++}`;
+  piProcess.stdin.write(serializeJsonLine({ ...response, id }));
 }
 
 function isRpcResponse(message: unknown): message is RpcResponse {
@@ -453,8 +504,15 @@ async function sendCommand<T extends RpcResponse>(command: RpcCommand): Promise<
   const commandWithId = { ...command, id };
 
   return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(id);
+      reject(new Error(`Timeout waiting for response to ${command.type}.`));
+    }, RPC_REQUEST_TIMEOUT_MS);
+
     pendingRequests.set(id, {
       resolve: (response) => {
+        clearTimeout(timeout);
+
         if (!response.success) {
           reject(new Error(response.error));
           return;
@@ -462,21 +520,30 @@ async function sendCommand<T extends RpcResponse>(command: RpcCommand): Promise<
 
         resolve(response as T);
       },
-      reject,
+      reject: (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
     });
 
-    piProcess?.stdin.write(`${JSON.stringify(commandWithId)}\n`, (error) => {
+    piProcess?.stdin.write(serializeJsonLine(commandWithId), (error) => {
       if (!error) {
         return;
       }
 
+      clearTimeout(timeout);
       pendingRequests.delete(id);
       reject(error);
     });
   });
 }
 
-async function getStateAndMessages() {
+async function getSessionState() {
+  const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
+  return stateResponse.data;
+}
+
+async function getStateAndMessages(): Promise<SessionSnapshot> {
   const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
   const messagesResponse = await sendCommand<Extract<RpcResponse, { command: "get_messages"; success: true }>>({ type: "get_messages" });
 
@@ -494,6 +561,54 @@ async function getSessionStats() {
 async function getPiCommands() {
   const response = await sendCommand<Extract<RpcResponse, { command: "get_commands"; success: true }>>({ type: "get_commands" });
   return response.data.commands.map(normalizeSlashCommand);
+}
+
+async function getAvailableModels() {
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_available_models"; success: true }>>({
+    type: "get_available_models",
+  });
+  return response.data.models;
+}
+
+async function setPiModel(provider: string, modelId: string) {
+  const response = await sendCommand<Extract<RpcResponse, { command: "set_model"; success: true }>>({
+    type: "set_model",
+    provider,
+    modelId,
+  });
+  return response.data;
+}
+
+type PiThinkingLevel = Extract<RpcCommand, { type: "set_thinking_level" }>["level"];
+
+async function setPiThinkingLevel(level: PiThinkingLevel) {
+  await sendCommand<Extract<RpcResponse, { command: "set_thinking_level"; success: true }>>({
+    type: "set_thinking_level",
+    level,
+  });
+}
+
+type PiQueueMode = Extract<RpcCommand, { type: "set_steering_mode" }>["mode"];
+
+async function setPiSteeringMode(mode: PiQueueMode) {
+  await sendCommand<Extract<RpcResponse, { command: "set_steering_mode"; success: true }>>({
+    type: "set_steering_mode",
+    mode,
+  });
+}
+
+async function setPiFollowUpMode(mode: PiQueueMode) {
+  await sendCommand<Extract<RpcResponse, { command: "set_follow_up_mode"; success: true }>>({
+    type: "set_follow_up_mode",
+    mode,
+  });
+}
+
+async function setPiAutoCompaction(enabled: boolean) {
+  await sendCommand<Extract<RpcResponse, { command: "set_auto_compaction"; success: true }>>({
+    type: "set_auto_compaction",
+    enabled,
+  });
 }
 
 function normalizeSlashCommand(command: unknown): PiSlashCommand {
@@ -551,8 +666,22 @@ ipcMain.handle("repo:select", async () => {
   return { path: result.filePaths[0] };
 });
 
+ipcMain.handle("dialog:pick-executable", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: process.platform === "darwin" ? ["openFile", "treatPackageAsDirectory"] : ["openFile"],
+    title: "Select PI executable",
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return { path: result.filePaths[0] };
+});
+
 ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessionPath?: string): Promise<ConnectRepoResult> => {
   await startPiProcess(repoPath);
+  await ensurePiHandshake(repoPath);
 
   const sessions = await listPiSessions();
   const selectedSession = sessions.find((session) => session.path === selectedSessionPath) ?? sessions[0];
@@ -578,6 +707,25 @@ ipcMain.handle("pi:delete-session", async (_event, repoPath: string, sessionPath
 ipcMain.handle("pi:get-session-stats", getSessionStats);
 ipcMain.handle("pi:get-session-diff", getSessionDiff);
 ipcMain.handle("pi:get-commands", getPiCommands);
+ipcMain.handle("pi:get-available-models", getAvailableModels);
+ipcMain.handle("pi:set-model", async (_event, provider: string, modelId: string) => setPiModel(provider, modelId));
+ipcMain.handle("pi:set-thinking-level", async (_event, level: PiThinkingLevel) => {
+  await setPiThinkingLevel(level);
+});
+ipcMain.handle("pi:set-steering-mode", async (_event, mode: PiQueueMode) => {
+  await setPiSteeringMode(mode);
+  return getSessionState();
+});
+ipcMain.handle("pi:set-follow-up-mode", async (_event, mode: PiQueueMode) => {
+  await setPiFollowUpMode(mode);
+  return getSessionState();
+});
+ipcMain.handle("pi:set-auto-compaction", async (_event, enabled: boolean) => {
+  await setPiAutoCompaction(enabled);
+  return getSessionState();
+});
+ipcMain.handle("pi:get-session-snapshot", getStateAndMessages);
+ipcMain.handle("pi:get-session-state", getSessionState);
 
 ipcMain.handle("pi:switch-session", async (_event, sessionPath: string) => switchPiSession(sessionPath));
 
@@ -604,11 +752,35 @@ ipcMain.handle("pi:send-prompt", async (_event, message: string, streamingBehavi
   });
 });
 
+ipcMain.handle("pi:send-steer", async (_event, message: string) => {
+  await sendCommand<Extract<RpcResponse, { command: "steer"; success: true }>>({
+    type: "steer",
+    message,
+  });
+});
+
+ipcMain.handle("pi:send-follow-up", async (_event, message: string) => {
+  await sendCommand<Extract<RpcResponse, { command: "follow_up"; success: true }>>({
+    type: "follow_up",
+    message,
+  });
+});
+
 ipcMain.handle("pi:abort", async () => {
   await sendCommand<Extract<RpcResponse, { command: "abort"; success: true }>>({ type: "abort" });
 });
 
+ipcMain.handle("pi:extension-ui-response", async (_event, response: RpcExtensionUIResponse) => {
+  await sendExtensionUiResponse(response);
+});
+
+ipcMain.handle("app:get-version", () => app.getVersion());
+
 ipcMain.handle("preferences:get", () => getPreferences());
+ipcMain.handle("preferences:set-pi-executable-path", async (_event, executablePath: string) => {
+  const nextPath = setPiExecutablePath(executablePath);
+  return { piExecutablePath: nextPath };
+});
 ipcMain.handle("preferences:remove-repo", async (_event, repoPath: string) => {
   if (selectedRepoPath === repoPath) {
     await stopPiProcess();
@@ -619,6 +791,20 @@ ipcMain.handle("preferences:remove-repo", async (_event, repoPath: string) => {
   return removeIndexedRepo(repoPath);
 });
 ipcMain.handle("preferences:update-desktop-settings", async (_event, settings: Partial<DesktopSettings>) => updateDesktopSettings(settings));
+ipcMain.handle("preferences:clear-all-indexed", async () => {
+  if (selectedRepoPath) {
+    await stopPiProcess();
+    selectedRepoPath = undefined;
+    emitStatus({ state: "disconnected" });
+  }
+
+  return clearAllIndexedData();
+});
+ipcMain.handle("preferences:reveal-database", () => {
+  const databasePath = revealPreferencesDatabase();
+  shell.showItemInFolder(databasePath);
+  return databasePath;
+});
 
 app.whenReady().then(() => {
   nativeTheme.on("updated", () => {
