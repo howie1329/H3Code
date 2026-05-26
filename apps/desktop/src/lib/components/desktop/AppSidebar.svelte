@@ -36,26 +36,35 @@
     sessionDeletionTarget = { repo, session };
     sessionDeletionOpen = true;
   }
+
+  const menuButtonClass =
+    "h-7 rounded-full px-2.5 [&_svg]:size-3 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:justify-center";
 </script>
 
 <Sidebar.Sidebar collapsible="icon">
   <Sidebar.Header class="gap-2 px-2 py-2">
-    <div class="flex h-8 items-center justify-between gap-1">
+    <div
+      class="flex h-8 items-center justify-between gap-1 group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:justify-center"
+    >
       <a
         href="/workspace"
-        class="flex min-w-0 flex-1 items-center gap-2 rounded-full px-1.5 py-1 text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        class="flex min-w-0 flex-1 items-center gap-2 rounded-full px-1.5 py-1 text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:px-0"
         aria-label="H3Code workspace"
       >
         <span class="grid size-6 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">H3</span>
         <span class="truncate text-xs font-semibold tracking-tight group-data-[collapsible=icon]:hidden">H3Code</span>
       </a>
-      <Sidebar.Trigger class="shrink-0" />
+      <Sidebar.Trigger class="shrink-0 group-data-[collapsible=icon]:hidden" />
     </div>
   </Sidebar.Header>
 
   <Sidebar.Content class="min-h-0 flex-1">
     <Sidebar.Group class="flex min-h-0 flex-1 flex-col">
-      <Sidebar.GroupLabel class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide">Repositories</Sidebar.GroupLabel>
+      <Sidebar.GroupLabel
+        class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide group-data-[collapsible=icon]:hidden"
+      >
+        Repositories
+      </Sidebar.GroupLabel>
       <Sidebar.GroupAction
         aria-label="Add repository"
         title="Add repository"
@@ -73,12 +82,12 @@
                 <Sidebar.MenuButton
                   size="sm"
                   tooltipContent="Add a repository"
-                  class="h-7 rounded-full px-2.5 text-muted-foreground [&_svg]:size-3"
+                  class="{menuButtonClass} text-muted-foreground"
                   aria-disabled={desktopState.isBusy}
                   onclick={() => !desktopState.isBusy && desktopState.handleSelectRepo()}
                 >
                   <HugeiconsIcon icon={FolderCodeIcon} />
-                  <span>Add a repository</span>
+                  <span class="group-data-[collapsible=icon]:hidden">Add a repository</span>
                 </Sidebar.MenuButton>
               </Sidebar.MenuItem>
             {:else}
@@ -92,19 +101,33 @@
                     isActive={isRepoActive}
                     tooltipContent={repo.name}
                     aria-expanded={repo.expanded ? "true" : "false"}
-                    class="h-7 rounded-full px-2.5 [&_svg]:size-3"
+                    class={menuButtonClass}
                     aria-disabled={desktopState.isBusy}
                     onclick={() => !desktopState.isBusy && desktopState.toggleRepo(repo.path)}
                   >
                     {#if repo.expanded}
-                      <HugeiconsIcon icon={ArrowDown01Icon} class="shrink-0 text-muted-foreground" />
+                      <HugeiconsIcon
+                        icon={ArrowDown01Icon}
+                        class="shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
+                      />
                     {:else}
-                      <HugeiconsIcon icon={ArrowRight01Icon} class="shrink-0 text-muted-foreground" />
+                      <HugeiconsIcon
+                        icon={ArrowRight01Icon}
+                        class="shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
+                      />
                     {/if}
                     <HugeiconsIcon icon={FolderCodeIcon} />
-                    <span class={isRepoActive ? "min-w-0 flex-1 truncate font-medium" : "min-w-0 flex-1 truncate"}>{repo.name}</span>
+                    <span
+                      class="{isRepoActive
+                        ? 'min-w-0 flex-1 truncate font-medium'
+                        : 'min-w-0 flex-1 truncate'} group-data-[collapsible=icon]:hidden"
+                    >
+                      {repo.name}
+                    </span>
                     {#if sessionCount > 0 && !repo.expanded}
-                      <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">{sessionCount}</span>
+                      <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground group-data-[collapsible=icon]:hidden">
+                        {sessionCount}
+                      </span>
                     {/if}
                   </Sidebar.MenuButton>
                   <Sidebar.MenuAction
@@ -211,13 +234,13 @@
         <Sidebar.MenuButton
           size="sm"
           tooltipContent="Settings"
-          class="h-7 rounded-full px-2.5 text-muted-foreground [&_svg]:size-3"
+          class="{menuButtonClass} text-muted-foreground"
           isActive={page.url.pathname === "/settings"}
         >
           {#snippet child({ props })}
             <a {...props} href="/settings">
               <HugeiconsIcon icon={Settings05Icon} />
-              <span>Settings</span>
+              <span class="group-data-[collapsible=icon]:hidden">Settings</span>
             </a>
           {/snippet}
         </Sidebar.MenuButton>
