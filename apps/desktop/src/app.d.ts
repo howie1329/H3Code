@@ -133,6 +133,7 @@ declare global {
     | {
         type: "extension_ui_request";
         id: string;
+        agentId?: string;
         method: "select";
         title: string;
         options: string[];
@@ -141,6 +142,7 @@ declare global {
     | {
         type: "extension_ui_request";
         id: string;
+        agentId?: string;
         method: "confirm";
         title: string;
         message: string;
@@ -149,6 +151,7 @@ declare global {
     | {
         type: "extension_ui_request";
         id: string;
+        agentId?: string;
         method: "input";
         title: string;
         placeholder?: string;
@@ -157,6 +160,7 @@ declare global {
     | {
         type: "extension_ui_request";
         id: string;
+        agentId?: string;
         method: "editor";
         title: string;
         prefill?: string;
@@ -212,7 +216,7 @@ declare global {
       setPiExecutablePath: (executablePath: string) => Promise<{ piExecutablePath: string }>;
       clearAllIndexedData: () => Promise<DesktopPreferences>;
       revealPreferencesDatabase: () => Promise<string>;
-      onSessionEvent: (listener: (event: import("$lib/pi-session/domain-events.js").SessionDomainEvent) => void) => () => void;
+      onSessionEvent: (listener: (event: import("$lib/pi-session/domain-events.js").SessionDomainEvent & { agentId?: string }) => void) => () => void;
       onPiStatus: (listener: (status: PiStatus) => void) => () => void;
       onExtensionUiRequest: (listener: (request: PiExtensionUiRequest) => void) => () => void;
     };

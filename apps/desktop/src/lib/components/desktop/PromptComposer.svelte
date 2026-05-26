@@ -1,6 +1,13 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { ArrowUp02Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
+  import {
+    Alert01Icon,
+    AlertCircleIcon,
+    ArrowUp02Icon,
+    Cancel01Icon,
+    InformationCircleIcon,
+    StopCircleIcon,
+  } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
   import ComposerModelMenuPanel from "$lib/components/desktop/ComposerModelMenuPanel.svelte";
@@ -394,6 +401,42 @@
     closeMenus();
     await desktopState.setThinkingLevel(level);
   }
+
+  function getNotificationIcon(type: "info" | "warning" | "error") {
+    if (type === "error") {
+      return AlertCircleIcon;
+    }
+
+    if (type === "warning") {
+      return Alert01Icon;
+    }
+
+    return InformationCircleIcon;
+  }
+
+  function getNotificationClass(type: "info" | "warning" | "error") {
+    if (type === "error") {
+      return "border-destructive/35 bg-destructive/10 text-foreground";
+    }
+
+    if (type === "warning") {
+      return "border-amber-500/35 bg-amber-500/10 text-foreground";
+    }
+
+    return "border-border/60 bg-muted/35 text-foreground";
+  }
+
+  function getNotificationIconClass(type: "info" | "warning" | "error") {
+    if (type === "error") {
+      return "text-destructive";
+    }
+
+    if (type === "warning") {
+      return "text-amber-600 dark:text-amber-400";
+    }
+
+    return "text-primary";
+  }
 </script>
 
 <svelte:window onclick={handleWindowClick} />
@@ -401,18 +444,26 @@
 <div class="border-t border-border/50 px-6 py-1.5">
   <div bind:this={wrapperRef} class="relative mx-auto max-w-3xl">
     {#if desktopState.sessionNotification}
+      {@const notification = desktopState.sessionNotification}
       <div
-        class="mb-2 flex items-start justify-between gap-3 border border-border/60 bg-muted/30 px-3 py-2 text-[11px] leading-tight text-foreground"
-        role="status"
-        aria-live="polite"
+        class="mb-2 flex items-start gap-2 rounded-md border px-3 py-2 text-[11px] leading-tight {getNotificationClass(notification.notifyType)}"
+        role={notification.notifyType === "error" ? "alert" : "status"}
+        aria-live={notification.notifyType === "error" ? "assertive" : "polite"}
       >
-        <span>{desktopState.sessionNotification.message}</span>
+        <HugeiconsIcon
+          icon={getNotificationIcon(notification.notifyType)}
+          class="mt-0.5 size-3 shrink-0 {getNotificationIconClass(notification.notifyType)}"
+          aria-hidden="true"
+        />
+        <span class="min-w-0 flex-1">{notification.message}</span>
         <button
           type="button"
-          class="shrink-0 text-muted-foreground hover:text-foreground"
-          onclick={() => desktopState.dismissSessionNotification(desktopState.sessionNotification!.id)}
+          class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3"
+          aria-label="Dismiss notification"
+          title="Dismiss notification"
+          onclick={() => desktopState.dismissSessionNotification(notification.id)}
         >
-          Dismiss
+          <HugeiconsIcon icon={Cancel01Icon} aria-hidden="true" />
         </button>
       </div>
     {/if}

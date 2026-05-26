@@ -5,7 +5,6 @@
     AddCircleIcon,
     ArrowDown01Icon,
     ArrowRight01Icon,
-    BubbleChatIcon,
     FolderAddIcon,
     FolderCodeIcon,
     Settings05Icon,
@@ -202,6 +201,7 @@
                             {@const isSessionActive = session.path === desktopState.selectedSessionPath}
                             {@const sessionLabel = getSessionDisplayTitle(session)}
                             {@const sessionModified = formatSessionModified(session.modified)}
+                            {@const sessionStatus = desktopState.getSessionRowStatus(session)}
                             <Sidebar.MenuSubItem class="group/menu-sub-item relative">
                               <Sidebar.MenuSubButton
                                 isActive={isSessionActive}
@@ -212,12 +212,17 @@
                                   <button
                                     {...props}
                                     type="button"
-                                    title={`${sessionLabel} · ${repo.name}`}
+                                    title={`${sessionLabel} · ${repo.name} · ${sessionStatus.label}`}
                                     aria-current={isSessionActive ? "page" : undefined}
+                                    aria-label={`${sessionLabel}, ${sessionStatus.label}`}
                                     disabled={desktopState.isBusy}
                                     onclick={() => handleSessionClick(session.path, repo.path)}
                                   >
-                                    <HugeiconsIcon icon={BubbleChatIcon} />
+                                    <span
+                                      class="size-2 shrink-0 rounded-full {sessionStatus.dotClass}"
+                                      title={sessionStatus.label}
+                                      aria-hidden="true"
+                                    ></span>
                                     <span class="min-w-0 flex-1 truncate text-left">{sessionLabel}</span>
                                     {#if sessionModified}
                                       <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">{sessionModified}</span>

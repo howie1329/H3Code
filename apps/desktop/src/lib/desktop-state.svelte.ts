@@ -36,6 +36,14 @@ export type SidebarRepo = {
   sessionsError?: string;
 };
 
+export type SessionRowStatusKind = "error" | "needs_input" | "working" | "connected" | "mapped" | "done";
+
+export type SessionRowStatus = {
+  kind: SessionRowStatusKind;
+  label: string;
+  dotClass: string;
+};
+
 const defaultDesktopSettings: DesktopSettings = {
   sidebarOpen: true,
   contextPanelOpen: false,
@@ -49,6 +57,10 @@ type OptimisticUserMessage = {
   content: string;
   timestamp: number;
   optimistic: true;
+};
+
+type AgentSessionEvent = SessionDomainEvent & {
+  agentId?: string;
 };
 
 class DesktopState {
@@ -79,6 +91,9 @@ class DesktopState {
   modelsLoaded = $state(false);
   modelsSessionKey = $state<string | undefined>();
   sessionReadModel = $state<SessionReadModel>(createInitialSessionReadModel());
+  agentReadModels = $state<Record<string, SessionReadModel>>({});
+  agentStatuses = $state<Record<string, PiStatus>>({});
+  extensionUiRequestsByAgent = $state<Record<string, PiExtensionUiRequest>>({});
   pendingUserMessages = $state<OptimisticUserMessage[]>([]);
   piStatus = $state<PiStatus>({ state: "disconnected" });
   isBusy = $state(false);
@@ -146,32 +161,50 @@ class DesktopState {
     });
 
     const removeStatusListener = window.h3code?.onPiStatus((status) => {
-      if (status.agentId && this.activeAgentId && status.agentId !== this.activeAgentId) {
-        return;
-      }
-
       if (status.agentId) {
-        this.activeAgentId = status.agentId;
+        this.agentStatuses = {
+          ...this.agentStatuses,
+          [status.agentId]: status,
+        };
+
+        if (!this.activeAgentId) {
+          this.activeAgentId = status.agentId;
+        }
       }
 
-      this.piStatus = status;
+      const isActiveStatus = !status.agentId || status.agentId === this.activeAgentId;
 
-      if (status.state !== "connected") {
-        this.resetSlashCommands();
-        this.resetModels();
-        this.resetSessionReadModel();
-        this.resetSessionDiff();
-        this.clearExtensionUiRequest();
-        this.cancelDebouncedDiffRefresh();
-      }
+      if (isActiveStatus) {
+        this.piStatus = status;
 
-      if (status.diagnostic) {
-        this.errorMessage = status.diagnostic;
+        if (status.state !== "connected") {
+          this.resetSlashCommands();
+          this.resetModels();
+          this.resetSessionReadModel();
+          this.resetSessionDiff();
+          this.clearExtensionUiRequest();
+          this.cancelDebouncedDiffRefresh();
+        }
+
+        if (status.diagnostic) {
+          this.errorMessage = status.diagnostic;
+        }
       }
     });
 
     const removeExtensionUiListener = window.h3code?.onExtensionUiRequest((request) => {
-      this.extensionUiRequest = request;
+      const agentId = request.agentId ?? this.activeAgentId;
+
+      if (agentId) {
+        this.extensionUiRequestsByAgent = {
+          ...this.extensionUiRequestsByAgent,
+          [agentId]: request,
+        };
+      }
+
+      if (!agentId || agentId === this.activeAgentId) {
+        this.extensionUiRequest = request;
+      }
     });
 
     return () => {
@@ -292,6 +325,7 @@ class DesktopState {
     this.repoPath = result.repoPath;
     this.activeAgentId = result.agentId;
     this.worktreePath = result.worktreePath;
+    this.syncActiveAgentStatus();
     this.repos = upsertRepo(this.repos, result.repoPath, {
       expanded: true,
       sessions: result.sessions,
@@ -311,6 +345,7 @@ class DesktopState {
       result.state,
       result.messages ?? [],
     );
+    this.storeActiveAgentReadModel();
     this.resetTransientTranscript();
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
@@ -340,6 +375,7 @@ class DesktopState {
       this.activeAgentId = result.agentId;
       this.repoPath = result.repoPath ?? this.repoPath;
       this.worktreePath = result.worktreePath;
+      this.syncActiveAgentStatus();
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
       this.sessionStats = null;
@@ -351,7 +387,11 @@ class DesktopState {
         result.state,
         result.messages,
       );
+      this.storeActiveAgentReadModel();
       this.resetTransientTranscript();
+      if (this.repoPath) {
+        await this.loadRepoSessions(this.repoPath);
+      }
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
       void this.ensureAvailableModels(true);
@@ -376,6 +416,7 @@ class DesktopState {
       this.activeAgentId = result.agentId;
       this.repoPath = result.repoPath ?? repoPath;
       this.worktreePath = result.worktreePath;
+      this.syncActiveAgentStatus();
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
       this.sessionStats = null;
@@ -387,6 +428,7 @@ class DesktopState {
         result.state,
         result.messages,
       );
+      this.storeActiveAgentReadModel();
       this.resetTransientTranscript();
       this.sessions = await this.requireApi().listSessions();
       this.repos = upsertRepo(this.repos, repoPath, {
@@ -559,6 +601,7 @@ class DesktopState {
     }
 
     this.sessionReadModel = hydrateFromSnapshot(this.sessionReadModel, result.state, result.messages);
+    this.storeActiveAgentReadModel();
   }
 
   async syncSidebarSessionsForActiveRepo() {
@@ -567,6 +610,20 @@ class DesktopState {
     }
 
     await this.loadRepoSessions(this.repoPath);
+  }
+
+  async syncSidebarSessionsForAgent(agentId: string | undefined) {
+    if (!agentId) {
+      return;
+    }
+
+    const repoPath = this.agentStatuses[agentId]?.repoPath;
+
+    if (!repoPath) {
+      return;
+    }
+
+    await this.loadRepoSessions(repoPath);
   }
 
   async refreshSessionStats() {
@@ -956,21 +1013,81 @@ class DesktopState {
     }
   }
 
-  handleSessionEvent(event: SessionDomainEvent) {
-    const agentEvent = event as SessionDomainEvent & { agentId?: string };
+  getSessionRowStatus(session: PiSessionSummary): SessionRowStatus {
+    const agentId = session.agentId;
 
-    if (agentEvent.agentId && this.activeAgentId && agentEvent.agentId !== this.activeAgentId) {
+    if (!agentId) {
+      return session.worktreePath
+        ? createSessionRowStatus("mapped")
+        : createSessionRowStatus("done");
+    }
+
+    const status = this.agentStatuses[agentId];
+    const model = this.agentReadModels[agentId] ?? (agentId === this.activeAgentId ? this.sessionReadModel : undefined);
+    const request = this.extensionUiRequestsByAgent[agentId];
+
+    if (
+      status?.state === "error" ||
+      status?.state === "exited" ||
+      Boolean(model?.streamingError || model?.extensionError)
+    ) {
+      return createSessionRowStatus("error");
+    }
+
+    if (request) {
+      return createSessionRowStatus("needs_input");
+    }
+
+    if (
+      status?.state === "starting" ||
+      model?.isAgentRunning ||
+      model?.isCompacting ||
+      model?.retry?.active ||
+      model?.streamingMessage ||
+      Object.values(model?.tools ?? {}).some((tool) => tool.state === "input-available" || tool.state === "input-streaming")
+    ) {
+      return createSessionRowStatus("working");
+    }
+
+    if (status?.state === "connected" || agentId === this.activeAgentId) {
+      return createSessionRowStatus("connected");
+    }
+
+    return session.worktreePath
+      ? createSessionRowStatus("mapped")
+      : createSessionRowStatus("done");
+  }
+
+  handleSessionEvent(event: AgentSessionEvent) {
+    const agentId = event.agentId ?? this.activeAgentId;
+    const currentModel = agentId
+      ? (this.agentReadModels[agentId] ?? (agentId === this.activeAgentId ? this.sessionReadModel : createInitialSessionReadModel()))
+      : this.sessionReadModel;
+    const nextModel = applySessionEvent(currentModel, event);
+
+    if (agentId) {
+      this.agentReadModels = {
+        ...this.agentReadModels,
+        [agentId]: nextModel,
+      };
+    }
+
+    if (agentId && this.activeAgentId && agentId !== this.activeAgentId) {
+      if (event.type === "run.started" || event.type === "run.ended") {
+        void this.syncSidebarSessionsForAgent(agentId);
+      }
       return;
     }
 
-    if (agentEvent.agentId) {
-      this.activeAgentId = agentEvent.agentId;
+    if (agentId) {
+      this.activeAgentId = agentId;
     }
 
-    this.sessionReadModel = applySessionEvent(this.sessionReadModel, event);
+    this.sessionReadModel = nextModel;
 
     if (event.type === "run.started") {
       this.setSessionStreaming(true);
+      void this.syncSidebarSessionsForAgent(agentId);
     }
 
     if (event.type === "run.ended") {
@@ -1026,9 +1143,27 @@ class DesktopState {
         (item: SessionReadModel["notifications"][number]) => item.id !== notificationId,
       ),
     };
+    this.storeActiveAgentReadModel();
   }
 
   clearExtensionUiRequest() {
+    if (this.extensionUiRequest) {
+      const nextRequests = { ...this.extensionUiRequestsByAgent };
+      const requestAgentId = this.extensionUiRequest.agentId ?? this.activeAgentId;
+
+      if (requestAgentId) {
+        delete nextRequests[requestAgentId];
+      }
+
+      for (const [agentId, request] of Object.entries(nextRequests)) {
+        if (request.id === this.extensionUiRequest.id) {
+          delete nextRequests[agentId];
+        }
+      }
+
+      this.extensionUiRequestsByAgent = nextRequests;
+    }
+
     this.extensionUiRequest = undefined;
   }
 
@@ -1048,6 +1183,32 @@ class DesktopState {
 
   resetSessionReadModel() {
     this.sessionReadModel = createInitialSessionReadModel();
+    this.storeActiveAgentReadModel();
+  }
+
+  storeActiveAgentReadModel() {
+    if (!this.activeAgentId) {
+      return;
+    }
+
+    this.agentReadModels = {
+      ...this.agentReadModels,
+      [this.activeAgentId]: this.sessionReadModel,
+    };
+  }
+
+  syncActiveAgentStatus() {
+    if (!this.activeAgentId) {
+      return;
+    }
+
+    const status = this.agentStatuses[this.activeAgentId];
+
+    if (status) {
+      this.piStatus = status;
+    }
+
+    this.extensionUiRequest = this.extensionUiRequestsByAgent[this.activeAgentId];
   }
 
   setSessionStreaming(isStreaming: boolean) {
@@ -1136,6 +1297,47 @@ function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[])
   }
 
   return sessionsByRepo;
+}
+
+function createSessionRowStatus(kind: SessionRowStatusKind): SessionRowStatus {
+  switch (kind) {
+    case "error":
+      return {
+        kind,
+        label: "Pi error",
+        dotClass: "bg-destructive",
+      };
+    case "needs_input":
+      return {
+        kind,
+        label: "Needs input",
+        dotClass: "animate-pulse bg-amber-500",
+      };
+    case "working":
+      return {
+        kind,
+        label: "Pi running",
+        dotClass: "animate-pulse bg-primary",
+      };
+    case "connected":
+      return {
+        kind,
+        label: "Connected",
+        dotClass: "bg-primary",
+      };
+    case "mapped":
+      return {
+        kind,
+        label: "Worktree available",
+        dotClass: "border border-muted-foreground/45 bg-transparent",
+      };
+    case "done":
+      return {
+        kind,
+        label: "Done",
+        dotClass: "bg-muted-foreground/25",
+      };
+  }
 }
 
 function getErrorMessage(error: unknown) {
