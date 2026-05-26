@@ -3,33 +3,36 @@
   import { ArrowUp02Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
-  import ComposerSessionMenu from "$lib/components/desktop/ComposerSessionMenu.svelte";
+  import ComposerModelMenuPanel from "$lib/components/desktop/ComposerModelMenuPanel.svelte";
+  import ComposerThinkingMenuPanel from "$lib/components/desktop/ComposerThinkingMenuPanel.svelte";
+  import ModelSelector from "$lib/components/desktop/ModelSelector.svelte";
+  import PromptComposerField from "$lib/components/desktop/PromptComposerField.svelte";
   import SlashCommandMenu from "$lib/components/desktop/SlashCommandMenu.svelte";
+  import ThinkingLevelSelector from "$lib/components/desktop/ThinkingLevelSelector.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
-  import { isSameModel, modelSupportsThinking, normalizeThinkingLevel, PI_THINKING_LEVELS } from "$lib/pi-model.js";
+  import { isSameModel, normalizeThinkingLevel, PI_THINKING_LEVELS } from "$lib/pi-model.js";
   import { filterSlashCommands, getActiveSlashToken, replaceSlashToken, type SlashToken } from "$lib/slash-commands";
   import {
     PromptInput,
-    PromptInputBody,
     PromptInputSubmit,
     PromptInputTextarea,
-    PromptInputToolbar,
   } from "$lib/components/ai-elements/prompt-input/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
-  import { Kbd } from "$lib/components/ui/kbd/index.js";
 
-  type ComposerMenu = "none" | "slash" | "session";
+  type ComposerMenu = "none" | "slash" | "model" | "thinking";
 
   let wrapperRef = $state<HTMLDivElement | null>(null);
   let textareaRef = $state<HTMLTextAreaElement | null>(null);
-  let sessionAnchor = $state<HTMLElement | null>(null);
+  let modelAnchor = $state<HTMLElement | null>(null);
+  let thinkingAnchor = $state<HTMLElement | null>(null);
   let slashToken = $state<SlashToken | null>(null);
   let dismissedTokenKey = $state<string | undefined>();
   let activeMenu = $state<ComposerMenu>("none");
   let slashHighlightedIndex = $state(0);
   let modelHighlightedIndex = $state(0);
   let thinkingHighlightedIndex = $state(0);
-  let sessionMenuLeft = $state(0);
+  let modelMenuLeft = $state(0);
+  let thinkingMenuLeft = $state(0);
 
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
@@ -43,11 +46,10 @@
   const currentModel = $derived(desktopState.sessionState?.model);
   const flatModels = $derived(desktopState.availableModels);
   const currentThinkingLevel = $derived(normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel));
-  const showThinkingSelector = $derived(modelSupportsThinking(currentModel));
 
   const promptPlaceholder = $derived.by(() => {
     if (desktopState.canUseSession) {
-      return "Ask PI about this repo…";
+      return "Ask Pi about this repo…";
     }
 
     if (!desktopState.repoPath) {
@@ -55,10 +57,19 @@
     }
 
     if (desktopState.piStatus.state !== "connected") {
-      return "Connect PI to send prompts…";
+      return "Connect Pi to send prompts…";
     }
 
     return "Select a repo and session…";
+  });
+
+  const textareaTitle = $derived.by(() => {
+    if (!desktopState.canUseSession || desktopState.isBusy || isRunning) {
+      return undefined;
+    }
+
+    const base = "Enter to send · Shift+Enter for new line";
+    return showSlashHint ? `${base} · / for commands` : base;
   });
 
   const composerMeta = $derived.by(() => {
@@ -80,7 +91,7 @@
       }
 
       if (desktopState.piStatus.state !== "connected") {
-        return { showDot: false, dotClass: "", text: "Connect PI to send prompts" };
+        return { showDot: false, dotClass: "", text: "Connect Pi to send prompts" };
       }
 
       if (!desktopState.selectedSessionPath && !desktopState.sessionState?.sessionFile) {
@@ -94,6 +105,8 @@
 
     return { showDot: false, dotClass: "", text: "" };
   });
+
+  const showStatusLine = $derived(Boolean(composerMeta.text));
 
   $effect(() => {
     if (slashHighlightedIndex >= filteredCommands.length) {
@@ -114,8 +127,14 @@
   });
 
   $effect(() => {
-    if (activeMenu === "session") {
-      updateMenuPosition(sessionAnchor, (left) => (sessionMenuLeft = left));
+    if (activeMenu === "model") {
+      updateMenuPosition(modelAnchor, (left) => (modelMenuLeft = left));
+    }
+  });
+
+  $effect(() => {
+    if (activeMenu === "thinking") {
+      updateMenuPosition(thinkingAnchor, (left) => (thinkingMenuLeft = left));
     }
   });
 
@@ -157,24 +176,43 @@
       return;
     }
 
-    if (menu === "session" && !selectorsDisabled) {
-      activeMenu = "session";
-      slashToken = null;
-      dismissedTokenKey = undefined;
+    if (selectorsDisabled) {
+      return;
+    }
+
+    slashToken = null;
+    dismissedTokenKey = undefined;
+
+    if (menu === "model") {
+      activeMenu = "model";
       const currentIndex = flatModels.findIndex((entry) => isSameModel(entry, currentModel));
       modelHighlightedIndex = currentIndex >= 0 ? currentIndex : 0;
-      thinkingHighlightedIndex = PI_THINKING_LEVELS.indexOf(currentThinkingLevel);
       void desktopState.ensureAvailableModels();
+      return;
+    }
+
+    if (menu === "thinking") {
+      activeMenu = "thinking";
+      thinkingHighlightedIndex = PI_THINKING_LEVELS.indexOf(currentThinkingLevel);
     }
   }
 
-  function toggleSessionMenu() {
-    if (activeMenu === "session") {
+  function toggleModelMenu() {
+    if (activeMenu === "model") {
       closeMenus();
       return;
     }
 
-    openMenu("session");
+    openMenu("model");
+  }
+
+  function toggleThinkingMenu() {
+    if (activeMenu === "thinking") {
+      closeMenus();
+      return;
+    }
+
+    openMenu("thinking");
   }
 
   function syncSlashToken() {
@@ -238,7 +276,7 @@
       return;
     }
 
-    if (activeMenu === "session" && flatModels.length > 0) {
+    if (activeMenu === "model" && flatModels.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
         modelHighlightedIndex = (modelHighlightedIndex + 1) % flatModels.length;
@@ -257,6 +295,32 @@
 
         if (model) {
           void selectModel(model);
+        }
+
+        return;
+      }
+    }
+
+    if (activeMenu === "thinking") {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        thinkingHighlightedIndex = (thinkingHighlightedIndex + 1) % PI_THINKING_LEVELS.length;
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        thinkingHighlightedIndex =
+          (thinkingHighlightedIndex - 1 + PI_THINKING_LEVELS.length) % PI_THINKING_LEVELS.length;
+        return;
+      }
+
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        const level = PI_THINKING_LEVELS[thinkingHighlightedIndex];
+
+        if (level) {
+          void selectThinkingLevel(level);
         }
 
         return;
@@ -339,7 +403,7 @@
 
 <svelte:window onclick={handleWindowClick} />
 
-<div class="border-t border-border/50 px-6 py-3">
+<div class="border-t border-border/50 px-6 py-1.5">
   <div bind:this={wrapperRef} class="relative mx-auto max-w-3xl">
     {#if isSlashMenuOpen}
       <SlashCommandMenu
@@ -354,6 +418,23 @@
       />
     {/if}
 
+    <ComposerModelMenuPanel
+      open={activeMenu === "model"}
+      menuLeft={modelMenuLeft}
+      {modelHighlightedIndex}
+      onSelectModel={(model) => selectModel(model)}
+      onHighlightModel={(index) => (modelHighlightedIndex = index)}
+      onRetryModels={retryModels}
+    />
+
+    <ComposerThinkingMenuPanel
+      open={activeMenu === "thinking"}
+      menuLeft={thinkingMenuLeft}
+      {thinkingHighlightedIndex}
+      onSelectThinkingLevel={(level) => selectThinkingLevel(level)}
+      onHighlightThinking={(index) => (thinkingHighlightedIndex = index)}
+    />
+
     <PromptInput
       onSubmit={(message, event) => {
         slashToken = null;
@@ -361,64 +442,51 @@
         closeMenus();
         desktopState.handlePromptSubmit(message, event);
       }}
-      class="flex w-full flex-col rounded-lg border border-border/50 bg-background shadow-none transition-[box-shadow,ring] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] focus-within:ring-2 focus-within:ring-ring motion-reduce:transition-none"
+      class="w-full overflow-visible rounded-none border-0 bg-transparent shadow-none"
     >
-      <PromptInputBody class="min-w-0 overflow-y-auto max-h-48">
-        <label for="prompt" class="sr-only">Prompt</label>
-        <PromptInputTextarea
-          id="prompt"
-          bind:ref={textareaRef}
-          bind:value={desktopState.promptValue}
-          class="min-h-12 border-none px-3 pt-3 pb-2 text-xs leading-snug text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
-          placeholder={promptPlaceholder}
-          disabled={!desktopState.canUseSession || desktopState.isBusy}
-          oninput={handlePromptInput}
-          onkeydown={handlePromptKeydown}
-          onkeyup={handlePromptInteraction}
-          onclick={(event) => {
-            event.stopPropagation();
-            handlePromptInteraction();
-          }}
-          onselect={handlePromptInteraction}
-        />
-      </PromptInputBody>
-      <PromptInputToolbar class="flex h-10 min-w-0 items-center justify-between gap-3 border-t border-border/50 px-3 py-1.5">
-        <div class="flex min-w-0 flex-1 items-center gap-2">
-          <ComposerSessionMenu
-            open={activeMenu === "session"}
-            disabled={selectorsDisabled}
-            menuLeft={sessionMenuLeft}
-            bind:anchor={sessionAnchor}
-            {modelHighlightedIndex}
-            {thinkingHighlightedIndex}
-            onToggle={toggleSessionMenu}
-            onSelectModel={(model) => selectModel(model)}
-            onSelectThinkingLevel={(level) => selectThinkingLevel(level)}
-            onHighlightModel={(index) => (modelHighlightedIndex = index)}
-            onHighlightThinking={(index) => (thinkingHighlightedIndex = index)}
-            onRetryModels={retryModels}
+      <PromptComposerField showStatus={showStatusLine}>
+        {#snippet input()}
+          <label for="prompt" class="sr-only">Prompt</label>
+          <PromptInputTextarea
+            id="prompt"
+            bind:ref={textareaRef}
+            bind:value={desktopState.promptValue}
+            class="max-h-40 min-h-5! w-full resize-none border-none bg-transparent p-0 text-[11px] leading-tight text-foreground shadow-none placeholder:text-[11px] placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            placeholder={promptPlaceholder}
+            title={textareaTitle}
+            disabled={!desktopState.canUseSession || desktopState.isBusy}
+            oninput={handlePromptInput}
+            onkeydown={handlePromptKeydown}
+            onkeyup={handlePromptInteraction}
+            onclick={(event) => {
+              event.stopPropagation();
+              handlePromptInteraction();
+            }}
+            onselect={handlePromptInteraction}
           />
-          <div class="flex min-w-0 flex-1 items-center gap-2 text-[11px] leading-tight text-muted-foreground">
-            {#if composerMeta.showDot}
-              <span class={composerMeta.dotClass} aria-hidden="true"></span>
-            {/if}
-            {#if composerMeta.text}
-              <span class="truncate">{composerMeta.text}</span>
-            {:else if desktopState.canUseSession && !desktopState.isBusy && !isRunning && !desktopState.isSendingPrompt}
-              <span class="hidden shrink-0 items-center gap-1 sm:inline-flex"><Kbd>Enter</Kbd> send</span>
-              <span class="hidden shrink-0 items-center gap-1 md:inline-flex"><Kbd>Shift</Kbd><Kbd>Enter</Kbd> newline</span>
-              {#if showSlashHint}
-                <span class="hidden shrink-0 items-center gap-1 lg:inline-flex"><Kbd>/</Kbd> commands</span>
-              {/if}
-            {/if}
-          </div>
-        </div>
-        <div class="flex shrink-0 items-center gap-0.5">
+        {/snippet}
+
+        {#snippet trailing()}
+          <ModelSelector
+            open={activeMenu === "model"}
+            disabled={selectorsDisabled}
+            variant="inline"
+            bind:anchor={modelAnchor}
+            onToggle={toggleModelMenu}
+          />
+          <ThinkingLevelSelector
+            open={activeMenu === "thinking"}
+            disabled={selectorsDisabled}
+            variant="inline"
+            bind:anchor={thinkingAnchor}
+            onToggle={toggleThinkingMenu}
+          />
+          <span class="mx-0.5 h-4 w-px shrink-0 bg-border/50" aria-hidden="true"></span>
           {#if showAbort}
             <Button
               variant="ghost"
               size="icon-sm"
-              class="text-muted-foreground hover:text-foreground"
+              class="size-7 text-muted-foreground hover:text-foreground"
               aria-label="Abort run"
               title="Abort run"
               onclick={() => desktopState.handleAbort()}
@@ -431,7 +499,7 @@
             variant={desktopState.canSubmit ? "default" : "ghost"}
             size="icon"
             data-prompt-input-submit
-            class="size-8 shrink-0 rounded-md shadow-none {desktopState.canSubmit
+            class="size-7 shrink-0 rounded-full shadow-none {desktopState.canSubmit
               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
               : 'text-muted-foreground'}"
             title="Send prompt"
@@ -439,8 +507,15 @@
           >
             <HugeiconsIcon icon={ArrowUp02Icon} data-icon />
           </PromptInputSubmit>
-        </div>
-      </PromptInputToolbar>
+        {/snippet}
+
+        {#snippet status()}
+          {#if composerMeta.showDot}
+            <span class={composerMeta.dotClass} aria-hidden="true"></span>
+          {/if}
+          <span class="truncate">{composerMeta.text}</span>
+        {/snippet}
+      </PromptComposerField>
     </PromptInput>
   </div>
 </div>

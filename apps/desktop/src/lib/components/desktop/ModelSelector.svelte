@@ -7,12 +7,19 @@
     open: boolean;
     disabled?: boolean;
     anchor?: HTMLElement | null;
+    variant?: "pill" | "inline";
     onToggle: () => void;
   };
 
-  let { open, disabled = false, anchor = $bindable(null), onToggle }: Props = $props();
+  let {
+    open,
+    disabled = false,
+    anchor = $bindable(null),
+    variant = "pill",
+    onToggle,
+  }: Props = $props();
 
-  const label = $derived(getModelLabel(desktopState.sessionState?.model));
+  const label = $derived(desktopState.modelsLoading ? "Loading…" : getModelLabel(desktopState.sessionState?.model));
   const hasMultipleModels = $derived(desktopState.availableModels.length > 1);
   const isStatic = $derived(!hasMultipleModels && !desktopState.modelsLoading);
 
@@ -25,10 +32,10 @@
 
 {#if isStatic}
   <span
-    class="inline-flex h-6 max-w-[9rem] shrink-0 items-center truncate px-0.5 text-[11px] leading-tight font-medium text-muted-foreground"
+    class="inline-flex h-6 max-w-[9rem] shrink-0 items-center truncate px-0.5 text-[10px] leading-tight font-normal text-muted-foreground"
     title={label}
   >
-    {desktopState.modelsLoading ? "Loading…" : label}
+    {label}
   </span>
 {:else}
   <ComposerPillButton
@@ -36,6 +43,8 @@
     {label}
     {open}
     {disabled}
+    {variant}
+    maxWidthClass="max-w-[9rem]"
     ariaLabel="Select model"
     title="Select model"
     {onToggle}
