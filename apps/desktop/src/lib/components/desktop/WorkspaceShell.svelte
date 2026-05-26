@@ -11,15 +11,10 @@
   import { desktopState } from "$lib/desktop-state.svelte";
 
   const activeInspector = $derived(desktopState.activeInspector);
-  const isInspectorOpen = $derived(activeInspector !== null);
   const contextToggleLabel = $derived(
     activeInspector === "context" ? "Hide context panel" : "Show context panel"
   );
   const diffToggleLabel = $derived(activeInspector === "diff" ? "Hide session diff" : "Show session diff");
-
-  function getWorkspaceGridTemplate() {
-    return isInspectorOpen ? "minmax(0,1fr) var(--context-panel-width)" : "minmax(0,1fr)";
-  }
 
   function toggleContextPanel() {
     desktopState.setContextPanelOpen(activeInspector !== "context");
@@ -56,11 +51,8 @@
     </Button>
   {/snippet}
 
-  <div
-    class="grid h-full min-h-0 flex-1 grid-rows-1 overflow-hidden"
-    style:grid-template-columns={getWorkspaceGridTemplate()}
-  >
-    <div class="flex min-h-0 min-w-0 flex-col overflow-hidden">
+  <div class="flex h-full min-h-0 w-full flex-1 flex-row overflow-hidden">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <WorkspaceTranscript>
         <PromptComposer />
       </WorkspaceTranscript>

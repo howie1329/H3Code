@@ -88,7 +88,10 @@
   }
 </script>
 
-<aside class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-background" aria-label="Session context">
+<aside
+  class="flex h-full max-h-full min-h-0 w-(--context-panel-width) shrink-0 flex-col overflow-hidden border-l border-border bg-background"
+  aria-label="Session context"
+>
   <header class="flex h-10 items-center justify-between border-b border-border/50 px-4">
     <h2 class="text-xs font-semibold">Context</h2>
     <Badge variant="secondary">{sessionStatus}</Badge>
