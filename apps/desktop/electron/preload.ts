@@ -6,6 +6,8 @@ type PiExtensionUiRequestListener = (request: unknown) => void;
 
 contextBridge.exposeInMainWorld("h3code", {
   platform: process.platform,
+  getAppVersion: () => ipcRenderer.invoke("app:get-version"),
+  pickExecutable: () => ipcRenderer.invoke("dialog:pick-executable"),
   selectRepo: () => ipcRenderer.invoke("repo:select"),
   connectRepo: (repoPath: string, selectedSessionPath?: string) => ipcRenderer.invoke("pi:connect-repo", repoPath, selectedSessionPath),
   listSessions: () => ipcRenderer.invoke("pi:list-sessions"),
@@ -21,6 +23,9 @@ contextBridge.exposeInMainWorld("h3code", {
   getAvailableModels: () => ipcRenderer.invoke("pi:get-available-models"),
   setModel: (provider: string, modelId: string) => ipcRenderer.invoke("pi:set-model", provider, modelId),
   setThinkingLevel: (level: string) => ipcRenderer.invoke("pi:set-thinking-level", level),
+  setSteeringMode: (mode: "all" | "one-at-a-time") => ipcRenderer.invoke("pi:set-steering-mode", mode),
+  setFollowUpMode: (mode: "all" | "one-at-a-time") => ipcRenderer.invoke("pi:set-follow-up-mode", mode),
+  setAutoCompaction: (enabled: boolean) => ipcRenderer.invoke("pi:set-auto-compaction", enabled),
   sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => ipcRenderer.invoke("pi:send-prompt", message, streamingBehavior),
   sendSteer: (message: string) => ipcRenderer.invoke("pi:send-steer", message),
   sendFollowUp: (message: string) => ipcRenderer.invoke("pi:send-follow-up", message),
@@ -30,6 +35,8 @@ contextBridge.exposeInMainWorld("h3code", {
   removeIndexedRepo: (repoPath: string) => ipcRenderer.invoke("preferences:remove-repo", repoPath),
   updateDesktopSettings: (settings: unknown) => ipcRenderer.invoke("preferences:update-desktop-settings", settings),
   setPiExecutablePath: (executablePath: string) => ipcRenderer.invoke("preferences:set-pi-executable-path", executablePath),
+  clearAllIndexedData: () => ipcRenderer.invoke("preferences:clear-all-indexed"),
+  revealPreferencesDatabase: () => ipcRenderer.invoke("preferences:reveal-database"),
   onPiEvent: (listener: PiEventListener) => {
     const handler = (_event: Electron.IpcRendererEvent, piEvent: unknown) => listener(piEvent);
     ipcRenderer.on("pi:event", handler);

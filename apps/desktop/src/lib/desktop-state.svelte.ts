@@ -24,6 +24,8 @@ export type SidebarRepo = {
 const defaultDesktopSettings: DesktopSettings = {
   sidebarOpen: true,
   contextPanelOpen: true,
+  preferDiffPanel: false,
+  autoConnectOnLaunch: false,
 };
 
 type OptimisticUserMessage = {
@@ -188,6 +190,13 @@ class DesktopState {
         this.selectedSessionPath = preferences.lastSelectedSessionPath;
         this.sessions = indexedSessionsByRepo.get(preferences.lastSelectedRepoPath) ?? [];
         await this.loadRepoSessions(preferences.lastSelectedRepoPath);
+
+        if (
+          preferences.desktopSettings.autoConnectOnLaunch &&
+          this.piStatus.state !== "connected"
+        ) {
+          await this.connectRepo(preferences.lastSelectedRepoPath, preferences.lastSelectedSessionPath);
+        }
       }
     } catch (error) {
       this.preferencesLoaded = true;
@@ -571,6 +580,8 @@ class DesktopState {
 
       if (!this.hasSessionDiff) {
         this.sessionDiffPanelOpen = false;
+      } else if (this.desktopSettings.preferDiffPanel) {
+        this.sessionDiffPanelOpen = true;
       }
     } catch (error) {
       this.sessionDiffError = getErrorMessage(error);
@@ -757,6 +768,101 @@ class DesktopState {
     }
 
     void this.persistDesktopSettings({ contextPanelOpen: open });
+  }
+
+  setPreferDiffPanel(enabled: boolean) {
+    if (this.desktopSettings.preferDiffPanel === enabled) {
+      return;
+    }
+
+    void this.persistDesktopSettings({ preferDiffPanel: enabled });
+
+    if (enabled && this.hasSessionDiff) {
+      this.sessionDiffPanelOpen = true;
+    }
+  }
+
+  setAutoConnectOnLaunch(enabled: boolean) {
+    if (this.desktopSettings.autoConnectOnLaunch === enabled) {
+      return;
+    }
+
+    void this.persistDesktopSettings({ autoConnectOnLaunch: enabled });
+  }
+
+  async pickPiExecutable() {
+    const selected = await this.requireApi().pickExecutable();
+    return selected?.path;
+  }
+
+  async revealPreferencesDatabase() {
+    return this.requireApi().revealPreferencesDatabase();
+  }
+
+  async clearAllIndexedData() {
+    const preferences = await this.requireApi().clearAllIndexedData();
+    this.applyPreferencesSnapshot(preferences);
+    this.repoPath = undefined;
+    this.selectedSessionPath = undefined;
+    this.sessions = [];
+    this.sessionState = undefined;
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+  }
+
+  applyPreferencesSnapshot(preferences: DesktopPreferences) {
+    this.preferencesDatabasePath = preferences.databasePath;
+    this.piExecutablePath = preferences.piExecutablePath;
+    this.desktopSettings = preferences.desktopSettings;
+
+    const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
+    this.repos = preferences.recentRepos.map((repo) =>
+      createRepo(repo.path, {
+        name: repo.name,
+        expanded: false,
+        sessions: indexedSessionsByRepo.get(repo.path) ?? [],
+        sessionsLoaded: Boolean(repo.sessionsIndexedAt),
+        sessionsLoading: false,
+        sessionsError: undefined,
+      }),
+    );
+  }
+
+  async setSteeringMode(mode: PiQueueMode) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      this.sessionState = await this.requireApi().setSteeringMode(mode);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  async setFollowUpMode(mode: PiQueueMode) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      this.sessionState = await this.requireApi().setFollowUpMode(mode);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  async setAutoCompaction(enabled: boolean) {
+    if (!this.canChangeSessionSettings) {
+      return;
+    }
+
+    try {
+      this.sessionState = await this.requireApi().setAutoCompaction(enabled);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
   }
 
   async persistDesktopSettings(settings: Partial<DesktopSettings>) {

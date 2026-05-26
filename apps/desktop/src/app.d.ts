@@ -94,9 +94,13 @@ declare global {
     messages?: unknown[];
   };
 
+  type PiQueueMode = "all" | "one-at-a-time";
+
   type DesktopSettings = {
     sidebarOpen: boolean;
     contextPanelOpen: boolean;
+    preferDiffPanel: boolean;
+    autoConnectOnLaunch: boolean;
   };
 
   type RecentRepoPreference = {
@@ -169,6 +173,8 @@ declare global {
   interface Window {
     h3code?: {
       platform: NodeJS.Platform;
+      getAppVersion: () => Promise<string>;
+      pickExecutable: () => Promise<{ path: string } | null>;
       selectRepo: () => Promise<{ path: string } | null>;
       connectRepo: (repoPath: string, selectedSessionPath?: string) => Promise<PiConnectRepoResult>;
       listSessions: () => Promise<PiSessionSummary[]>;
@@ -184,6 +190,9 @@ declare global {
       getAvailableModels: () => Promise<PiModel[]>;
       setModel: (provider: string, modelId: string) => Promise<PiModel>;
       setThinkingLevel: (level: PiThinkingLevel) => Promise<void>;
+      setSteeringMode: (mode: PiQueueMode) => Promise<PiSessionState>;
+      setFollowUpMode: (mode: PiQueueMode) => Promise<PiSessionState>;
+      setAutoCompaction: (enabled: boolean) => Promise<PiSessionState>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
       sendSteer: (message: string) => Promise<void>;
       sendFollowUp: (message: string) => Promise<void>;
@@ -193,6 +202,8 @@ declare global {
       removeIndexedRepo: (repoPath: string) => Promise<DesktopPreferences>;
       updateDesktopSettings: (settings: Partial<DesktopSettings>) => Promise<DesktopSettings>;
       setPiExecutablePath: (executablePath: string) => Promise<{ piExecutablePath: string }>;
+      clearAllIndexedData: () => Promise<DesktopPreferences>;
+      revealPreferencesDatabase: () => Promise<string>;
       onPiEvent: (listener: (event: unknown) => void) => () => void;
       onPiStatus: (listener: (status: PiStatus) => void) => () => void;
       onExtensionUiRequest: (listener: (request: PiExtensionUiRequest) => void) => () => void;

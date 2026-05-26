@@ -15,6 +15,7 @@ import {
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "./pi-extension-ui-types.js";
 import {
+  clearAllIndexedData,
   closePreferencesDatabase,
   getPiExecutablePath,
   getPreferences,
@@ -22,6 +23,7 @@ import {
   removeIndexedSession,
   recordRepoSessions,
   recordRepoUsage,
+  revealPreferencesDatabase,
   setPiExecutablePath,
   updateDesktopSettings,
   type DesktopSettings,
@@ -579,6 +581,29 @@ async function setPiThinkingLevel(level: PiThinkingLevel) {
   });
 }
 
+type PiQueueMode = Extract<RpcCommand, { type: "set_steering_mode" }>["mode"];
+
+async function setPiSteeringMode(mode: PiQueueMode) {
+  await sendCommand<Extract<RpcResponse, { command: "set_steering_mode"; success: true }>>({
+    type: "set_steering_mode",
+    mode,
+  });
+}
+
+async function setPiFollowUpMode(mode: PiQueueMode) {
+  await sendCommand<Extract<RpcResponse, { command: "set_follow_up_mode"; success: true }>>({
+    type: "set_follow_up_mode",
+    mode,
+  });
+}
+
+async function setPiAutoCompaction(enabled: boolean) {
+  await sendCommand<Extract<RpcResponse, { command: "set_auto_compaction"; success: true }>>({
+    type: "set_auto_compaction",
+    enabled,
+  });
+}
+
 function normalizeSlashCommand(command: unknown): PiSlashCommand {
   const record = toRecord(command);
   const sourceInfo = toRecord(record.sourceInfo);
@@ -634,6 +659,19 @@ ipcMain.handle("repo:select", async () => {
   return { path: result.filePaths[0] };
 });
 
+ipcMain.handle("dialog:pick-executable", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: process.platform === "darwin" ? ["openFile", "treatPackageAsDirectory"] : ["openFile"],
+    title: "Select PI executable",
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return { path: result.filePaths[0] };
+});
+
 ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessionPath?: string): Promise<ConnectRepoResult> => {
   await startPiProcess(repoPath);
   await ensurePiHandshake(repoPath);
@@ -666,6 +704,18 @@ ipcMain.handle("pi:get-available-models", getAvailableModels);
 ipcMain.handle("pi:set-model", async (_event, provider: string, modelId: string) => setPiModel(provider, modelId));
 ipcMain.handle("pi:set-thinking-level", async (_event, level: PiThinkingLevel) => {
   await setPiThinkingLevel(level);
+});
+ipcMain.handle("pi:set-steering-mode", async (_event, mode: PiQueueMode) => {
+  await setPiSteeringMode(mode);
+  return getSessionState();
+});
+ipcMain.handle("pi:set-follow-up-mode", async (_event, mode: PiQueueMode) => {
+  await setPiFollowUpMode(mode);
+  return getSessionState();
+});
+ipcMain.handle("pi:set-auto-compaction", async (_event, enabled: boolean) => {
+  await setPiAutoCompaction(enabled);
+  return getSessionState();
 });
 ipcMain.handle("pi:get-session-snapshot", getStateAndMessages);
 ipcMain.handle("pi:get-session-state", getSessionState);
@@ -717,6 +767,8 @@ ipcMain.handle("pi:extension-ui-response", async (_event, response: RpcExtension
   await sendExtensionUiResponse(response);
 });
 
+ipcMain.handle("app:get-version", () => app.getVersion());
+
 ipcMain.handle("preferences:get", () => getPreferences());
 ipcMain.handle("preferences:set-pi-executable-path", async (_event, executablePath: string) => {
   const nextPath = setPiExecutablePath(executablePath);
@@ -732,6 +784,20 @@ ipcMain.handle("preferences:remove-repo", async (_event, repoPath: string) => {
   return removeIndexedRepo(repoPath);
 });
 ipcMain.handle("preferences:update-desktop-settings", async (_event, settings: Partial<DesktopSettings>) => updateDesktopSettings(settings));
+ipcMain.handle("preferences:clear-all-indexed", async () => {
+  if (selectedRepoPath) {
+    await stopPiProcess();
+    selectedRepoPath = undefined;
+    emitStatus({ state: "disconnected" });
+  }
+
+  return clearAllIndexedData();
+});
+ipcMain.handle("preferences:reveal-database", () => {
+  const databasePath = revealPreferencesDatabase();
+  shell.showItemInFolder(databasePath);
+  return databasePath;
+});
 
 app.whenReady().then(() => {
   nativeTheme.on("updated", () => {

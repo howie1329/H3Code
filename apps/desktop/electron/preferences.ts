@@ -7,6 +7,8 @@ import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 export type DesktopSettings = {
   sidebarOpen: boolean;
   contextPanelOpen: boolean;
+  preferDiffPanel: boolean;
+  autoConnectOnLaunch: boolean;
 };
 
 export type RecentRepoPreference = {
@@ -43,6 +45,8 @@ const defaultPiExecutablePath = "pi";
 const defaultDesktopSettings: DesktopSettings = {
   sidebarOpen: true,
   contextPanelOpen: true,
+  preferDiffPanel: false,
+  autoConnectOnLaunch: false,
 };
 
 let database: DatabaseSync | undefined;
@@ -199,6 +203,25 @@ export function removeIndexedRepo(repoPath: string) {
   return getPreferences();
 }
 
+export function clearAllIndexedData() {
+  const db = getDatabase();
+
+  db.exec("BEGIN");
+
+  try {
+    db.exec("DELETE FROM repo_sessions");
+    db.exec("DELETE FROM recent_repos");
+    deleteSetting(db, "lastSelectedRepoPath");
+    deleteSetting(db, "lastSelectedSessionPath");
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  return getPreferences();
+}
+
 export function removeIndexedSession(sessionPath: string) {
   const db = getDatabase();
   const lastSelectedSessionPath = getSetting(db, "lastSelectedSessionPath");
@@ -216,12 +239,21 @@ export function updateDesktopSettings(settings: Partial<DesktopSettings>) {
   const next: DesktopSettings = {
     sidebarOpen: typeof settings.sidebarOpen === "boolean" ? settings.sidebarOpen : current.sidebarOpen,
     contextPanelOpen: typeof settings.contextPanelOpen === "boolean" ? settings.contextPanelOpen : current.contextPanelOpen,
+    preferDiffPanel: typeof settings.preferDiffPanel === "boolean" ? settings.preferDiffPanel : current.preferDiffPanel,
+    autoConnectOnLaunch:
+      typeof settings.autoConnectOnLaunch === "boolean" ? settings.autoConnectOnLaunch : current.autoConnectOnLaunch,
   };
 
   setSetting(db, "sidebarOpen", String(next.sidebarOpen));
   setSetting(db, "contextPanelOpen", String(next.contextPanelOpen));
+  setSetting(db, "preferDiffPanel", String(next.preferDiffPanel));
+  setSetting(db, "autoConnectOnLaunch", String(next.autoConnectOnLaunch));
 
   return next;
+}
+
+export function revealPreferencesDatabase() {
+  return getDatabasePath();
 }
 
 export function closePreferencesDatabase() {
@@ -336,6 +368,8 @@ function getDesktopSettings(db: DatabaseSync): DesktopSettings {
   return {
     sidebarOpen: getBooleanSetting(db, "sidebarOpen", defaultDesktopSettings.sidebarOpen),
     contextPanelOpen: getBooleanSetting(db, "contextPanelOpen", defaultDesktopSettings.contextPanelOpen),
+    preferDiffPanel: getBooleanSetting(db, "preferDiffPanel", defaultDesktopSettings.preferDiffPanel),
+    autoConnectOnLaunch: getBooleanSetting(db, "autoConnectOnLaunch", defaultDesktopSettings.autoConnectOnLaunch),
   };
 }
 
