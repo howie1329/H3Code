@@ -10,7 +10,7 @@ H3Code is not the agent runtime, session system, message store, model router, or
 
 ## Implementation Status
 
-This document describes the MVP target. The current `apps/desktop` app implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt/steer/follow-up, abort, transcript rendering, session stats, diagnostics, recent activity, SQLite-backed recent repos and session metadata index, configurable PI executable path, extension UI prompts (select/confirm/input/editor), and PI RPC event sync (transcript from `agent_end.messages` with `get_messages` fallback, session git diff on `turn_end` and `agent_end`, serialized main-process RPC commands, renderer resync when connected after reload). Remaining MVP gaps include stronger live tool activity rendering and better discovery across workspace repo/session metadata.
+This document describes the MVP target. The current `apps/desktop` app implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt/steer/follow-up, abort, transcript rendering, session stats, diagnostics, recent activity, SQLite-backed recent repos and session metadata index, configurable PI executable path, extension UI prompts (select/confirm/input/editor), and a reactive PI sync layer (`src/lib/pi-session`: main adapts raw RPC to domain events over `pi:session-event`; renderer applies a shared projector for PI TUI parity including streaming messages, live tool activity, turn commits, queue/compaction/retry banners, and extension `setStatus`/`notify`/`setWidget`/`setTitle`). Snapshot reconnect uses `get_state` + `get_messages`. Remaining MVP gaps include better discovery across workspace repo/session metadata.
 
 ## Product Boundary
 

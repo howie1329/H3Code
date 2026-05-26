@@ -4,6 +4,19 @@ import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-inpu
 import { extractSessionMetadata } from "$lib/components/desktop/transcript-normalize.js";
 import { formatMessageRole, formatMessageText } from "$lib/message-format.js";
 import { normalizeThinkingLevel } from "$lib/pi-model.js";
+import type { SessionDomainEvent } from "$lib/pi-session/domain-events.js";
+import type { SessionActivity, SessionReadModel } from "$lib/pi-session/read-model.js";
+import {
+  applySessionEvent,
+  createInitialSessionReadModel,
+  hydrateFromSnapshot,
+} from "$lib/pi-session/projector.js";
+import {
+  composerPhase,
+  latestNotification,
+  statusStripLines as selectStatusStripLines,
+  transcriptMessages as selectTranscriptMessages,
+} from "$lib/pi-session/selectors.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
 
 export type WorkspaceInspector = "diff" | "context";
@@ -38,18 +51,6 @@ type OptimisticUserMessage = {
   optimistic: true;
 };
 
-type LiveToolExecutionMessage = {
-  id: string;
-  role: "toolExecution";
-  toolCallId: string;
-  toolName: string;
-  content: unknown;
-  args?: unknown;
-  isError: boolean;
-  state: "input-streaming" | "input-available" | "output-available" | "output-error";
-  timestamp: number;
-};
-
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
   promptValue = $state("");
@@ -75,15 +76,11 @@ class DesktopState {
   modelsError = $state<string | undefined>();
   modelsLoaded = $state(false);
   modelsSessionKey = $state<string | undefined>();
-  messages = $state<unknown[]>([]);
+  sessionReadModel = $state<SessionReadModel>(createInitialSessionReadModel());
   pendingUserMessages = $state<OptimisticUserMessage[]>([]);
-  streamingMessage = $state<unknown | undefined>();
-  liveToolExecutions = $state<Record<string, LiveToolExecutionMessage>>({});
   piStatus = $state<PiStatus>({ state: "disconnected" });
-  activity = $state<ActivityItem[]>([]);
   isBusy = $state(false);
   isSendingPrompt = $state(false);
-  isAgentRunning = $state(false);
   errorMessage = $state<string | undefined>();
   preferencesLoaded = $state(false);
   preferencesDatabasePath = $state<string | undefined>();
@@ -98,15 +95,20 @@ class DesktopState {
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
   canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  isAgentRunning = $derived(this.sessionReadModel.isAgentRunning);
   canChangeSessionSettings = $derived(
     this.canUseSession && !this.isBusy && !this.isSendingPrompt && !this.isAgentRunning && !this.sessionState?.isStreaming,
   );
-  transcriptMessages = $derived([
-    ...this.messages,
-    ...this.pendingUserMessages,
-    ...(this.streamingMessage ? [this.streamingMessage] : []),
-    ...Object.values(this.liveToolExecutions),
-  ]);
+  activity = $derived(
+    this.sessionReadModel.activities.slice(0, 8).map((item: SessionActivity) => ({
+      type: item.type,
+      detail: item.detail,
+    })),
+  );
+  transcriptMessages = $derived(selectTranscriptMessages(this.sessionReadModel, this.pendingUserMessages));
+  composerPhaseLine = $derived(composerPhase(this.sessionReadModel));
+  statusStripLines = $derived(selectStatusStripLines(this.sessionReadModel));
+  sessionNotification = $derived(latestNotification(this.sessionReadModel));
   sessionMetadata = $derived(extractSessionMetadata(this.transcriptMessages));
   sessionTitle = $derived(
     this.selectedSession ? getSessionDisplayTitle(this.selectedSession) : "No session"
@@ -137,20 +139,17 @@ class DesktopState {
   }
 
   initializeListeners() {
-    const removeEventListener = window.h3code?.onPiEvent((event) => {
-      const item = formatActivity(event);
-      this.activity = [item, ...this.activity].slice(0, 8);
-      this.handlePiEvent(event, item.type);
+    const removeSessionEventListener = window.h3code?.onSessionEvent((event) => {
+      this.handleSessionEvent(event);
     });
 
     const removeStatusListener = window.h3code?.onPiStatus((status) => {
       this.piStatus = status;
 
       if (status.state !== "connected") {
-        this.isAgentRunning = false;
         this.resetSlashCommands();
         this.resetModels();
-        this.resetTransientTranscript();
+        this.resetSessionReadModel();
         this.resetSessionDiff();
         this.clearExtensionUiRequest();
         this.cancelDebouncedDiffRefresh();
@@ -166,7 +165,7 @@ class DesktopState {
     });
 
     return () => {
-      removeEventListener?.();
+      removeSessionEventListener?.();
       removeStatusListener?.();
       removeExtensionUiListener?.();
     };
@@ -278,7 +277,6 @@ class DesktopState {
 
   async connectRepoInternal(nextRepoPath: string, selectedSessionPath?: string) {
     this.errorMessage = undefined;
-    this.activity = [];
     const result = await this.requireApi().connectRepo(nextRepoPath, selectedSessionPath);
 
     this.repoPath = result.repoPath;
@@ -296,9 +294,12 @@ class DesktopState {
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
-    this.messages = result.messages ?? [];
+    this.sessionReadModel = hydrateFromSnapshot(
+      createInitialSessionReadModel(),
+      result.state,
+      result.messages ?? [],
+    );
     this.resetTransientTranscript();
-    this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
@@ -330,9 +331,12 @@ class DesktopState {
       this.resetSessionDiff();
       this.resetSlashCommands();
       this.resetModels();
-      this.messages = result.messages;
+      this.sessionReadModel = hydrateFromSnapshot(
+        createInitialSessionReadModel(),
+        result.state,
+        result.messages,
+      );
       this.resetTransientTranscript();
-      this.isAgentRunning = Boolean(result.state?.isStreaming);
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
       void this.ensureAvailableModels(true);
@@ -361,9 +365,12 @@ class DesktopState {
       this.resetSessionDiff();
       this.resetSlashCommands();
       this.resetModels();
-      this.messages = result.messages;
+      this.sessionReadModel = hydrateFromSnapshot(
+        createInitialSessionReadModel(),
+        result.state,
+        result.messages,
+      );
       this.resetTransientTranscript();
-      this.isAgentRunning = Boolean(result.state.isStreaming);
       this.sessions = await this.requireApi().listSessions();
       this.repos = upsertRepo(this.repos, repoPath, {
         expanded: true,
@@ -404,9 +411,8 @@ class DesktopState {
         this.sessionStats = null;
         this.resetSessionDiff();
         this.resetSlashCommands();
-        this.messages = [];
+        this.resetSessionReadModel();
         this.resetTransientTranscript();
-        this.isAgentRunning = false;
       }
     });
   }
@@ -438,9 +444,8 @@ class DesktopState {
         this.sessionStats = null;
         this.resetSessionDiff();
         this.resetSlashCommands();
-        this.messages = [];
+        this.resetSessionReadModel();
         this.resetTransientTranscript();
-        this.isAgentRunning = false;
       }
     });
   }
@@ -526,20 +531,6 @@ class DesktopState {
     }
   }
 
-  async refreshSessionStateFromPi() {
-    if (!this.canUseSession) {
-      return;
-    }
-
-    try {
-      const state = await this.requireApi().getSessionState();
-      this.sessionState = state;
-      this.isAgentRunning = Boolean(state.isStreaming);
-    } catch (error) {
-      this.errorMessage = getErrorMessage(error);
-    }
-  }
-
   applySessionSnapshot(result: { state: PiSessionState; messages: unknown[] }) {
     this.pendingUserMessages = [];
     this.sessionState = result.state;
@@ -548,8 +539,7 @@ class DesktopState {
       this.selectedSessionPath = result.state.sessionFile;
     }
 
-    this.messages = result.messages;
-    this.isAgentRunning = Boolean(result.state.isStreaming);
+    this.sessionReadModel = hydrateFromSnapshot(this.sessionReadModel, result.state, result.messages);
   }
 
   async syncSidebarSessionsForActiveRepo() {
@@ -653,7 +643,7 @@ class DesktopState {
   }
 
   async resyncConnectedSessionIfNeeded() {
-    if (this.piStatus.state !== "connected" || !this.canUseSession || this.messages.length > 0) {
+    if (this.piStatus.state !== "connected" || !this.canUseSession || this.sessionReadModel.messages.length > 0) {
       return;
     }
 
@@ -662,18 +652,6 @@ class DesktopState {
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
-  }
-
-  applyAgentEndMessages(record: Record<string, unknown>) {
-    const messages = record.messages;
-
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return false;
-    }
-
-    this.pendingUserMessages = [];
-    this.messages = messages;
-    return true;
   }
 
   async ensureSlashCommands(refresh = false) {
@@ -953,66 +931,33 @@ class DesktopState {
     }
   }
 
-  handlePiEvent(event: unknown, type: string) {
-    const record = toRecord(event);
+  handleSessionEvent(event: SessionDomainEvent) {
+    this.sessionReadModel = applySessionEvent(this.sessionReadModel, event);
 
-    if (shouldRefreshSessionStateFromEvent(type)) {
-      void this.refreshSessionStateFromPi();
-    }
-
-    if (type === "agent_start") {
-      this.isAgentRunning = true;
+    if (event.type === "run.started") {
       this.setSessionStreaming(true);
-      return;
     }
 
-    if (type === "message_start" || type === "message_update" || type === "message_end") {
-      const nextStreamingMessage = getStreamingMessage(record);
-
-      if (nextStreamingMessage !== undefined) {
-        this.streamingMessage = cloneForState(nextStreamingMessage);
-      }
-
-      const streamingError = getStreamingErrorMessage(record);
-
-      if (streamingError) {
-        this.errorMessage = streamingError;
-      }
-
-      return;
+    if (event.type === "run.ended") {
+      this.setSessionStreaming(false);
     }
 
-    if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {
-      const toolExecution = createLiveToolExecutionMessage(record, type);
-
-      if (toolExecution) {
-        this.liveToolExecutions = {
-          ...this.liveToolExecutions,
-          [toolExecution.toolCallId]: toolExecution,
-        };
-      }
-
-      return;
+    if (this.sessionReadModel.streamingError) {
+      this.errorMessage = this.sessionReadModel.streamingError;
+    } else if (this.sessionReadModel.extensionError) {
+      this.errorMessage = this.sessionReadModel.extensionError;
     }
 
-    if (type === "turn_end") {
+    if (this.sessionReadModel.needsDiffRefresh) {
       this.scheduleDebouncedDiffRefresh();
-      return;
     }
 
-    if (type === "extension_error") {
-      this.errorMessage = formatExtensionError(record);
-      void this.refreshSessionStateFromPi();
-      return;
-    }
-
-    if (type === "agent_end") {
-      void this.reconcileAgentEnd(record);
-      return;
+    if (this.sessionReadModel.needsRunHousekeeping) {
+      void this.reconcileRunEnded();
     }
   }
 
-  async reconcileAgentEnd(record: Record<string, unknown> = {}) {
+  async reconcileRunEnded() {
     if (this.reconcileInFlight) {
       this.reconcileAgain = true;
       return;
@@ -1021,18 +966,9 @@ class DesktopState {
     this.reconcileInFlight = true;
 
     try {
-      const appliedFromEvent = this.applyAgentEndMessages(record);
-
-      this.isAgentRunning = false;
-      this.setSessionStreaming(false);
-      this.resetTransientTranscript();
+      this.pendingUserMessages = [];
 
       await this.refreshSessionStats();
-
-      if (!appliedFromEvent) {
-        await this.refreshActiveMessages();
-      }
-
       await this.refreshSessionDiff();
       await this.syncSidebarSessionsForActiveRepo();
       void this.ensureSlashCommands(true);
@@ -1043,9 +979,18 @@ class DesktopState {
 
       if (this.reconcileAgain) {
         this.reconcileAgain = false;
-        void this.reconcileAgentEnd(record);
+        void this.reconcileRunEnded();
       }
     }
+  }
+
+  dismissSessionNotification(notificationId: string) {
+    this.sessionReadModel = {
+      ...this.sessionReadModel,
+      notifications: this.sessionReadModel.notifications.filter(
+        (item: SessionReadModel["notifications"][number]) => item.id !== notificationId,
+      ),
+    };
   }
 
   clearExtensionUiRequest() {
@@ -1064,8 +1009,10 @@ class DesktopState {
 
   resetTransientTranscript() {
     this.pendingUserMessages = [];
-    this.streamingMessage = undefined;
-    this.liveToolExecutions = {};
+  }
+
+  resetSessionReadModel() {
+    this.sessionReadModel = createInitialSessionReadModel();
   }
 
   setSessionStreaming(isStreaming: boolean) {
@@ -1159,34 +1106,6 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function shouldRefreshSessionStateFromEvent(type: string) {
-  return (
-    type === "compaction_start" ||
-    type === "compaction_end" ||
-    type === "queue_update" ||
-    type === "auto_retry_start" ||
-    type === "auto_retry_end"
-  );
-}
-
-function formatExtensionError(record: Record<string, unknown>) {
-  const error = record.error;
-  const extensionPath = typeof record.extensionPath === "string" ? record.extensionPath : undefined;
-  const event = typeof record.event === "string" ? record.event : undefined;
-  const message = typeof error === "string" ? error : getErrorMessage(error);
-  const parts = [message];
-
-  if (extensionPath) {
-    parts.push(`(${extensionPath})`);
-  }
-
-  if (event) {
-    parts.push(`during ${event}`);
-  }
-
-  return parts.join(" ");
-}
-
 function createOptimisticUserMessage(content: string): OptimisticUserMessage {
   return {
     id: `optimistic-user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -1195,66 +1114,6 @@ function createOptimisticUserMessage(content: string): OptimisticUserMessage {
     timestamp: Date.now(),
     optimistic: true,
   };
-}
-
-function getStreamingMessage(event: Record<string, unknown>) {
-  if (event.message !== undefined) {
-    return event.message;
-  }
-
-  const assistantEvent = toRecord(event.assistantMessageEvent);
-
-  return assistantEvent.partial ?? assistantEvent.message ?? assistantEvent.error;
-}
-
-function createLiveToolExecutionMessage(event: Record<string, unknown>, eventType: string): LiveToolExecutionMessage | undefined {
-  const toolCallId = getString(event.toolCallId);
-
-  if (!toolCallId) {
-    return undefined;
-  }
-
-  const partialResult = toRecord(event.partialResult);
-  const result = toRecord(event.result);
-  const isError = event.isError === true;
-  const content = eventType === "tool_execution_update" ? partialResult.content : eventType === "tool_execution_end" ? result.content : [];
-  const errorText = getString(event.errorText) ?? getString(result.errorText) ?? getString(result.errorMessage);
-
-  return {
-    id: `live-tool-${toolCallId}`,
-    role: "toolExecution",
-    toolCallId,
-    toolName: getString(event.toolName) ?? "tool",
-    content: errorText ? [{ type: "text", text: errorText }] : (content ?? []),
-    args: event.args,
-    isError,
-    state: getToolExecutionState(eventType, isError),
-    timestamp: Date.now(),
-  };
-}
-
-function getToolExecutionState(eventType: string, isError: boolean): LiveToolExecutionMessage["state"] {
-  if (eventType === "tool_execution_start") {
-    return "input-available";
-  }
-
-  if (eventType === "tool_execution_update") {
-    return "input-available";
-  }
-
-  return isError ? "output-error" : "output-available";
-}
-
-function cloneForState(value: unknown) {
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  return Array.isArray(value) ? [...value] : { ...(value as Record<string, unknown>) };
-}
-
-function getString(value: unknown) {
-  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
 }
 
 export function formatDate(value: string) {
@@ -1267,38 +1126,3 @@ export function formatDate(value: string) {
 }
 
 export { formatMessageRole, formatMessageText } from "$lib/message-format.js";
-
-function formatActivity(event: unknown): ActivityItem {
-  const record = toRecord(event);
-  const type = typeof record.type === "string" ? record.type : "event";
-  const toolName = typeof record.toolName === "string" ? record.toolName : undefined;
-  const message = typeof record.message === "string" ? record.message : undefined;
-
-  return {
-    type,
-    detail: toolName ?? message ?? type,
-  };
-}
-
-function getStreamingErrorMessage(event: Record<string, unknown>) {
-  const assistantEvent = toRecord(event.assistantMessageEvent);
-
-  if (assistantEvent.type !== "error") {
-    return undefined;
-  }
-
-  const error = assistantEvent.error;
-
-  if (typeof error === "string") {
-    return error;
-  }
-
-  const errorRecord = toRecord(error);
-  const errorMessage = errorRecord.errorMessage ?? errorRecord.message;
-
-  return typeof errorMessage === "string" ? errorMessage : "PI streaming failed.";
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}

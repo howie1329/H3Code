@@ -125,7 +125,7 @@
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Messages</span>
-          <span class="font-medium">{formatCount(desktopState.sessionStats?.totalMessages ?? desktopState.sessionState?.messageCount ?? desktopState.messages.length)}</span>
+          <span class="font-medium">{formatCount(desktopState.sessionStats?.totalMessages ?? desktopState.sessionState?.messageCount ?? desktopState.sessionReadModel.messages.length)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">User / assistant</span>

@@ -34,9 +34,7 @@
 
   const transcriptView = $derived(buildTranscriptViewModel(desktopState.transcriptMessages));
   const transcriptMessages = $derived(transcriptView.messages);
-  const isThinking = $derived(
-    Boolean((desktopState.isAgentRunning || desktopState.sessionState?.isStreaming) && !desktopState.streamingMessage)
-  );
+  const isThinking = $derived(desktopState.composerPhaseLine?.text === "Thinking…");
 
   const hasTranscriptMessages = $derived(
     Boolean(desktopState.repoPath && desktopState.sessions.length > 0 && (transcriptMessages.length > 0 || isThinking))
@@ -202,7 +200,7 @@
                 </Button>
               </EmptyContent>
             </Empty>
-          {:else if desktopState.messages.length === 0}
+          {:else if desktopState.sessionReadModel.messages.length === 0}
             <Empty class="max-w-sm border-0 bg-transparent p-0">
               <EmptyHeader>
                 <EmptyMedia variant="icon">

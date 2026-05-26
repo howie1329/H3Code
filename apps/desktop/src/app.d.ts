@@ -204,7 +204,7 @@ declare global {
       setPiExecutablePath: (executablePath: string) => Promise<{ piExecutablePath: string }>;
       clearAllIndexedData: () => Promise<DesktopPreferences>;
       revealPreferencesDatabase: () => Promise<string>;
-      onPiEvent: (listener: (event: unknown) => void) => () => void;
+      onSessionEvent: (listener: (event: import("$lib/pi-session/domain-events.js").SessionDomainEvent) => void) => () => void;
       onPiStatus: (listener: (status: PiStatus) => void) => () => void;
       onExtensionUiRequest: (listener: (request: PiExtensionUiRequest) => void) => () => void;
     };

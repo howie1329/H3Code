@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-type PiEventListener = (event: unknown) => void;
+type PiSessionEventListener = (event: unknown) => void;
 type PiStatusListener = (status: unknown) => void;
 type PiExtensionUiRequestListener = (request: unknown) => void;
 
@@ -37,10 +37,10 @@ contextBridge.exposeInMainWorld("h3code", {
   setPiExecutablePath: (executablePath: string) => ipcRenderer.invoke("preferences:set-pi-executable-path", executablePath),
   clearAllIndexedData: () => ipcRenderer.invoke("preferences:clear-all-indexed"),
   revealPreferencesDatabase: () => ipcRenderer.invoke("preferences:reveal-database"),
-  onPiEvent: (listener: PiEventListener) => {
-    const handler = (_event: Electron.IpcRendererEvent, piEvent: unknown) => listener(piEvent);
-    ipcRenderer.on("pi:event", handler);
-    return () => ipcRenderer.off("pi:event", handler);
+  onSessionEvent: (listener: PiSessionEventListener) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionEvent: unknown) => listener(sessionEvent);
+    ipcRenderer.on("pi:session-event", handler);
+    return () => ipcRenderer.off("pi:session-event", handler);
   },
   onPiStatus: (listener: PiStatusListener) => {
     const handler = (_event: Electron.IpcRendererEvent, status: unknown) => listener(status);

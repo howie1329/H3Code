@@ -37,8 +37,8 @@
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
   const isSlashMenuOpen = $derived(activeMenu === "slash" && Boolean(slashToken && tokenKey !== dismissedTokenKey));
-  const showAbort = $derived(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming);
   const isRunning = $derived(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming);
+  const showAbort = $derived(isRunning);
   const showSlashHint = $derived(
     desktopState.canUseSession && desktopState.slashCommands.length > 0 && !desktopState.slashCommandsLoading
   );
@@ -77,12 +77,26 @@
       return { showDot: true, dotClass: "size-1.5 shrink-0 animate-pulse rounded-full bg-primary", text: "Sending…" };
     }
 
-    if (isRunning) {
-      return {
-        showDot: true,
-        dotClass: "size-1.5 shrink-0 animate-pulse rounded-full bg-primary",
-        text: "Pi is working…",
-      };
+    const phase = desktopState.composerPhaseLine;
+
+    if (phase) {
+      const showDot = phase.tone === "working" || phase.tone === "warning" || phase.tone === "error";
+      const dotClass =
+        phase.tone === "error"
+          ? "size-1.5 shrink-0 rounded-full bg-destructive"
+          : phase.tone === "warning"
+            ? "size-1.5 shrink-0 animate-pulse rounded-full bg-amber-500"
+            : phase.tone === "working"
+              ? "size-1.5 shrink-0 animate-pulse rounded-full bg-primary"
+              : "size-1.5 shrink-0 rounded-full bg-muted-foreground/60";
+
+      return { showDot, dotClass, text: phase.text };
+    }
+
+    const stripLines = desktopState.statusStripLines;
+
+    if (stripLines.length > 0) {
+      return { showDot: false, dotClass: "", text: stripLines.join(" · ") };
     }
 
     if (!desktopState.canUseSession) {
@@ -405,6 +419,22 @@
 
 <div class="border-t border-border/50 px-6 py-1.5">
   <div bind:this={wrapperRef} class="relative mx-auto max-w-3xl">
+    {#if desktopState.sessionNotification}
+      <div
+        class="mb-2 flex items-start justify-between gap-3 border border-border/60 bg-muted/30 px-3 py-2 text-[11px] leading-tight text-foreground"
+        role="status"
+        aria-live="polite"
+      >
+        <span>{desktopState.sessionNotification.message}</span>
+        <button
+          type="button"
+          class="shrink-0 text-muted-foreground hover:text-foreground"
+          onclick={() => desktopState.dismissSessionNotification(desktopState.sessionNotification!.id)}
+        >
+          Dismiss
+        </button>
+      </div>
+    {/if}
     {#if isSlashMenuOpen}
       <SlashCommandMenu
         commands={filteredCommands}

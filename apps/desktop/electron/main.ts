@@ -13,6 +13,8 @@ import {
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
+import { createSessionEventEnvelope, piRpcToDomainEvents } from "../src/lib/pi-session/adapter.js";
+import type { SessionEventEnvelope } from "../src/lib/pi-session/domain-events.js";
 import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "./pi-extension-ui-types.js";
 import {
   clearAllIndexedData,
@@ -172,8 +174,14 @@ function emitStatus(nextStatus: PiStatus) {
   mainWindow?.webContents.send("pi:status", status);
 }
 
-function emitEvent(event: unknown) {
-  mainWindow?.webContents.send("pi:event", event);
+function emitSessionEvent(event: SessionEventEnvelope) {
+  mainWindow?.webContents.send("pi:session-event", event);
+}
+
+function emitDomainEventsFromRaw(raw: unknown) {
+  for (const domainEvent of piRpcToDomainEvents(raw)) {
+    emitSessionEvent(createSessionEventEnvelope(domainEvent));
+  }
 }
 
 function emitExtensionUiRequest(request: RpcExtensionUIRequest) {
@@ -487,7 +495,7 @@ function handleRpcMessage(message: RpcResponse | unknown) {
     return;
   }
 
-  emitEvent(message);
+  emitDomainEventsFromRaw(message);
 }
 
 function isExtensionUiRequest(message: unknown): message is RpcExtensionUIRequest {
@@ -495,13 +503,13 @@ function isExtensionUiRequest(message: unknown): message is RpcExtensionUIReques
 }
 
 function handleExtensionUiRequest(request: RpcExtensionUIRequest) {
-  if (request.method === "notify") {
-    emitEvent(request);
-    return;
-  }
-
-  if (request.method === "setStatus" || request.method === "setWidget" || request.method === "setTitle") {
-    emitEvent(request);
+  if (
+    request.method === "notify" ||
+    request.method === "setStatus" ||
+    request.method === "setWidget" ||
+    request.method === "setTitle"
+  ) {
+    emitDomainEventsFromRaw(request);
     return;
   }
 
