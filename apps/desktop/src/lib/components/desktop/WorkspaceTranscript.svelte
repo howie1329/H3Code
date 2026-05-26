@@ -308,16 +308,6 @@
 </script>
 
 <section class="flex min-h-0 min-w-0 flex-col" aria-label="Workspace transcript">
-  <div class="flex h-10 items-center justify-between gap-3 border-b border-border/50 px-4">
-    <div class="flex min-w-0 items-center gap-2 text-xs">
-      <HugeiconsIcon icon={TerminalIcon} class="shrink-0 text-muted-foreground" data-icon />
-      <span class="shrink-0 font-medium text-foreground">Transcript</span>
-    </div>
-    <span class="min-w-0 truncate text-[11px] text-muted-foreground">
-      {desktopState.selectedSession?.name ?? desktopState.selectedSession?.firstMessage ?? "No PI session selected"}
-    </span>
-  </div>
-
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if hasTranscriptMessages}
       <Conversation class="h-full min-h-0">
