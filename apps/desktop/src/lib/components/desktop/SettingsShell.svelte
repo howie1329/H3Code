@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
@@ -16,38 +17,94 @@
     { id: "agent", label: "Agent", href: "/settings#agent" },
     { id: "data", label: "Data", href: "/settings#data" },
     { id: "about", label: "About", href: "/settings#about" },
-  ];
+  ] as const;
 
-  const activeSection = $derived(page.url.hash.replace("#", "") || "appearance");
+  type SectionId = (typeof sections)[number]["id"];
 
-  function scrollToSection(sectionId: string, updateHash = true) {
+  function hashToSectionId(hash: string): SectionId {
+    const id = hash.replace("#", "");
+    return sections.some((section) => section.id === id) ? (id as SectionId) : "appearance";
+  }
+
+  let activeSection = $state<SectionId>(hashToSectionId(page.url.hash));
+  let scrollSpyEnabled = $state(true);
+  let didInitialHashScroll = false;
+
+  function updateActiveFromScroll() {
+    const container = contentRef;
+
+    if (!container || !scrollSpyEnabled) {
+      return;
+    }
+
+    const anchor = container.getBoundingClientRect().top + 72;
+
+    let current: SectionId = sections[0].id;
+
+    for (const section of sections) {
+      const target = container.querySelector(`#${CSS.escape(section.id)}`);
+
+      if (target instanceof HTMLElement && target.getBoundingClientRect().top <= anchor) {
+        current = section.id;
+      }
+    }
+
+    if (activeSection !== current) {
+      activeSection = current;
+    }
+  }
+
+  async function scrollToSection(sectionId: SectionId, updateHash = true) {
+    activeSection = sectionId;
+
     const container = contentRef;
     const target = container?.querySelector(`#${CSS.escape(sectionId)}`);
 
     if (container && target instanceof HTMLElement) {
+      scrollSpyEnabled = false;
+
       const offset =
         target.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 8;
       container.scrollTo({ top: Math.max(0, offset), behavior: "smooth" });
+
+      window.setTimeout(() => {
+        scrollSpyEnabled = true;
+        updateActiveFromScroll();
+      }, 400);
     }
 
     if (updateHash) {
-      history.replaceState(history.state, "", `/settings#${sectionId}`);
+      await goto(`/settings#${sectionId}`, { replaceState: true, noScroll: true, keepFocus: true });
     }
   }
 
-  function handleNavClick(event: MouseEvent, sectionId: string) {
+  function handleNavClick(event: MouseEvent, sectionId: SectionId) {
     event.preventDefault();
-    scrollToSection(sectionId);
+    void scrollToSection(sectionId);
   }
 
   $effect(() => {
-    const sectionId = page.url.hash.replace("#", "") || "";
+    activeSection = hashToSectionId(page.url.hash);
+  });
 
-    if (!sectionId || !contentRef) {
+  $effect(() => {
+    const container = contentRef;
+
+    if (!container) {
       return;
     }
 
-    void tick().then(() => scrollToSection(sectionId, false));
+    if (!didInitialHashScroll && page.url.hash) {
+      didInitialHashScroll = true;
+      const sectionId = hashToSectionId(page.url.hash);
+      void tick().then(() => scrollToSection(sectionId, false));
+    }
+
+    const onScroll = () => updateActiveFromScroll();
+    container.addEventListener("scroll", onScroll, { passive: true });
+    updateActiveFromScroll();
+
+    return () => container.removeEventListener("scroll", onScroll);
   });
 </script>
 
@@ -57,7 +114,7 @@
       class="flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 px-4 py-2 md:w-44 md:shrink-0 md:flex-col md:border-b-0 md:border-r md:px-0 md:py-4"
       aria-label="Settings"
     >
-      {#each sections as section}
+      {#each sections as section (section.id)}
         <a
           href={section.href}
           class={cn(
@@ -66,6 +123,7 @@
               ? "bg-accent font-medium text-foreground"
               : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
+          aria-current={activeSection === section.id ? "page" : undefined}
           onclick={(event) => handleNavClick(event, section.id)}
         >
           {section.label}
