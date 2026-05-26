@@ -10,7 +10,7 @@ H3Code is not the agent runtime, session system, message store, model router, or
 
 ## Implementation Status
 
-This document describes the MVP target. The current `apps/desktop` app has been scaffolded and implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt sending, abort, transcript rendering, session stats, diagnostics, and recent activity. Remaining MVP gaps include persisted local preferences, configurable PI executable path, richer full-page repo/session/activity surfaces, and stronger live tool activity rendering.
+This document describes the MVP target. The current `apps/desktop` app implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt/steer/follow-up, abort, transcript rendering, session stats, diagnostics, recent activity, SQLite-backed recent repos and session metadata index, configurable PI executable path, extension UI prompts (select/confirm/input/editor), and RPC sync after agent runs. Remaining MVP gaps include richer full-page repo/session/activity surfaces and stronger live tool activity rendering.
 
 ## Product Boundary
 
@@ -55,8 +55,8 @@ The first implementation should support:
 
 Do not build these in the first desktop slice:
 
-- SQL or local index layer.
-- Multi-provider support.
+- Full-text search or transcript indexing in SQL (metadata-only index exists for sidebar discovery).
+- Multi-provider routing index in SQL.
 - Codex CLI or Codex Server support.
 - Custom message storage.
 - Custom session storage.
@@ -115,14 +115,14 @@ Renderer responsibilities:
 
 ## Local Preferences
 
-Use minimal local persistence, such as a JSON settings file in Electron app data.
+Use minimal local persistence in SQLite (`h3code.sqlite` under Electron user data).
 
 Store:
 
-- PI executable path.
-- Recent repo paths.
-- Last selected repo path.
-- Optional last-used model or thinking preference if the UI exposes those controls.
+- PI executable path (`app_settings`).
+- Recent repo paths and per-repo session metadata index (`recent_repos`, `repo_sessions`).
+- Last selected repo path and session path.
+- Desktop UI toggles (sidebar, context panel).
 
 Do not store:
 
@@ -177,4 +177,4 @@ Required states:
 
 ## Later Direction
 
-After the PI RPC layer is strong, H3Code can add a local SQL index for multi-provider routing and faster discovery. That layer should start as metadata and routing, not canonical message storage.
+Extend the existing metadata-only SQL index for multi-provider routing and full-text discovery. Do not store canonical messages or transcripts in H3Code.

@@ -4,7 +4,30 @@
   import SettingsShell from "$lib/components/desktop/SettingsShell.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
+
+  let piExecutableDraft = $state(desktopState.piExecutablePath);
+  let piExecutableSaving = $state(false);
+  let piExecutableError = $state<string | undefined>();
+
+  $effect(() => {
+    piExecutableDraft = desktopState.piExecutablePath;
+  });
+
+  async function savePiExecutablePath() {
+    piExecutableSaving = true;
+    piExecutableError = undefined;
+
+    try {
+      await desktopState.setPiExecutablePath(piExecutableDraft);
+      piExecutableDraft = desktopState.piExecutablePath;
+    } catch (error) {
+      piExecutableError = error instanceof Error ? error.message : String(error);
+    } finally {
+      piExecutableSaving = false;
+    }
+  }
 </script>
 
 <svelte:head><title>Settings · H3Code Desktop</title></svelte:head>
@@ -89,16 +112,25 @@
     <section id="runtime" class="scroll-mt-6 space-y-4">
       <div>
         <h3 class="text-base font-semibold leading-tight">Runtime</h3>
-        <p class="mt-1 text-xs text-muted-foreground">PI connection and local process details (read-only).</p>
+        <p class="mt-1 text-xs text-muted-foreground">PI connection, executable path, and local storage.</p>
+      </div>
+      <div class="space-y-2">
+        <label for="pi-executable" class="text-xs font-medium">PI executable</label>
+        <p class="text-[11px] text-muted-foreground">Command used for <code class="font-mono text-[10px]">pi --mode rpc</code>. Takes effect on the next connect.</p>
+        <div class="flex gap-2">
+          <Input id="pi-executable" bind:value={piExecutableDraft} class="h-8 font-mono text-xs" disabled={piExecutableSaving} />
+          <Button size="sm" class="h-8 shrink-0" disabled={piExecutableSaving || piExecutableDraft.trim().length === 0} onclick={savePiExecutablePath}>
+            Save
+          </Button>
+        </div>
+        {#if piExecutableError}
+          <p class="text-[11px] text-destructive">{piExecutableError}</p>
+        {/if}
       </div>
       <dl class="grid gap-3 text-xs">
         <div class="flex items-center justify-between gap-4">
           <dt class="text-muted-foreground">PI RPC</dt>
           <dd class="truncate text-right font-medium">{desktopState.piStatus.state}</dd>
-        </div>
-        <div class="flex items-center justify-between gap-4">
-          <dt class="text-muted-foreground">Executable</dt>
-          <dd class="truncate text-right font-medium">pi</dd>
         </div>
         <div class="flex items-center justify-between gap-4">
           <dt class="text-muted-foreground">Working dir</dt>

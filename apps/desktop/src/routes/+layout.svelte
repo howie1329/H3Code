@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
 
   import AppSidebar from "$lib/components/desktop/AppSidebar.svelte";
+  import ExtensionUiDialog from "$lib/components/desktop/ExtensionUiDialog.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import "../app.css";
@@ -18,6 +19,8 @@
 </script>
 
 <ModeWatcher />
+
+<ExtensionUiDialog />
 
 <Sidebar.Provider
   open={desktopState.desktopSettings.sidebarOpen}

@@ -54,7 +54,7 @@
       return {
         showDot: true,
         dotClass: "size-1.5 shrink-0 rounded-full bg-primary",
-        text: "Pi is running · follow-ups queue automatically",
+        text: "Pi is running · Enter queues follow-up · Shift+Enter steers",
       };
     }
 
@@ -120,6 +120,17 @@
   }
 
   function handlePromptKeydown(event: KeyboardEvent) {
+    if (isRunning && event.key === "Enter" && event.shiftKey) {
+      event.preventDefault();
+      const text = desktopState.promptValue.trim();
+
+      if (text && desktopState.canSubmit) {
+        void desktopState.handleSteerSubmit(text);
+      }
+
+      return;
+    }
+
     if (!isSlashMenuOpen) {
       return;
     }

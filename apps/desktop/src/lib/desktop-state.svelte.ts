@@ -78,6 +78,8 @@ class DesktopState {
   errorMessage = $state<string | undefined>();
   preferencesLoaded = $state(false);
   preferencesDatabasePath = $state<string | undefined>();
+  piExecutablePath = $state("pi");
+  extensionUiRequest = $state<PiExtensionUiRequest | undefined>();
   desktopSettings = $state<DesktopSettings>(defaultDesktopSettings);
 
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
@@ -125,9 +127,11 @@ class DesktopState {
       this.piStatus = status;
 
       if (status.state !== "connected") {
+        this.isAgentRunning = false;
         this.resetSlashCommands();
         this.resetTransientTranscript();
         this.resetSessionDiff();
+        this.clearExtensionUiRequest();
       }
 
       if (status.diagnostic) {
@@ -135,9 +139,14 @@ class DesktopState {
       }
     });
 
+    const removeExtensionUiListener = window.h3code?.onExtensionUiRequest((request) => {
+      this.extensionUiRequest = request;
+    });
+
     return () => {
       removeEventListener?.();
       removeStatusListener?.();
+      removeExtensionUiListener?.();
     };
   }
 
@@ -150,6 +159,7 @@ class DesktopState {
       const preferences = await window.h3code.getPreferences();
       this.preferencesLoaded = true;
       this.preferencesDatabasePath = preferences.databasePath;
+      this.piExecutablePath = preferences.piExecutablePath;
       this.desktopSettings = preferences.desktopSettings;
 
       const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
@@ -158,7 +168,7 @@ class DesktopState {
           name: repo.name,
           expanded: repo.path === preferences.lastSelectedRepoPath,
           sessions: indexedSessionsByRepo.get(repo.path) ?? [],
-          sessionsLoaded: Boolean(indexedSessionsByRepo.get(repo.path)?.length),
+          sessionsLoaded: Boolean(repo.sessionsIndexedAt),
           sessionsLoading: false,
           sessionsError: undefined,
         }),
@@ -346,7 +356,7 @@ class DesktopState {
           name: repo.name,
           expanded: repo.path === preferences.lastSelectedRepoPath,
           sessions: indexedSessionsByRepo.get(repo.path) ?? [],
-          sessionsLoaded: Boolean(indexedSessionsByRepo.get(repo.path)?.length),
+          sessionsLoaded: Boolean(repo.sessionsIndexedAt),
           sessionsLoading: false,
           sessionsError: undefined,
         }),
@@ -401,11 +411,7 @@ class DesktopState {
     });
   }
 
-  async handlePromptSubmit(message: PromptInputMessage, event: SubmitEvent) {
-    event.preventDefault();
-
-    const text = message.text?.trim();
-
+  async handleSteerSubmit(text: string) {
     if (!text || !this.canUseSession) {
       return;
     }
@@ -416,7 +422,39 @@ class DesktopState {
 
     try {
       this.errorMessage = undefined;
-      await this.requireApi().sendPrompt(text, this.sessionState?.isStreaming ? "followUp" : undefined);
+      await this.requireApi().sendSteer(text);
+      this.promptValue = "";
+    } catch (error) {
+      this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
+      this.errorMessage = getErrorMessage(error);
+    } finally {
+      this.isSendingPrompt = false;
+    }
+  }
+
+  async handlePromptSubmit(message: PromptInputMessage, event: SubmitEvent) {
+    event.preventDefault();
+
+    const text = message.text?.trim();
+
+    if (!text || !this.canUseSession) {
+      return;
+    }
+
+    const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
+    const optimisticMessage = createOptimisticUserMessage(text);
+    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
+    this.isSendingPrompt = true;
+
+    try {
+      this.errorMessage = undefined;
+
+      if (isRunning) {
+        await this.requireApi().sendFollowUp(text);
+      } else {
+        await this.requireApi().sendPrompt(text);
+      }
+
       this.promptValue = "";
     } catch (error) {
       this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
@@ -442,19 +480,50 @@ class DesktopState {
   }
 
   async refreshActiveMessages() {
-    if (!this.selectedSessionPath) {
+    if (!this.canUseSession) {
       return;
     }
 
     try {
-      const result = await this.requireApi().switchSession(this.selectedSessionPath);
-      this.pendingUserMessages = [];
-      this.sessionState = result.state;
-      this.messages = result.messages;
-      this.isAgentRunning = Boolean(result.state.isStreaming);
+      const result = await this.requireApi().getSessionSnapshot();
+      this.applySessionSnapshot(result);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
+  }
+
+  async refreshSessionStateFromPi() {
+    if (!this.canUseSession) {
+      return;
+    }
+
+    try {
+      const state = await this.requireApi().getSessionState();
+      this.sessionState = state;
+      this.isAgentRunning = Boolean(state.isStreaming);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  applySessionSnapshot(result: { state: PiSessionState; messages: unknown[] }) {
+    this.pendingUserMessages = [];
+    this.sessionState = result.state;
+
+    if (result.state.sessionFile) {
+      this.selectedSessionPath = result.state.sessionFile;
+    }
+
+    this.messages = result.messages;
+    this.isAgentRunning = Boolean(result.state.isStreaming);
+  }
+
+  async syncSidebarSessionsForActiveRepo() {
+    if (!this.repoPath || this.piStatus.state !== "connected") {
+      return;
+    }
+
+    await this.loadRepoSessions(this.repoPath);
   }
 
   async refreshSessionStats() {
@@ -605,6 +674,10 @@ class DesktopState {
   handlePiEvent(event: unknown, type: string) {
     const record = toRecord(event);
 
+    if (shouldRefreshSessionStateFromEvent(type)) {
+      void this.refreshSessionStateFromPi();
+    }
+
     if (type === "agent_start") {
       this.isAgentRunning = true;
       this.setSessionStreaming(true);
@@ -647,9 +720,25 @@ class DesktopState {
 
   async reconcileAgentEnd() {
     await this.refreshActiveSessionData();
+    await this.syncSidebarSessionsForActiveRepo();
     this.resetTransientTranscript();
     this.isAgentRunning = false;
     this.setSessionStreaming(false);
+    void this.ensureSlashCommands(true);
+  }
+
+  clearExtensionUiRequest() {
+    this.extensionUiRequest = undefined;
+  }
+
+  async respondToExtensionUi(response: PiExtensionUiResponse) {
+    await this.requireApi().respondToExtensionUi(response);
+    this.clearExtensionUiRequest();
+  }
+
+  async setPiExecutablePath(executablePath: string) {
+    const result = await this.requireApi().setPiExecutablePath(executablePath);
+    this.piExecutablePath = result.piExecutablePath;
   }
 
   resetTransientTranscript() {
@@ -748,6 +837,16 @@ function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[])
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function shouldRefreshSessionStateFromEvent(type: string) {
+  return (
+    type === "compaction_start" ||
+    type === "compaction_end" ||
+    type === "queue_update" ||
+    type === "auto_retry_start" ||
+    type === "auto_retry_end"
+  );
 }
 
 function createOptimisticUserMessage(content: string): OptimisticUserMessage {

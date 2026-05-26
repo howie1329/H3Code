@@ -6,13 +6,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { SessionManager, type RpcCommand, type RpcResponse, type RpcSessionState, type SessionInfo } from "@earendil-works/pi-coding-agent";
+import { attachJsonlLineReader, serializeJsonLine } from "@earendil-works/pi-coding-agent/dist/modes/rpc/jsonl.js";
+import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-types.js";
 import {
   closePreferencesDatabase,
+  getPiExecutablePath,
   getPreferences,
   removeIndexedRepo,
   removeIndexedSession,
   recordRepoSessions,
   recordRepoUsage,
+  setPiExecutablePath,
   updateDesktopSettings,
   type DesktopSettings,
 } from "./preferences.js";
@@ -69,6 +73,11 @@ type PendingRequest = {
   reject: (error: Error) => void;
 };
 
+type SessionSnapshot = {
+  state: RpcSessionState;
+  messages: unknown[];
+};
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const windowBackground = {
@@ -83,11 +92,12 @@ function getWindowBackgroundColor() {
 let mainWindow: BrowserWindow | undefined;
 let piProcess: ChildProcessWithoutNullStreams | undefined;
 let selectedRepoPath: string | undefined;
-let stdoutBuffer = "";
 let nextRequestId = 1;
 let status: PiStatus = { state: "disconnected" };
+let stopReadingStdout: (() => void) | undefined;
 const pendingRequests = new Map<string, PendingRequest>();
 const maxDiffBytes = 8 * 1024 * 1024;
+const RPC_REQUEST_TIMEOUT_MS = 30_000;
 
 function createMainWindow() {
   const window = new BrowserWindow({
@@ -134,6 +144,10 @@ function emitStatus(nextStatus: PiStatus) {
 
 function emitEvent(event: unknown) {
   mainWindow?.webContents.send("pi:event", event);
+}
+
+function emitExtensionUiRequest(request: RpcExtensionUIRequest) {
+  mainWindow?.webContents.send("pi:extension-ui-request", request);
 }
 
 function rejectPendingRequests(error: Error) {
@@ -347,7 +361,8 @@ async function stopPiProcess() {
 
   const processToStop = piProcess;
   piProcess = undefined;
-  stdoutBuffer = "";
+  stopReadingStdout?.();
+  stopReadingStdout = undefined;
   processToStop.removeAllListeners();
   processToStop.stdout.removeAllListeners();
   processToStop.stderr.removeAllListeners();
@@ -360,16 +375,27 @@ async function startPiProcess(repoPath: string) {
   await assertDirectory(repoPath);
 
   selectedRepoPath = repoPath;
-  stdoutBuffer = "";
   emitStatus({ state: "starting", repoPath });
 
-  piProcess = spawn("pi", ["--mode", "rpc"], {
+  const piExecutable = getPiExecutablePath();
+  piProcess = spawn(piExecutable, ["--mode", "rpc"], {
     cwd: repoPath,
     env: process.env,
   });
 
-  piProcess.stdout.setEncoding("utf8");
-  piProcess.stdout.on("data", handleStdout);
+  stopReadingStdout?.();
+  stopReadingStdout = attachJsonlLineReader(piProcess.stdout, (line) => {
+    try {
+      handleRpcMessage(JSON.parse(line) as RpcResponse | unknown);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      emitStatus({
+        state: "error",
+        repoPath: selectedRepoPath,
+        diagnostic: `Malformed PI RPC JSON: ${message}`,
+      });
+    }
+  });
 
   piProcess.stderr.setEncoding("utf8");
   piProcess.stderr.on("data", (chunk: string) => {
@@ -391,39 +417,11 @@ async function startPiProcess(repoPath: string) {
     rejectPendingRequests(new Error(diagnostic));
     emitStatus({ state: "exited", repoPath, diagnostic });
   });
-
-  emitStatus({ state: "connected", repoPath });
 }
 
-function handleStdout(chunk: string) {
-  stdoutBuffer += chunk;
-
-  while (true) {
-    const newlineIndex = stdoutBuffer.indexOf("\n");
-
-    if (newlineIndex === -1) {
-      return;
-    }
-
-    const rawLine = stdoutBuffer.slice(0, newlineIndex);
-    stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
-    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-
-    if (!line.trim()) {
-      continue;
-    }
-
-    try {
-      handleRpcMessage(JSON.parse(line) as RpcResponse | unknown);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      emitStatus({
-        state: "error",
-        repoPath: selectedRepoPath,
-        diagnostic: `Malformed PI RPC JSON: ${message}`,
-      });
-    }
-  }
+async function ensurePiHandshake(repoPath: string) {
+  await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
+  emitStatus({ state: "connected", repoPath });
 }
 
 function handleRpcMessage(message: RpcResponse | unknown) {
@@ -437,7 +435,39 @@ function handleRpcMessage(message: RpcResponse | unknown) {
     }
   }
 
+  if (isExtensionUiRequest(message)) {
+    handleExtensionUiRequest(message);
+    return;
+  }
+
   emitEvent(message);
+}
+
+function isExtensionUiRequest(message: unknown): message is RpcExtensionUIRequest {
+  return Boolean(message && typeof message === "object" && "type" in message && message.type === "extension_ui_request");
+}
+
+function handleExtensionUiRequest(request: RpcExtensionUIRequest) {
+  if (request.method === "notify") {
+    emitEvent(request);
+    return;
+  }
+
+  if (request.method === "setStatus" || request.method === "setWidget" || request.method === "setTitle") {
+    emitEvent(request);
+    return;
+  }
+
+  emitExtensionUiRequest(request);
+}
+
+function sendExtensionUiResponse(response: RpcExtensionUIResponse) {
+  if (!piProcess || !piProcess.stdin.writable) {
+    throw new Error("PI RPC is not connected.");
+  }
+
+  const id = `h3code-${nextRequestId++}`;
+  piProcess.stdin.write(serializeJsonLine({ ...response, id }));
 }
 
 function isRpcResponse(message: unknown): message is RpcResponse {
@@ -453,8 +483,15 @@ async function sendCommand<T extends RpcResponse>(command: RpcCommand): Promise<
   const commandWithId = { ...command, id };
 
   return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(id);
+      reject(new Error(`Timeout waiting for response to ${command.type}.`));
+    }, RPC_REQUEST_TIMEOUT_MS);
+
     pendingRequests.set(id, {
       resolve: (response) => {
+        clearTimeout(timeout);
+
         if (!response.success) {
           reject(new Error(response.error));
           return;
@@ -462,21 +499,30 @@ async function sendCommand<T extends RpcResponse>(command: RpcCommand): Promise<
 
         resolve(response as T);
       },
-      reject,
+      reject: (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
     });
 
-    piProcess?.stdin.write(`${JSON.stringify(commandWithId)}\n`, (error) => {
+    piProcess?.stdin.write(serializeJsonLine(commandWithId), (error) => {
       if (!error) {
         return;
       }
 
+      clearTimeout(timeout);
       pendingRequests.delete(id);
       reject(error);
     });
   });
 }
 
-async function getStateAndMessages() {
+async function getSessionState() {
+  const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
+  return stateResponse.data;
+}
+
+async function getStateAndMessages(): Promise<SessionSnapshot> {
   const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
   const messagesResponse = await sendCommand<Extract<RpcResponse, { command: "get_messages"; success: true }>>({ type: "get_messages" });
 
@@ -553,6 +599,7 @@ ipcMain.handle("repo:select", async () => {
 
 ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessionPath?: string): Promise<ConnectRepoResult> => {
   await startPiProcess(repoPath);
+  await ensurePiHandshake(repoPath);
 
   const sessions = await listPiSessions();
   const selectedSession = sessions.find((session) => session.path === selectedSessionPath) ?? sessions[0];
@@ -578,6 +625,8 @@ ipcMain.handle("pi:delete-session", async (_event, repoPath: string, sessionPath
 ipcMain.handle("pi:get-session-stats", getSessionStats);
 ipcMain.handle("pi:get-session-diff", getSessionDiff);
 ipcMain.handle("pi:get-commands", getPiCommands);
+ipcMain.handle("pi:get-session-snapshot", getStateAndMessages);
+ipcMain.handle("pi:get-session-state", getSessionState);
 
 ipcMain.handle("pi:switch-session", async (_event, sessionPath: string) => switchPiSession(sessionPath));
 
@@ -604,11 +653,33 @@ ipcMain.handle("pi:send-prompt", async (_event, message: string, streamingBehavi
   });
 });
 
+ipcMain.handle("pi:send-steer", async (_event, message: string) => {
+  await sendCommand<Extract<RpcResponse, { command: "steer"; success: true }>>({
+    type: "steer",
+    message,
+  });
+});
+
+ipcMain.handle("pi:send-follow-up", async (_event, message: string) => {
+  await sendCommand<Extract<RpcResponse, { command: "follow_up"; success: true }>>({
+    type: "follow_up",
+    message,
+  });
+});
+
 ipcMain.handle("pi:abort", async () => {
   await sendCommand<Extract<RpcResponse, { command: "abort"; success: true }>>({ type: "abort" });
 });
 
+ipcMain.handle("pi:extension-ui-response", async (_event, response: RpcExtensionUIResponse) => {
+  await sendExtensionUiResponse(response);
+});
+
 ipcMain.handle("preferences:get", () => getPreferences());
+ipcMain.handle("preferences:set-pi-executable-path", async (_event, executablePath: string) => {
+  const nextPath = setPiExecutablePath(executablePath);
+  return { piExecutablePath: nextPath };
+});
 ipcMain.handle("preferences:remove-repo", async (_event, repoPath: string) => {
   if (selectedRepoPath === repoPath) {
     await stopPiProcess();

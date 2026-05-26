@@ -14,6 +14,7 @@ export type RecentRepoPreference = {
   name: string;
   lastOpenedAt: string;
   lastSessionPath?: string;
+  sessionsIndexedAt?: string;
 };
 
 export type IndexedSessionPreference = {
@@ -34,9 +35,11 @@ export type DesktopPreferences = {
   lastSelectedSessionPath?: string;
   desktopSettings: DesktopSettings;
   databasePath: string;
+  piExecutablePath: string;
 };
 
 const recentRepoLimit = 10;
+const defaultPiExecutablePath = "pi";
 const defaultDesktopSettings: DesktopSettings = {
   sidebarOpen: true,
   contextPanelOpen: true,
@@ -57,7 +60,24 @@ export function getPreferences(): DesktopPreferences {
     lastSelectedSessionPath,
     desktopSettings: getDesktopSettings(db),
     databasePath: getDatabasePath(),
+    piExecutablePath: getPiExecutablePath(db),
   };
+}
+
+export function getPiExecutablePath(db = getDatabase()) {
+  return getSetting(db, "piExecutablePath") ?? defaultPiExecutablePath;
+}
+
+export function setPiExecutablePath(executablePath: string) {
+  const trimmed = executablePath.trim();
+
+  if (!trimmed) {
+    throw new Error("PI executable path cannot be empty.");
+  }
+
+  const db = getDatabase();
+  setSetting(db, "piExecutablePath", trimmed);
+  return trimmed;
 }
 
 export function recordRepoUsage(repoPath: string, lastSessionPath?: string) {
@@ -83,6 +103,18 @@ export function recordRepoUsage(repoPath: string, lastSessionPath?: string) {
   trimRecentRepos(db);
 }
 
+function ensureRepoStub(db: DatabaseSync, repoPath: string) {
+  const name = basename(repoPath);
+  const lastOpenedAt = new Date().toISOString();
+
+  db.prepare(`
+    INSERT INTO recent_repos (path, name, last_opened_at, last_session_path, sessions_indexed_at)
+    VALUES (?, ?, ?, NULL, NULL)
+    ON CONFLICT(path) DO UPDATE SET
+      name = excluded.name
+  `).run(repoPath, name, lastOpenedAt);
+}
+
 export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
   const db = getDatabase();
   const now = new Date().toISOString();
@@ -90,6 +122,7 @@ export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
   db.exec("BEGIN");
 
   try {
+    ensureRepoStub(db, repoPath);
     db.prepare("DELETE FROM repo_sessions WHERE repo_path = ?").run(repoPath);
 
     const insert = db.prepare(`
@@ -120,6 +153,12 @@ export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
         now,
       );
     }
+
+    db.prepare(`
+      UPDATE recent_repos
+      SET sessions_indexed_at = ?
+      WHERE path = ?
+    `).run(now, repoPath);
 
     db.exec("COMMIT");
   } catch (error) {
@@ -208,7 +247,8 @@ function getDatabase() {
       path TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       last_opened_at TEXT NOT NULL,
-      last_session_path TEXT
+      last_session_path TEXT,
+      sessions_indexed_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS repo_sessions (
@@ -228,7 +268,18 @@ function getDatabase() {
       ON repo_sessions(repo_path, modified_at DESC);
   `);
 
+  migrateRecentReposSchema(database);
+
   return database;
+}
+
+function migrateRecentReposSchema(db: DatabaseSync) {
+  const columns = db.prepare("PRAGMA table_info(recent_repos)").all() as Array<{ name: string }>;
+  const hasSessionsIndexedAt = columns.some((column) => column.name === "sessions_indexed_at");
+
+  if (!hasSessionsIndexedAt) {
+    db.exec("ALTER TABLE recent_repos ADD COLUMN sessions_indexed_at TEXT");
+  }
 }
 
 function getDatabasePath() {
@@ -238,7 +289,12 @@ function getDatabasePath() {
 
 function getRecentRepos(db: DatabaseSync): RecentRepoPreference[] {
   return db.prepare(`
-    SELECT path, name, last_opened_at AS lastOpenedAt, last_session_path AS lastSessionPath
+    SELECT
+      path,
+      name,
+      last_opened_at AS lastOpenedAt,
+      last_session_path AS lastSessionPath,
+      sessions_indexed_at AS sessionsIndexedAt
     FROM recent_repos
     ORDER BY last_opened_at DESC
     LIMIT ?
@@ -247,6 +303,7 @@ function getRecentRepos(db: DatabaseSync): RecentRepoPreference[] {
     name: String(row.name),
     lastOpenedAt: String(row.lastOpenedAt),
     lastSessionPath: toOptionalString(row.lastSessionPath),
+    sessionsIndexedAt: toOptionalString(row.sessionsIndexedAt),
   }));
 }
 
