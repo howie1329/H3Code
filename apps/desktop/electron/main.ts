@@ -97,6 +97,12 @@ function getWindowBackgroundColor() {
   return nativeTheme.shouldUseDarkColors ? windowBackground.dark : windowBackground.light;
 }
 
+function getWindowIconPath() {
+  return isDev
+    ? path.join(__dirname, "../static/icons/h3code-light.png")
+    : path.join(__dirname, "../build/icons/h3code-light.png");
+}
+
 let mainWindow: BrowserWindow | undefined;
 let piProcess: ChildProcessWithoutNullStreams | undefined;
 let selectedRepoPath: string | undefined;
@@ -115,6 +121,7 @@ function createMainWindow() {
     minHeight: 600,
     title: "H3Code",
     backgroundColor: getWindowBackgroundColor(),
+    icon: getWindowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

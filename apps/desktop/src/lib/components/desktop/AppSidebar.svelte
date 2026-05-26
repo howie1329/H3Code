@@ -51,7 +51,8 @@
         class="flex min-w-0 flex-1 items-center gap-2 rounded-full px-1.5 py-1 text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:px-0"
         aria-label="H3Code workspace"
       >
-        <span class="grid size-6 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">H3</span>
+        <img src="/icons/h3code-light.svg" alt="" class="size-6 shrink-0 rounded-md dark:hidden" />
+        <img src="/icons/h3code-dark.svg" alt="" class="hidden size-6 shrink-0 rounded-md dark:block" />
         <span class="truncate text-xs font-semibold tracking-tight group-data-[collapsible=icon]:hidden">H3Code</span>
       </a>
       <Sidebar.Trigger class="shrink-0 group-data-[collapsible=icon]:hidden" />
