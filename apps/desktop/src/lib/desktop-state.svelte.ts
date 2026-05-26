@@ -1,4 +1,9 @@
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
+
+export type WorkspaceInspector = "diff" | "context";
 
 export type ActivityItem = {
   type: string;
@@ -52,6 +57,10 @@ class DesktopState {
   sessionStats = $state<PiSessionStats | null>(null);
   sessionStatsLoading = $state(false);
   sessionStatsError = $state<string | undefined>();
+  sessionDiff = $state<PiSessionDiff>({ patch: "", changedFiles: 0 });
+  sessionDiffLoading = $state(false);
+  sessionDiffError = $state<string | undefined>();
+  sessionDiffPanelOpen = $state(false);
   slashCommands = $state<PiSlashCommand[]>([]);
   slashCommandsLoading = $state(false);
   slashCommandsError = $state<string | undefined>();
@@ -82,6 +91,28 @@ class DesktopState {
   ]);
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
+  hasSessionDiff = $derived(this.sessionDiff.patch.trim().length > 0);
+  activeInspector = $derived.by((): WorkspaceInspector | null => {
+    if (this.sessionDiffPanelOpen && this.hasSessionDiff) {
+      return "diff";
+    }
+
+    if (this.desktopSettings.contextPanelOpen) {
+      return "context";
+    }
+
+    return null;
+  });
+
+  ensureWorkspaceRoute() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (page.url.pathname !== "/workspace") {
+      void goto("/workspace");
+    }
+  }
 
   initializeListeners() {
     const removeEventListener = window.h3code?.onPiEvent((event) => {
@@ -96,6 +127,7 @@ class DesktopState {
       if (status.state !== "connected") {
         this.resetSlashCommands();
         this.resetTransientTranscript();
+        this.resetSessionDiff();
       }
 
       if (status.diagnostic) {
@@ -224,17 +256,22 @@ class DesktopState {
     this.selectedSessionPath = result.selectedSessionPath;
     this.sessionState = result.state;
     this.sessionStats = null;
+    this.resetSessionDiff();
     this.resetSlashCommands();
     this.messages = result.messages ?? [];
     this.resetTransientTranscript();
     this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
+    await this.refreshSessionDiff();
+    this.ensureWorkspaceRoute();
   }
 
   async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
     if (!repoPath) {
       return;
     }
+
+    this.ensureWorkspaceRoute();
 
     if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
       await this.connectRepo(repoPath, sessionPath);
@@ -251,11 +288,13 @@ class DesktopState {
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
       this.sessionStats = null;
+      this.resetSessionDiff();
       this.resetSlashCommands();
       this.messages = result.messages;
       this.resetTransientTranscript();
       this.isAgentRunning = Boolean(result.state?.isStreaming);
       await this.refreshSessionStats();
+      await this.refreshSessionDiff();
     });
   }
 
@@ -276,6 +315,7 @@ class DesktopState {
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
       this.sessionStats = null;
+      this.resetSessionDiff();
       this.resetSlashCommands();
       this.messages = result.messages;
       this.resetTransientTranscript();
@@ -289,6 +329,75 @@ class DesktopState {
         sessionsError: undefined,
       });
       await this.refreshSessionStats();
+      await this.refreshSessionDiff();
+      this.ensureWorkspaceRoute();
+    });
+  }
+
+  async removeRepoFromIndex(repoPath: string) {
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      const preferences = await this.requireApi().removeIndexedRepo(repoPath);
+      const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
+      this.preferencesDatabasePath = preferences.databasePath;
+      this.desktopSettings = preferences.desktopSettings;
+      this.repos = preferences.recentRepos.map((repo) =>
+        createRepo(repo.path, {
+          name: repo.name,
+          expanded: repo.path === preferences.lastSelectedRepoPath,
+          sessions: indexedSessionsByRepo.get(repo.path) ?? [],
+          sessionsLoaded: Boolean(indexedSessionsByRepo.get(repo.path)?.length),
+          sessionsLoading: false,
+          sessionsError: undefined,
+        }),
+      );
+
+      if (this.repoPath === repoPath) {
+        this.repoPath = undefined;
+        this.sessions = [];
+        this.selectedSessionPath = undefined;
+        this.sessionState = undefined;
+        this.sessionStats = null;
+        this.resetSessionDiff();
+        this.resetSlashCommands();
+        this.messages = [];
+        this.resetTransientTranscript();
+        this.isAgentRunning = false;
+      }
+    });
+  }
+
+  async deleteSession(sessionPath: string, repoPath = this.repoPath) {
+    if (!repoPath) {
+      this.errorMessage = "Select a repo before deleting a session.";
+      return;
+    }
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      const deletingActiveSession = sessionPath === this.selectedSessionPath || sessionPath === this.sessionState?.sessionFile;
+      const sessions = await this.requireApi().deletePiSession(repoPath, sessionPath);
+      this.repos = upsertRepo(this.repos, repoPath, {
+        sessions,
+        sessionsLoaded: true,
+        sessionsLoading: false,
+        sessionsError: undefined,
+      });
+
+      if (repoPath === this.repoPath) {
+        this.sessions = sessions;
+      }
+
+      if (deletingActiveSession) {
+        this.selectedSessionPath = undefined;
+        this.sessionState = undefined;
+        this.sessionStats = null;
+        this.resetSessionDiff();
+        this.resetSlashCommands();
+        this.messages = [];
+        this.resetTransientTranscript();
+        this.isAgentRunning = false;
+      }
     });
   }
 
@@ -329,6 +438,7 @@ class DesktopState {
   async refreshActiveSessionData() {
     await this.refreshActiveMessages();
     await this.refreshSessionStats();
+    await this.refreshSessionDiff();
   }
 
   async refreshActiveMessages() {
@@ -365,6 +475,54 @@ class DesktopState {
     } finally {
       this.sessionStatsLoading = false;
     }
+  }
+
+  async refreshSessionDiff() {
+    if (!this.selectedSessionPath && !this.sessionState?.sessionFile) {
+      this.resetSessionDiff();
+      return;
+    }
+
+    this.sessionDiffLoading = true;
+    this.sessionDiffError = undefined;
+
+    try {
+      this.sessionDiff = await this.requireApi().getSessionDiff();
+
+      if (!this.hasSessionDiff) {
+        this.sessionDiffPanelOpen = false;
+      }
+    } catch (error) {
+      this.sessionDiffError = getErrorMessage(error);
+    } finally {
+      this.sessionDiffLoading = false;
+    }
+  }
+
+  setSessionDiffPanelOpen(open: boolean) {
+    if (open && !this.hasSessionDiff) {
+      return;
+    }
+
+    if (open) {
+      this.sessionDiffPanelOpen = true;
+
+      if (this.desktopSettings.contextPanelOpen) {
+        this.desktopSettings = { ...this.desktopSettings, contextPanelOpen: false };
+        void this.persistDesktopSettings({ contextPanelOpen: false });
+      }
+
+      return;
+    }
+
+    this.sessionDiffPanelOpen = false;
+  }
+
+  resetSessionDiff() {
+    this.sessionDiff = { patch: "", changedFiles: 0 };
+    this.sessionDiffLoading = false;
+    this.sessionDiffError = undefined;
+    this.sessionDiffPanelOpen = false;
   }
 
   async ensureSlashCommands(refresh = false) {
@@ -424,6 +582,10 @@ class DesktopState {
   }
 
   setContextPanelOpen(open: boolean) {
+    if (open) {
+      this.sessionDiffPanelOpen = false;
+    }
+
     if (this.desktopSettings.contextPanelOpen === open) {
       return;
     }

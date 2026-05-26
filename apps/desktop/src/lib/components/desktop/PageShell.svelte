@@ -6,8 +6,10 @@
   let { children, actions }: { children: Snippet; actions?: Snippet } = $props();
 </script>
 
-<AppHeader {actions} />
+<div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+  <AppHeader {actions} />
 
-<div class="min-h-0 flex-1 overflow-hidden">
-  {@render children()}
+  <div class="min-h-0 flex-1 overflow-hidden">
+    {@render children()}
+  </div>
 </div>

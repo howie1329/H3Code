@@ -9,13 +9,16 @@ contextBridge.exposeInMainWorld("h3code", {
   connectRepo: (repoPath: string, selectedSessionPath?: string) => ipcRenderer.invoke("pi:connect-repo", repoPath, selectedSessionPath),
   listSessions: () => ipcRenderer.invoke("pi:list-sessions"),
   listRepoSessions: (repoPath: string, markRecent?: boolean) => ipcRenderer.invoke("pi:list-repo-sessions", repoPath, markRecent),
+  deletePiSession: (repoPath: string, sessionPath: string) => ipcRenderer.invoke("pi:delete-session", repoPath, sessionPath),
   switchSession: (sessionPath: string) => ipcRenderer.invoke("pi:switch-session", sessionPath),
   newSession: (parentSession?: string) => ipcRenderer.invoke("pi:new-session", parentSession),
   getSessionStats: () => ipcRenderer.invoke("pi:get-session-stats"),
+  getSessionDiff: () => ipcRenderer.invoke("pi:get-session-diff"),
   getCommands: () => ipcRenderer.invoke("pi:get-commands"),
   sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => ipcRenderer.invoke("pi:send-prompt", message, streamingBehavior),
   abort: () => ipcRenderer.invoke("pi:abort"),
   getPreferences: () => ipcRenderer.invoke("preferences:get"),
+  removeIndexedRepo: (repoPath: string) => ipcRenderer.invoke("preferences:remove-repo", repoPath),
   updateDesktopSettings: (settings: unknown) => ipcRenderer.invoke("preferences:update-desktop-settings", settings),
   onPiEvent: (listener: PiEventListener) => {
     const handler = (_event: Electron.IpcRendererEvent, piEvent: unknown) => listener(piEvent);

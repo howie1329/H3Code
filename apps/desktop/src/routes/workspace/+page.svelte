@@ -7,4 +7,6 @@
   <meta name="description" content="H3Code PI workspace." />
 </svelte:head>
 
-<WorkspaceShell />
+<div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+  <WorkspaceShell />
+</div>

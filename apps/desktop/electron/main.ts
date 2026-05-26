@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
+import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +9,8 @@ import { SessionManager, type RpcCommand, type RpcResponse, type RpcSessionState
 import {
   closePreferencesDatabase,
   getPreferences,
+  removeIndexedRepo,
+  removeIndexedSession,
   recordRepoSessions,
   recordRepoUsage,
   updateDesktopSettings,
@@ -56,6 +59,11 @@ type PiSlashCommand = {
   };
 };
 
+type SessionDiff = {
+  patch: string;
+  changedFiles: number;
+};
+
 type PendingRequest = {
   resolve: (response: RpcResponse) => void;
   reject: (error: Error) => void;
@@ -79,6 +87,7 @@ let stdoutBuffer = "";
 let nextRequestId = 1;
 let status: PiStatus = { state: "disconnected" };
 const pendingRequests = new Map<string, PendingRequest>();
+const maxDiffBytes = 8 * 1024 * 1024;
 
 function createMainWindow() {
   const window = new BrowserWindow({
@@ -166,12 +175,169 @@ async function listSessionsForRepo(repoPath: string, markRecent = false) {
   return sessions.map(serializeSession);
 }
 
+async function deleteSessionFile(sessionPath: string): Promise<"trash" | "unlink"> {
+  const trashArgs = sessionPath.startsWith("-") ? ["--", sessionPath] : [sessionPath];
+  const trashResult = spawnSync("trash", trashArgs, { encoding: "utf-8" });
+
+  if (trashResult.status === 0 || !existsSync(sessionPath)) {
+    return "trash";
+  }
+
+  try {
+    await unlink(sessionPath);
+    return "unlink";
+  } catch (error) {
+    const unlinkError = error instanceof Error ? error.message : String(error);
+    const trashError = getTrashErrorMessage(trashResult);
+    throw new Error(trashError ? `${unlinkError} (${trashError})` : unlinkError);
+  }
+}
+
+function getTrashErrorMessage(result: ReturnType<typeof spawnSync>) {
+  const parts: string[] = [];
+
+  if (result.error) {
+    parts.push(result.error.message);
+  }
+
+  const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+
+  if (stderr) {
+    parts.push(stderr.split("\n")[0] ?? stderr);
+  }
+
+  return parts.length > 0 ? `trash: ${parts.join(" · ").slice(0, 200)}` : undefined;
+}
+
+async function deletePiSession(repoPath: string, sessionPath: string) {
+  await assertDirectory(repoPath);
+  const sessions = await SessionManager.list(repoPath);
+  const session = sessions.find((item) => item.path === sessionPath);
+
+  if (!session) {
+    throw new Error("Session does not belong to this repo.");
+  }
+
+  if (selectedRepoPath === repoPath && sessionPath === await getActiveSessionPath()) {
+    await stopPiProcess();
+    selectedRepoPath = undefined;
+    emitStatus({ state: "disconnected" });
+  }
+
+  await deleteSessionFile(sessionPath);
+  removeIndexedSession(sessionPath);
+
+  return listSessionsForRepo(repoPath, true);
+}
+
+async function getActiveSessionPath() {
+  if (!piProcess || status.state !== "connected") {
+    return undefined;
+  }
+
+  const { state } = await getStateAndMessages();
+  return state.sessionFile;
+}
+
 async function listPiSessions() {
   if (!selectedRepoPath) {
     throw new Error("Select a repo before listing sessions.");
   }
 
   return listSessionsForRepo(selectedRepoPath, true);
+}
+
+async function getSessionDiff(): Promise<SessionDiff> {
+  if (!selectedRepoPath) {
+    return { patch: "", changedFiles: 0 };
+  }
+
+  await assertDirectory(selectedRepoPath);
+
+  const repoCheck = await runGit(["rev-parse", "--is-inside-work-tree"], selectedRepoPath);
+
+  if (repoCheck.status !== 0 || repoCheck.stdout.trim() !== "true") {
+    return { patch: "", changedFiles: 0 };
+  }
+
+  const trackedDiff = await runGit(["diff", "HEAD", "--no-ext-diff", "--no-color", "--binary"], selectedRepoPath);
+  const untrackedFiles = await getUntrackedFiles(selectedRepoPath);
+  const patches = trackedDiff.stdout ? [trackedDiff.stdout] : [];
+  let patchBytes = trackedDiff.stdout.length;
+
+  for (const file of untrackedFiles) {
+    const fileDiff = await getUntrackedFileDiff(selectedRepoPath, file);
+
+    if (fileDiff) {
+      patches.push(fileDiff);
+      patchBytes += fileDiff.length;
+    }
+
+    if (patchBytes > maxDiffBytes) {
+      throw new Error("Git diff is too large to display.");
+    }
+  }
+
+  const patch = patches.join("\n");
+
+  return {
+    patch,
+    changedFiles: countChangedFiles(patch),
+  };
+}
+
+async function getUntrackedFiles(repoPath: string) {
+  const result = await runGit(["ls-files", "--others", "--exclude-standard", "-z"], repoPath);
+
+  if (result.status !== 0 || !result.stdout) {
+    return [];
+  }
+
+  return result.stdout.split("\0").filter(Boolean);
+}
+
+async function getUntrackedFileDiff(repoPath: string, filePath: string) {
+  const result = await runGit(["diff", "--no-ext-diff", "--no-color", "--no-index", "--binary", "--", "/dev/null", filePath], repoPath);
+
+  return result.stdout;
+}
+
+function countChangedFiles(patch: string) {
+  return patch.split("\n").filter((line) => line.startsWith("diff --git ")).length;
+}
+
+function runGit(args: string[], cwd: string) {
+  return new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn("git", args, { cwd });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+
+      if (stdout.length > maxDiffBytes) {
+        settled = true;
+        child.kill();
+        reject(new Error("Git diff is too large to display."));
+      }
+    });
+
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    child.on("error", reject);
+    child.on("close", (status) => {
+      if (settled) {
+        return;
+      }
+
+      resolve({ status, stdout, stderr });
+    });
+  });
 }
 
 async function stopPiProcess() {
@@ -408,7 +574,9 @@ ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessi
 
 ipcMain.handle("pi:list-sessions", listPiSessions);
 ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string, markRecent?: boolean) => listSessionsForRepo(repoPath, markRecent));
+ipcMain.handle("pi:delete-session", async (_event, repoPath: string, sessionPath: string) => deletePiSession(repoPath, sessionPath));
 ipcMain.handle("pi:get-session-stats", getSessionStats);
+ipcMain.handle("pi:get-session-diff", getSessionDiff);
 ipcMain.handle("pi:get-commands", getPiCommands);
 
 ipcMain.handle("pi:switch-session", async (_event, sessionPath: string) => switchPiSession(sessionPath));
@@ -441,6 +609,15 @@ ipcMain.handle("pi:abort", async () => {
 });
 
 ipcMain.handle("preferences:get", () => getPreferences());
+ipcMain.handle("preferences:remove-repo", async (_event, repoPath: string) => {
+  if (selectedRepoPath === repoPath) {
+    await stopPiProcess();
+    selectedRepoPath = undefined;
+    emitStatus({ state: "disconnected" });
+  }
+
+  return removeIndexedRepo(repoPath);
+});
 ipcMain.handle("preferences:update-desktop-settings", async (_event, settings: Partial<DesktopSettings>) => updateDesktopSettings(settings));
 
 app.whenReady().then(() => {

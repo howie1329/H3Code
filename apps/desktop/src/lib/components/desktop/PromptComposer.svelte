@@ -23,6 +23,66 @@
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
   const isSlashMenuOpen = $derived(Boolean(slashToken && tokenKey !== dismissedTokenKey));
+  const showAbort = $derived(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming);
+  const isRunning = $derived(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming);
+  const showSlashHint = $derived(
+    desktopState.canUseSession && desktopState.slashCommands.length > 0 && !desktopState.slashCommandsLoading
+  );
+
+  const promptPlaceholder = $derived.by(() => {
+    if (desktopState.canUseSession) {
+      return "Ask PI about this repo…";
+    }
+
+    if (!desktopState.repoPath) {
+      return "Select a repo and session…";
+    }
+
+    if (desktopState.piStatus.state !== "connected") {
+      return "Connect PI to send prompts…";
+    }
+
+    return "Select a repo and session…";
+  });
+
+  const composerMeta = $derived.by(() => {
+    if (desktopState.isSendingPrompt) {
+      return { showDot: true, dotClass: "size-1.5 shrink-0 animate-pulse rounded-full bg-primary", text: "Sending…" };
+    }
+
+    if (isRunning) {
+      return {
+        showDot: true,
+        dotClass: "size-1.5 shrink-0 rounded-full bg-primary",
+        text: "Pi is running · follow-ups queue automatically",
+      };
+    }
+
+    if (!desktopState.canUseSession) {
+      if (!desktopState.repoPath) {
+        return { showDot: false, dotClass: "", text: "Select a repository to send prompts" };
+      }
+
+      if (desktopState.piStatus.state !== "connected") {
+        return { showDot: false, dotClass: "", text: "Connect PI to send prompts" };
+      }
+
+      if (!desktopState.selectedSessionPath && !desktopState.sessionState?.sessionFile) {
+        return { showDot: false, dotClass: "", text: "Select a session to send prompts" };
+      }
+    }
+
+    if (desktopState.isBusy) {
+      return { showDot: false, dotClass: "", text: "Busy…" };
+    }
+
+    const base = "Enter to send · Shift+Enter for newline";
+    return {
+      showDot: false,
+      dotClass: "",
+      text: showSlashHint ? `${base} · / for commands` : base,
+    };
+  });
 
   $effect(() => {
     if (highlightedIndex >= filteredCommands.length) {
@@ -79,22 +139,25 @@
     if (event.key === "Escape") {
       event.preventDefault();
       dismissedTokenKey = tokenKey;
-      slashToken = null;
       return;
     }
 
-    if ((event.key === "Enter" || event.key === "Tab") && filteredCommands.length > 0 && slashToken) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      insertCommand(filteredCommands[highlightedIndex] ?? filteredCommands[0], slashToken);
+      const command = filteredCommands[highlightedIndex];
+
+      if (command) {
+        void insertCommand(command);
+      }
     }
   }
 
-  async function insertCommand(command: PiSlashCommand, token = slashToken) {
-    if (!token) {
+  async function insertCommand(command: PiSlashCommand) {
+    if (!textareaRef || !slashToken) {
       return;
     }
 
-    const nextPrompt = replaceSlashToken(desktopState.promptValue, token, command);
+    const nextPrompt = replaceSlashToken(desktopState.promptValue, slashToken, command);
     desktopState.promptValue = nextPrompt.value;
     slashToken = null;
     dismissedTokenKey = undefined;
@@ -110,60 +173,77 @@
   }
 </script>
 
-<div class="relative border-t border-border/50 px-4 py-3">
-  {#if isSlashMenuOpen}
-    <SlashCommandMenu
-      commands={filteredCommands}
-      loading={desktopState.slashCommandsLoading}
-      error={desktopState.slashCommandsError}
-      highlightedIndex={highlightedIndex}
-      unavailable={!desktopState.canUseSession}
-      onSelect={(command) => insertCommand(command)}
-      onHighlight={(index) => (highlightedIndex = index)}
-      onRetry={retryCommands}
-    />
-  {/if}
-
-  <PromptInput
-    onSubmit={(message, event) => {
-      slashToken = null;
-      dismissedTokenKey = undefined;
-      desktopState.handlePromptSubmit(message, event);
-    }}
-    class="flex min-h-20 flex-col rounded-lg border border-border/50 bg-background shadow-none transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-border focus-within:ring-2 focus-within:ring-ring/30"
-  >
-    <PromptInputBody>
-      <label for="prompt" class="sr-only">Prompt</label>
-      <PromptInputTextarea
-        id="prompt"
-        bind:ref={textareaRef}
-        bind:value={desktopState.promptValue}
-        class="min-h-12 px-3 py-2 text-xs leading-5 text-foreground placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-100"
-        placeholder={desktopState.canUseSession ? "Ask PI to inspect this repo, implement a change, or explain the current state..." : "Select a repo and PI session first..."}
-        disabled={!desktopState.canUseSession || desktopState.isBusy}
-        oninput={handlePromptInput}
-        onkeydown={handlePromptKeydown}
-        onkeyup={handlePromptInteraction}
-        onclick={handlePromptInteraction}
-        onselect={handlePromptInteraction}
+<div class="border-t border-border/50 px-6 py-3">
+  <div class="relative mx-auto max-w-3xl">
+    {#if isSlashMenuOpen}
+      <SlashCommandMenu
+        commands={filteredCommands}
+        loading={desktopState.slashCommandsLoading}
+        error={desktopState.slashCommandsError}
+        highlightedIndex={highlightedIndex}
+        unavailable={!desktopState.canUseSession}
+        onSelect={(command) => insertCommand(command)}
+        onHighlight={(index) => (highlightedIndex = index)}
+        onRetry={retryCommands}
       />
-    </PromptInputBody>
-    <PromptInputToolbar class="flex h-8 min-w-0 items-center justify-between gap-3 border-t border-border/50 px-2">
-      <div class="flex min-w-0 items-center gap-2 text-[11px] leading-tight text-muted-foreground">
-        <span class={desktopState.isAgentRunning || desktopState.sessionState?.isStreaming ? "size-1.5 shrink-0 rounded-full bg-primary" : "size-1.5 shrink-0 rounded-full bg-muted-foreground/45"} aria-hidden="true"></span>
-        <span class="shrink-0 font-medium text-foreground/80">{desktopState.sessionState?.isStreaming ? "Follow-up" : "Prompt"}</span>
-        <span class="truncate">{desktopState.isSendingPrompt ? "Sending…" : "Enter send · Shift Enter newline"}</span>
-      </div>
-      <div class="flex shrink-0 items-center gap-1">
-        <Button variant="ghost" size="sm" class="h-7 px-2 text-xs text-muted-foreground" onclick={() => desktopState.handleAbort()} disabled={!(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming) || desktopState.isBusy}>
-          <HugeiconsIcon icon={StopCircleIcon} data-icon="inline-start" />
-          Abort
-        </Button>
-        <PromptInputSubmit class="h-7 min-w-16 gap-1 px-2.5 text-xs" disabled={!desktopState.canSubmit}>
-          <HugeiconsIcon icon={ArrowUp02Icon} data-icon="inline-start" />
-          {desktopState.isSendingPrompt ? "Sending" : "Send"}
-        </PromptInputSubmit>
-      </div>
-    </PromptInputToolbar>
-  </PromptInput>
+    {/if}
+
+    <PromptInput
+      onSubmit={(message, event) => {
+        slashToken = null;
+        dismissedTokenKey = undefined;
+        desktopState.handlePromptSubmit(message, event);
+      }}
+      class="flex w-full flex-col overflow-hidden rounded-lg border border-border/50 bg-background p-2 shadow-none transition-[box-shadow,ring] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] focus-within:ring-2 focus-within:ring-ring motion-reduce:transition-none"
+    >
+      <PromptInputBody class="min-w-0">
+        <label for="prompt" class="sr-only">Prompt</label>
+        <PromptInputTextarea
+          id="prompt"
+          bind:ref={textareaRef}
+          bind:value={desktopState.promptValue}
+          class="min-h-10 px-1 py-1 text-xs leading-snug text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder={promptPlaceholder}
+          disabled={!desktopState.canUseSession || desktopState.isBusy}
+          oninput={handlePromptInput}
+          onkeydown={handlePromptKeydown}
+          onkeyup={handlePromptInteraction}
+          onclick={handlePromptInteraction}
+          onselect={handlePromptInteraction}
+        />
+      </PromptInputBody>
+      <PromptInputToolbar class="flex h-8 min-w-0 items-center justify-between gap-3 px-1 pt-2">
+        <div class="flex min-w-0 items-center gap-2 text-[11px] leading-tight text-muted-foreground">
+          {#if composerMeta.showDot}
+            <span class={composerMeta.dotClass} aria-hidden="true"></span>
+          {/if}
+          <span class="truncate">{composerMeta.text}</span>
+        </div>
+        <div class="flex shrink-0 items-center gap-1">
+          {#if showAbort}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Abort run"
+              title="Abort run"
+              onclick={() => desktopState.handleAbort()}
+              disabled={desktopState.isBusy}
+            >
+              <HugeiconsIcon icon={StopCircleIcon} data-icon />
+            </Button>
+          {/if}
+          <PromptInputSubmit
+            variant="default"
+            size="icon"
+            data-prompt-input-submit
+            class="size-8 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+            title="Send prompt"
+            disabled={!desktopState.canSubmit}
+          >
+            <HugeiconsIcon icon={ArrowUp02Icon} data-icon />
+          </PromptInputSubmit>
+        </div>
+      </PromptInputToolbar>
+    </PromptInput>
+  </div>
 </div>

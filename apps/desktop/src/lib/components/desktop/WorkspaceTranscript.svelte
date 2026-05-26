@@ -9,9 +9,12 @@
     ConversationContent,
     ConversationScrollButton,
   } from "$lib/components/ai-elements/conversation/index.js";
+  import TranscriptMetadataBlock from "$lib/components/desktop/TranscriptMetadataBlock.svelte";
+  import { isMetadataRole, parseMetadataText } from "$lib/components/desktop/transcript-metadata.js";
   import {
     Message,
     MessageContent,
+    MessageResponse,
     type MessageRole,
   } from "$lib/components/ai-elements/message/index.js";
   import Tool from "$lib/components/ai-elements/tool/Tool.svelte";
@@ -43,7 +46,14 @@
     errorText?: string;
   };
 
-  type TranscriptBlock = TranscriptTextBlock | TranscriptThinkingBlock | TranscriptToolBlock;
+  type TranscriptMetadataBlockModel = {
+    kind: "metadata";
+    id: string;
+    title: string;
+    entries: { label: string; value: string }[];
+  };
+
+  type TranscriptBlock = TranscriptTextBlock | TranscriptThinkingBlock | TranscriptToolBlock | TranscriptMetadataBlockModel;
 
   type TranscriptMessage = {
     id: string;
@@ -116,11 +126,20 @@
       const text = formatMessageText(message);
 
       if (text.trim()) {
-        blocks.push({
-          kind: "text",
-          id: `message-${index}-text`,
-          text,
-        });
+        if (isMetadataRole(roleLabel)) {
+          blocks.push({
+            kind: "metadata",
+            id: `message-${index}-metadata`,
+            title: formatRoleLabel(roleLabel),
+            entries: parseMetadataText(text),
+          });
+        } else {
+          blocks.push({
+            kind: "text",
+            id: `message-${index}-text`,
+            text,
+          });
+        }
       }
     }
 
@@ -288,53 +307,55 @@
   }
 </script>
 
-<section class="flex min-h-0 min-w-0 flex-col">
-  <div class="flex h-10 items-center border-b border-border/50 px-4">
-    <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-      <HugeiconsIcon icon={TerminalIcon} data-icon />
-      <span class="truncate font-medium text-foreground">Transcript</span>
-      <span class="truncate">{desktopState.selectedSession?.name ?? desktopState.selectedSession?.firstMessage ?? "No PI session selected"}</span>
-    </div>
-  </div>
-
+<section class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Workspace transcript">
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if hasTranscriptMessages}
       <Conversation class="h-full min-h-0">
-        <ConversationContent class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <ConversationContent class="min-h-0 flex-1 overflow-y-auto px-6 py-5 pb-24">
           {#if desktopState.errorMessage}
-            <div class="mx-auto mb-4 flex max-w-3xl items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive">
+            <div
+              class="mx-auto mb-4 flex max-w-3xl items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive"
+              role="alert"
+              aria-live="assertive"
+            >
               <HugeiconsIcon icon={AlertCircleIcon} data-icon />
               <span>{desktopState.errorMessage}</span>
             </div>
           {/if}
 
-          <div class="mx-auto flex max-w-3xl flex-col gap-4">
+          <div class="mx-auto flex max-w-3xl flex-col gap-6">
             {#each transcriptMessages as message (message.id)}
-              <Message from={message.role} class="max-w-full border-b border-border/50 pb-4 last:border-b-0">
+              <Message from={message.role} class="max-w-full">
                 <div class={message.role === "user" ? "ml-auto text-[11px] font-medium uppercase tracking-wide text-muted-foreground" : "text-[11px] font-medium uppercase tracking-wide text-muted-foreground"}>
                   {message.roleLabel}
                 </div>
                 <MessageContent class={message.role === "user" ? "max-w-[min(42rem,85%)]" : "w-full max-w-full overflow-visible"}>
                   {#each message.blocks as block (block.id)}
                     {#if block.kind === "text"}
-                      <pre class="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">{block.text}</pre>
+                      {#if message.role === "user"}
+                        <p class="whitespace-pre-wrap break-words text-sm leading-6">{block.text}</p>
+                      {:else}
+                        <MessageResponse content={block.text} />
+                      {/if}
+                    {:else if block.kind === "metadata"}
+                      <TranscriptMetadataBlock title={block.title} entries={block.entries} />
                     {:else if block.kind === "thinking"}
-                      <div class="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                        <div class="mb-1 text-[10px] font-medium uppercase tracking-wide">Thinking</div>
-                        <pre class="whitespace-pre-wrap break-words font-sans">{block.text}</pre>
+                      <div class="space-y-1 py-1 text-xs leading-5 text-muted-foreground">
+                        <div class="text-[10px] font-medium uppercase tracking-wide">Thinking</div>
+                        <p class="whitespace-pre-wrap break-words">{block.text}</p>
                       </div>
                     {:else}
-                      <Tool class="mt-1 mb-0 rounded-md border-border/50 bg-background">
-                        <ToolHeader type={block.type} state={block.state} class="px-3 py-2 text-xs" />
+                      <Tool class="mb-0 border-0 border-t border-border/50 bg-transparent shadow-none">
+                        <ToolHeader type={block.type} state={block.state} class="px-0 py-2 text-xs" />
                         <ToolContent class="border-t border-border/50">
                           {#if block.input !== undefined}
-                            <div class="space-y-2 p-3">
+                            <div class="space-y-2 py-2">
                               <h4 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Parameters</h4>
                               <pre class="overflow-x-auto rounded-md bg-muted/50 p-3 font-mono text-xs leading-5 text-foreground">{formatToolValue(block.input)}</pre>
                             </div>
                           {/if}
                           {#if block.errorText || block.output}
-                            <div class="space-y-2 p-3 pt-0">
+                            <div class="space-y-2 py-2">
                               <h4 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{block.errorText ? "Error" : "Result"}</h4>
                               <pre class={block.errorText ? "overflow-x-auto rounded-md bg-destructive/10 p-3 font-mono text-xs leading-5 text-destructive" : "overflow-x-auto rounded-md bg-muted/50 p-3 font-mono text-xs leading-5 text-foreground"}>{block.errorText ?? formatToolValue(block.output)}</pre>
                             </div>
@@ -348,10 +369,10 @@
             {/each}
 
             {#if isThinking}
-              <Message from="assistant" class="max-w-full border-b border-border/50 pb-4 last:border-b-0">
+              <Message from="assistant" class="max-w-full">
                 <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Assistant</div>
                 <MessageContent class="w-full max-w-full overflow-visible">
-                  <div class="flex items-center gap-2 text-sm leading-6 text-muted-foreground">
+                  <div class="flex items-center gap-2 text-sm leading-6 text-muted-foreground" aria-live="polite" aria-busy="true">
                     <span class="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true"></span>
                     <span>Pi is thinking…</span>
                   </div>
@@ -365,7 +386,7 @@
     {:else}
       <div class="h-full overflow-auto px-6 py-5">
         {#if desktopState.errorMessage}
-          <div class="mb-4 flex items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive">
+          <div class="mb-4 flex items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive" role="alert" aria-live="assertive">
             <HugeiconsIcon icon={AlertCircleIcon} data-icon />
             <span>{desktopState.errorMessage}</span>
           </div>
@@ -423,5 +444,7 @@
     {/if}
   </div>
 
-  {@render children?.()}
+  <div class="shrink-0">
+    {@render children?.()}
+  </div>
 </section>

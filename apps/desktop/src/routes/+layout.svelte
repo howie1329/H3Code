@@ -26,7 +26,7 @@
 >
   <AppSidebar />
 
-  <Sidebar.Inset class="min-w-0 overflow-hidden">
+  <Sidebar.Inset class="min-h-0 min-w-0 flex-1 overflow-hidden">
     {@render children()}
   </Sidebar.Inset>
 </Sidebar.Provider>

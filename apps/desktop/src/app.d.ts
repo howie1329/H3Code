@@ -60,6 +60,11 @@ declare global {
     };
   };
 
+  type PiSessionDiff = {
+    patch: string;
+    changedFiles: number;
+  };
+
   type PiSlashCommand = {
     name: string;
     description?: string;
@@ -122,13 +127,16 @@ declare global {
       connectRepo: (repoPath: string, selectedSessionPath?: string) => Promise<PiConnectRepoResult>;
       listSessions: () => Promise<PiSessionSummary[]>;
       listRepoSessions: (repoPath: string, markRecent?: boolean) => Promise<PiSessionSummary[]>;
+      deletePiSession: (repoPath: string, sessionPath: string) => Promise<PiSessionSummary[]>;
       switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
       getSessionStats: () => Promise<PiSessionStats | null>;
+      getSessionDiff: () => Promise<PiSessionDiff>;
       getCommands: () => Promise<PiSlashCommand[]>;
       sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
       abort: () => Promise<void>;
       getPreferences: () => Promise<DesktopPreferences>;
+      removeIndexedRepo: (repoPath: string) => Promise<DesktopPreferences>;
       updateDesktopSettings: (settings: Partial<DesktopSettings>) => Promise<DesktopSettings>;
       onPiEvent: (listener: (event: unknown) => void) => () => void;
       onPiStatus: (listener: (status: PiStatus) => void) => () => void;

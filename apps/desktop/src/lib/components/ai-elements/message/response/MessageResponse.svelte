@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Streamdown, type StreamdownProps } from 'streamdown-svelte';
-	// import { code } from '@streamdown-svelte/code';
+	import { code } from '@streamdown-svelte/code';
 	// import { mermaid } from '@streamdown-svelte/mermaid';
 	// import { math } from '@streamdown-svelte/math';
 	// import { cjk } from '@streamdown-svelte/cjk';
@@ -18,7 +18,7 @@
 	);
 </script>
 
-<div class={cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className)}>
+<div class={cn('size-full text-sm leading-6 text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:font-mono [&_pre]:text-xs', className)}>
 	<Streamdown
 		{content}
 		baseTheme="shadcn"
@@ -27,7 +27,7 @@
 			'github-light-default': githubLightDefault,
 			'github-dark-default': githubDarkDefault
 		}}
-		// plugins={{ code, mermaid, math, cjk }}
+		plugins={{ code }}
 		{...restProps}
 	/>
 </div>
