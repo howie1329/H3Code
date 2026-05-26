@@ -1,5 +1,4 @@
 import { goto } from "$app/navigation";
-import { page } from "$app/state";
 
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
 import { normalizeThinkingLevel } from "$lib/pi-model.js";
@@ -116,13 +115,13 @@ class DesktopState {
     return null;
   });
 
-  ensureWorkspaceRoute() {
+  async ensureWorkspaceRoute() {
     if (typeof window === "undefined") {
       return;
     }
 
-    if (page.url.pathname !== "/workspace") {
-      void goto("/workspace");
+    if (window.location.pathname !== "/workspace") {
+      await goto("/workspace");
     }
   }
 
@@ -289,7 +288,7 @@ class DesktopState {
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
-    this.ensureWorkspaceRoute();
+    await this.ensureWorkspaceRoute();
   }
 
   async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
@@ -297,7 +296,7 @@ class DesktopState {
       return;
     }
 
-    this.ensureWorkspaceRoute();
+    await this.ensureWorkspaceRoute();
 
     if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
       await this.connectRepo(repoPath, sessionPath);
@@ -332,6 +331,8 @@ class DesktopState {
       return;
     }
 
+    await this.ensureWorkspaceRoute();
+
     await this.withBusy(async () => {
       this.errorMessage = undefined;
 
@@ -360,7 +361,6 @@ class DesktopState {
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
       void this.ensureAvailableModels(true);
-      this.ensureWorkspaceRoute();
     });
   }
 
@@ -756,6 +756,22 @@ class DesktopState {
     }
 
     void this.persistDesktopSettings({ sidebarOpen: open });
+  }
+
+  toggleSidebar() {
+    this.setSidebarOpen(!this.desktopSettings.sidebarOpen);
+  }
+
+  toggleContextPanel() {
+    this.setContextPanelOpen(!this.desktopSettings.contextPanelOpen);
+  }
+
+  toggleSessionDiffPanel() {
+    this.setSessionDiffPanelOpen(!this.sessionDiffPanelOpen);
+  }
+
+  focusComposer() {
+    window.dispatchEvent(new CustomEvent("h3code:focus-composer"));
   }
 
   setContextPanelOpen(open: boolean) {

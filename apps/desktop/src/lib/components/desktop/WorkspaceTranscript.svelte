@@ -22,6 +22,15 @@
   import ToolHeader from "$lib/components/ai-elements/tool/ToolHeader.svelte";
   import type { ToolUIPartState } from "$lib/components/ai-elements/tool/tool-context.svelte.js";
   import { Button } from "$lib/components/ui/button/index.js";
+  import {
+    Empty,
+    EmptyContent,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle,
+  } from "$lib/components/ui/empty/index.js";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
 
   type TranscriptTextBlock = {
     kind: "text";
@@ -74,6 +83,7 @@
   const hasTranscriptMessages = $derived(
     Boolean(desktopState.repoPath && desktopState.sessions.length > 0 && (transcriptMessages.length > 0 || isThinking))
   );
+  const shortcutModifier = $derived(desktopState.platform === "darwin" ? "⌘" : "Ctrl");
 
   function buildTranscriptMessages(messages: unknown[]): TranscriptMessage[] {
     const normalizedMessages: TranscriptMessage[] = [];
@@ -392,54 +402,88 @@
           </div>
         {/if}
 
-        {#if !desktopState.repoPath}
-          <div class="flex min-h-full items-center justify-center px-6 py-10">
-            <div class="grid w-full max-w-sm justify-items-center text-center">
-              <div class="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground">
-                <HugeiconsIcon icon={desktopState.repos.length > 0 ? AiBrain02Icon : FolderCodeIcon} data-icon />
-              </div>
-              {#if desktopState.repos.length > 0}
-                <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No session selected</p>
-                <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a session from the sidebar.</h2>
-                <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">Expand a repository, then open an existing session or create a new one.</p>
-              {:else}
-                <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No repository selected</p>
-                <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Choose a repo to start.</h2>
-                <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">H3Code will load PI sessions from the selected folder.</p>
-                <Button class="mt-4" onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
+        <div class="flex min-h-full items-center justify-center px-6 py-10">
+          {#if !desktopState.repoPath && desktopState.repos.length === 0}
+            <Empty class="max-w-sm border-0 bg-transparent p-0">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={FolderCodeIcon} data-icon />
+                </EmptyMedia>
+                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No repository selected</p>
+                <EmptyTitle>Choose a repo to start.</EmptyTitle>
+                <EmptyDescription>H3Code will load PI sessions from the selected folder.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
                   <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
                   Select repo
                 </Button>
-              {/if}
-            </div>
-          </div>
-        {:else if desktopState.sessions.length === 0}
-          <div class="flex min-h-full items-center justify-center px-6 py-10">
-            <div class="grid w-full max-w-sm justify-items-center text-center">
-              <div class="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground">
-                <HugeiconsIcon icon={AiBrain02Icon} data-icon />
-              </div>
-              <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No sessions</p>
-              <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Create a PI session.</h2>
-              <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">Start a session for this repository when you are ready.</p>
-              <Button class="mt-4" onclick={() => desktopState.handleNewSession()} disabled={desktopState.piStatus.state !== "connected" || desktopState.isBusy}>
-                <HugeiconsIcon icon={AiBrain02Icon} data-icon="inline-start" />
-                New session
-              </Button>
-            </div>
-          </div>
-        {:else if desktopState.messages.length === 0}
-          <div class="flex min-h-full items-center justify-center px-6 py-10">
-            <div class="grid w-full max-w-sm justify-items-center text-center">
-              <div class="grid size-8 place-items-center rounded-md bg-muted text-muted-foreground">
-                <HugeiconsIcon icon={TerminalIcon} data-icon />
-              </div>
-              <p class="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Empty transcript</p>
-              <h2 class="mt-2 text-xl font-semibold leading-tight tracking-tight">Send a prompt to PI.</h2>
-              <p class="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">Use the composer below to start this session.</p>
-            </div>
-          </div>
-        {/if}
+              </EmptyContent>
+            </Empty>
+          {:else if !desktopState.repoPath}
+            <Empty class="max-w-sm border-0 bg-transparent p-0">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={AiBrain02Icon} data-icon />
+                </EmptyMedia>
+                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No session selected</p>
+                <EmptyTitle>Choose a session from the sidebar.</EmptyTitle>
+                <EmptyDescription>Expand a repository, then open an existing session or create a new one.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          {:else if desktopState.piStatus.state !== "connected"}
+            <Empty class="max-w-sm border-0 bg-transparent p-0">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={TerminalIcon} data-icon />
+                </EmptyMedia>
+                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">PI disconnected</p>
+                <EmptyTitle>Connect PI for this repo.</EmptyTitle>
+                <EmptyDescription>Start PI RPC before creating sessions or sending prompts.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button onclick={() => desktopState.repoPath && desktopState.connectRepo(desktopState.repoPath)} disabled={desktopState.isBusy}>
+                  Connect PI
+                </Button>
+              </EmptyContent>
+            </Empty>
+          {:else if desktopState.sessions.length === 0}
+            <Empty class="max-w-sm border-0 bg-transparent p-0">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={AiBrain02Icon} data-icon />
+                </EmptyMedia>
+                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No sessions</p>
+                <EmptyTitle>Create a PI session.</EmptyTitle>
+                <EmptyDescription>Start a session for this repository when you are ready.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button onclick={() => desktopState.handleNewSession()} disabled={desktopState.isBusy}>
+                  <HugeiconsIcon icon={AiBrain02Icon} data-icon="inline-start" />
+                  New session
+                </Button>
+              </EmptyContent>
+            </Empty>
+          {:else if desktopState.messages.length === 0}
+            <Empty class="max-w-sm border-0 bg-transparent p-0">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={TerminalIcon} data-icon />
+                </EmptyMedia>
+                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Empty transcript</p>
+                <EmptyTitle>Ready for a prompt.</EmptyTitle>
+                <EmptyDescription>Ask PI about this repository from the composer below.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <div class="flex flex-wrap items-center justify-center gap-2 text-[11px] text-muted-foreground">
+                  <span class="inline-flex items-center gap-1"><Kbd>Enter</Kbd> send</span>
+                  <span class="inline-flex items-center gap-1"><Kbd>/</Kbd> commands</span>
+                  <span class="inline-flex items-center gap-1"><Kbd>{shortcutModifier}</Kbd><Kbd>L</Kbd> focus composer</span>
+                </div>
+              </EmptyContent>
+            </Empty>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>

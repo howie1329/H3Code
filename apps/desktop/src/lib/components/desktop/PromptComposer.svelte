@@ -27,6 +27,7 @@
     PromptInputToolbar,
   } from "$lib/components/ai-elements/prompt-input/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
 
   type ComposerMenu = "none" | "slash" | "model" | "thinking";
 
@@ -145,6 +146,18 @@
     if (desktopState.canUseSession) {
       void desktopState.ensureAvailableModels();
     }
+  });
+
+  $effect(() => {
+    function handleFocusComposer() {
+      textareaRef?.focus();
+    }
+
+    window.addEventListener("h3code:focus-composer", handleFocusComposer);
+
+    return () => {
+      window.removeEventListener("h3code:focus-composer", handleFocusComposer);
+    };
   });
 
   function updateMenuPosition(anchor: HTMLElement | null, setLeft: (left: number) => void) {
@@ -514,7 +527,15 @@
             {#if composerMeta.showDot}
               <span class={composerMeta.dotClass} aria-hidden="true"></span>
             {/if}
-            <span class="truncate">{composerMeta.text}</span>
+            {#if desktopState.canUseSession && !desktopState.isBusy && !isRunning && !desktopState.isSendingPrompt}
+              <span class="hidden shrink-0 items-center gap-1 sm:inline-flex"><Kbd>Enter</Kbd> send</span>
+              <span class="hidden shrink-0 items-center gap-1 md:inline-flex"><Kbd>Shift</Kbd><Kbd>Enter</Kbd> newline</span>
+              {#if showSlashHint}
+                <span class="hidden shrink-0 items-center gap-1 lg:inline-flex"><Kbd>/</Kbd> commands</span>
+              {/if}
+            {:else}
+              <span class="truncate">{composerMeta.text}</span>
+            {/if}
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-0.5">

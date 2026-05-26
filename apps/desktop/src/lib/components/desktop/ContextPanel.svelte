@@ -203,7 +203,7 @@
           {/if}
         </div>
       {:else}
-        <p class="text-xs text-muted-foreground">No session stats yet</p>
+        <p class="text-xs leading-5 text-muted-foreground">Select a session to see token usage, cost, and context window estimates.</p>
       {/if}
     </section>
 
@@ -212,7 +212,7 @@
     <section class="flex flex-col gap-2">
       <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tool activity</h3>
       {#if desktopState.activity.length === 0}
-        <p class="px-2 py-1 text-xs text-muted-foreground">No activity yet</p>
+        <p class="px-2 py-1 text-xs leading-5 text-muted-foreground">Tool calls and PI runtime events appear here while a session runs.</p>
       {:else}
         <ul class="flex flex-col gap-1" role="list">
           {#each desktopState.activity as event (event.type + event.detail)}
