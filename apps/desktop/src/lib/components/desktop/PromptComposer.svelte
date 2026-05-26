@@ -3,21 +3,10 @@
   import { ArrowUp02Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
-  import ComposerSelectMenu from "$lib/components/desktop/ComposerSelectMenu.svelte";
-  import ModelSelector from "$lib/components/desktop/ModelSelector.svelte";
+  import ComposerSessionMenu from "$lib/components/desktop/ComposerSessionMenu.svelte";
   import SlashCommandMenu from "$lib/components/desktop/SlashCommandMenu.svelte";
-  import ThinkingLevelSelector from "$lib/components/desktop/ThinkingLevelSelector.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
-  import {
-    getModelId,
-    getModelLabel,
-    groupModelsByProvider,
-    isSameModel,
-    modelSupportsThinking,
-    normalizeThinkingLevel,
-    PI_THINKING_LEVELS,
-    PI_THINKING_LEVEL_LABELS,
-  } from "$lib/pi-model.js";
+  import { isSameModel, modelSupportsThinking, normalizeThinkingLevel, PI_THINKING_LEVELS } from "$lib/pi-model.js";
   import { filterSlashCommands, getActiveSlashToken, replaceSlashToken, type SlashToken } from "$lib/slash-commands";
   import {
     PromptInput,
@@ -29,20 +18,18 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import { Kbd } from "$lib/components/ui/kbd/index.js";
 
-  type ComposerMenu = "none" | "slash" | "model" | "thinking";
+  type ComposerMenu = "none" | "slash" | "session";
 
   let wrapperRef = $state<HTMLDivElement | null>(null);
   let textareaRef = $state<HTMLTextAreaElement | null>(null);
-  let modelAnchor = $state<HTMLElement | null>(null);
-  let thinkingAnchor = $state<HTMLElement | null>(null);
+  let sessionAnchor = $state<HTMLElement | null>(null);
   let slashToken = $state<SlashToken | null>(null);
   let dismissedTokenKey = $state<string | undefined>();
   let activeMenu = $state<ComposerMenu>("none");
   let slashHighlightedIndex = $state(0);
   let modelHighlightedIndex = $state(0);
   let thinkingHighlightedIndex = $state(0);
-  let modelMenuLeft = $state(0);
-  let thinkingMenuLeft = $state(0);
+  let sessionMenuLeft = $state(0);
 
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
@@ -54,7 +41,6 @@
   );
   const selectorsDisabled = $derived(!desktopState.canChangeSessionSettings || !desktopState.canUseSession);
   const currentModel = $derived(desktopState.sessionState?.model);
-  const groupedModels = $derived(groupModelsByProvider(desktopState.availableModels));
   const flatModels = $derived(desktopState.availableModels);
   const currentThinkingLevel = $derived(normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel));
   const showThinkingSelector = $derived(modelSupportsThinking(currentModel));
@@ -83,8 +69,8 @@
     if (isRunning) {
       return {
         showDot: true,
-        dotClass: "size-1.5 shrink-0 rounded-full bg-primary",
-        text: "Pi is running · Enter queues follow-up · Shift+Enter steers",
+        dotClass: "size-1.5 shrink-0 animate-pulse rounded-full bg-primary",
+        text: "Pi is working…",
       };
     }
 
@@ -106,12 +92,7 @@
       return { showDot: false, dotClass: "", text: "Busy…" };
     }
 
-    const base = "Enter to send · Shift+Enter for newline";
-    return {
-      showDot: false,
-      dotClass: "",
-      text: showSlashHint ? `${base} · / for commands` : base,
-    };
+    return { showDot: false, dotClass: "", text: "" };
   });
 
   $effect(() => {
@@ -133,12 +114,8 @@
   });
 
   $effect(() => {
-    if (activeMenu === "model") {
-      updateMenuPosition(modelAnchor, (left) => (modelMenuLeft = left));
-    }
-
-    if (activeMenu === "thinking") {
-      updateMenuPosition(thinkingAnchor, (left) => (thinkingMenuLeft = left));
+    if (activeMenu === "session") {
+      updateMenuPosition(sessionAnchor, (left) => (sessionMenuLeft = left));
     }
   });
 
@@ -180,32 +157,24 @@
       return;
     }
 
-    if (menu === "model" && !selectorsDisabled && desktopState.availableModels.length > 1) {
-      activeMenu = "model";
+    if (menu === "session" && !selectorsDisabled) {
+      activeMenu = "session";
       slashToken = null;
       dismissedTokenKey = undefined;
       const currentIndex = flatModels.findIndex((entry) => isSameModel(entry, currentModel));
       modelHighlightedIndex = currentIndex >= 0 ? currentIndex : 0;
+      thinkingHighlightedIndex = PI_THINKING_LEVELS.indexOf(currentThinkingLevel);
       void desktopState.ensureAvailableModels();
-      return;
-    }
-
-    if (menu === "thinking" && !selectorsDisabled && showThinkingSelector) {
-      activeMenu = "thinking";
-      slashToken = null;
-      dismissedTokenKey = undefined;
-      const currentIndex = PI_THINKING_LEVELS.indexOf(currentThinkingLevel);
-      thinkingHighlightedIndex = currentIndex >= 0 ? currentIndex : 0;
     }
   }
 
-  function toggleMenu(menu: "model" | "thinking") {
-    if (activeMenu === menu) {
+  function toggleSessionMenu() {
+    if (activeMenu === "session") {
       closeMenus();
       return;
     }
 
-    openMenu(menu);
+    openMenu("session");
   }
 
   function syncSlashToken() {
@@ -269,7 +238,7 @@
       return;
     }
 
-    if (activeMenu === "model" && flatModels.length > 0) {
+    if (activeMenu === "session" && flatModels.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
         modelHighlightedIndex = (modelHighlightedIndex + 1) % flatModels.length;
@@ -290,26 +259,6 @@
           void selectModel(model);
         }
 
-        return;
-      }
-    }
-
-    if (activeMenu === "thinking") {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        thinkingHighlightedIndex = (thinkingHighlightedIndex + 1) % PI_THINKING_LEVELS.length;
-        return;
-      }
-
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        thinkingHighlightedIndex = (thinkingHighlightedIndex - 1 + PI_THINKING_LEVELS.length) % PI_THINKING_LEVELS.length;
-        return;
-      }
-
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        void selectThinkingLevel(PI_THINKING_LEVELS[thinkingHighlightedIndex]);
         return;
       }
     }
@@ -405,82 +354,6 @@
       />
     {/if}
 
-    <ComposerSelectMenu
-      open={activeMenu === "model"}
-      title="Model"
-      description="Applies to this PI session."
-      loading={desktopState.modelsLoading}
-      error={desktopState.modelsError ? "Couldn't load models" : undefined}
-      align={{ left: modelMenuLeft, width: 256 }}
-      ariaLabel="Available models"
-      onRetry={retryModels}
-    >
-      {#if desktopState.availableModels.length === 0}
-        <div class="px-3 py-4 text-xs text-muted-foreground">No models configured in PI.</div>
-      {:else}
-        <div class="max-h-56 overflow-y-auto py-1">
-          {#each groupedModels as group}
-            <div class="px-2 pb-1 pt-2 text-[10px] font-medium uppercase leading-tight tracking-wide text-muted-foreground first:pt-1">
-              {group.provider}
-            </div>
-
-            {#each group.models as model (getModelId(model))}
-              {@const flatIndex = flatModels.findIndex((entry) => isSameModel(entry, model))}
-              <button
-                type="button"
-                class={flatIndex === modelHighlightedIndex
-                  ? "flex w-full items-center gap-2 bg-accent px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                  : "flex w-full items-center gap-2 px-3 py-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"}
-                role="option"
-                aria-selected={isSameModel(model, currentModel)}
-                onmouseenter={() => {
-                  if (flatIndex >= 0) {
-                    modelHighlightedIndex = flatIndex;
-                  }
-                }}
-                onmousedown={(event) => event.preventDefault()}
-                onclick={() => selectModel(model)}
-              >
-                <span class="min-w-0 flex-1 truncate text-xs leading-tight text-foreground">{getModelLabel(model)}</span>
-                {#if isSameModel(model, currentModel)}
-                  <span class="shrink-0 text-[10px] text-muted-foreground">Current</span>
-                {/if}
-              </button>
-            {/each}
-          {/each}
-        </div>
-      {/if}
-    </ComposerSelectMenu>
-
-    <ComposerSelectMenu
-      open={activeMenu === "thinking"}
-      title="Thinking"
-      description="Reasoning depth for this model."
-      align={{ left: thinkingMenuLeft, width: 176 }}
-      ariaLabel="Thinking levels"
-    >
-      <div class="max-h-56 overflow-y-auto py-1">
-        {#each PI_THINKING_LEVELS as level, index}
-          <button
-            type="button"
-            class={index === thinkingHighlightedIndex
-              ? "flex w-full items-center gap-2 bg-accent px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-              : "flex w-full items-center gap-2 px-3 py-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"}
-            role="option"
-            aria-selected={level === currentThinkingLevel}
-            onmouseenter={() => (thinkingHighlightedIndex = index)}
-            onmousedown={(event) => event.preventDefault()}
-            onclick={() => selectThinkingLevel(level)}
-          >
-            <span class="min-w-0 flex-1 truncate text-xs leading-tight text-foreground">{PI_THINKING_LEVEL_LABELS[level]}</span>
-            {#if level === currentThinkingLevel}
-              <span class="shrink-0 text-[10px] text-muted-foreground">Current</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-    </ComposerSelectMenu>
-
     <PromptInput
       onSubmit={(message, event) => {
         slashToken = null;
@@ -510,31 +383,33 @@
         />
       </PromptInputBody>
       <PromptInputToolbar class="flex h-10 min-w-0 items-center justify-between gap-3 border-t border-border/50 px-3 py-1.5">
-        <div class="flex min-w-0 flex-1 items-center gap-1.5">
-          <ModelSelector
-            open={activeMenu === "model"}
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <ComposerSessionMenu
+            open={activeMenu === "session"}
             disabled={selectorsDisabled}
-            bind:anchor={modelAnchor}
-            onToggle={() => toggleMenu("model")}
-          />
-          <ThinkingLevelSelector
-            open={activeMenu === "thinking"}
-            disabled={selectorsDisabled}
-            bind:anchor={thinkingAnchor}
-            onToggle={() => toggleMenu("thinking")}
+            menuLeft={sessionMenuLeft}
+            bind:anchor={sessionAnchor}
+            {modelHighlightedIndex}
+            {thinkingHighlightedIndex}
+            onToggle={toggleSessionMenu}
+            onSelectModel={(model) => selectModel(model)}
+            onSelectThinkingLevel={(level) => selectThinkingLevel(level)}
+            onHighlightModel={(index) => (modelHighlightedIndex = index)}
+            onHighlightThinking={(index) => (thinkingHighlightedIndex = index)}
+            onRetryModels={retryModels}
           />
           <div class="flex min-w-0 flex-1 items-center gap-2 text-[11px] leading-tight text-muted-foreground">
             {#if composerMeta.showDot}
               <span class={composerMeta.dotClass} aria-hidden="true"></span>
             {/if}
-            {#if desktopState.canUseSession && !desktopState.isBusy && !isRunning && !desktopState.isSendingPrompt}
+            {#if composerMeta.text}
+              <span class="truncate">{composerMeta.text}</span>
+            {:else if desktopState.canUseSession && !desktopState.isBusy && !isRunning && !desktopState.isSendingPrompt}
               <span class="hidden shrink-0 items-center gap-1 sm:inline-flex"><Kbd>Enter</Kbd> send</span>
               <span class="hidden shrink-0 items-center gap-1 md:inline-flex"><Kbd>Shift</Kbd><Kbd>Enter</Kbd> newline</span>
               {#if showSlashHint}
                 <span class="hidden shrink-0 items-center gap-1 lg:inline-flex"><Kbd>/</Kbd> commands</span>
               {/if}
-            {:else}
-              <span class="truncate">{composerMeta.text}</span>
             {/if}
           </div>
         </div>

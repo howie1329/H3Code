@@ -1,7 +1,10 @@
 import { goto } from "$app/navigation";
 
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
+import { extractSessionMetadata } from "$lib/components/desktop/transcript-normalize.js";
+import { formatMessageRole, formatMessageText } from "$lib/message-format.js";
 import { normalizeThinkingLevel } from "$lib/pi-model.js";
+import { getSessionDisplayTitle } from "$lib/session-display-title.js";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -22,7 +25,7 @@ export type SidebarRepo = {
 
 const defaultDesktopSettings: DesktopSettings = {
   sidebarOpen: true,
-  contextPanelOpen: true,
+  contextPanelOpen: false,
   preferDiffPanel: false,
   autoConnectOnLaunch: false,
 };
@@ -104,6 +107,10 @@ class DesktopState {
     ...(this.streamingMessage ? [this.streamingMessage] : []),
     ...Object.values(this.liveToolExecutions),
   ]);
+  sessionMetadata = $derived(extractSessionMetadata(this.transcriptMessages));
+  sessionTitle = $derived(
+    this.selectedSession ? getSessionDisplayTitle(this.selectedSession) : "No session"
+  );
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
   hasSessionDiff = $derived(this.sessionDiff.patch.trim().length > 0);
@@ -1259,32 +1266,7 @@ export function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export function formatMessageRole(message: unknown) {
-  const record = toRecord(message);
-  const role = record.role ?? record.type;
-  return typeof role === "string" ? role : "message";
-}
-
-export function formatMessageText(message: unknown): string {
-  const record = toRecord(message);
-  const content = record.content ?? record.text ?? record.message;
-
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        const partRecord = toRecord(part);
-        return typeof partRecord.text === "string" ? partRecord.text : "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  return JSON.stringify(message, null, 2);
-}
+export { formatMessageRole, formatMessageText } from "$lib/message-format.js";
 
 function formatActivity(event: unknown): ActivityItem {
   const record = toRecord(event);

@@ -87,6 +87,7 @@
 
 :root {
   --context-panel-width: 24rem;
+  --transcript-code-max-height: 280px;
 }
 
 html,

@@ -25,6 +25,12 @@ export function parseMetadataText(text: string): MetadataEntry[] {
         label: trimmed.slice(0, colonIndex).trim(),
         value: trimmed.slice(colonIndex + 1).trim(),
       });
+      continue;
+    }
+
+    const listMatch = trimmed.match(/^[-*]\s+(\S+)\s+(.+)$/);
+    if (listMatch) {
+      entries.push({ label: listMatch[1].trim(), value: listMatch[2].trim() });
     }
   }
 

@@ -44,7 +44,7 @@ const recentRepoLimit = 10;
 const defaultPiExecutablePath = "pi";
 const defaultDesktopSettings: DesktopSettings = {
   sidebarOpen: true,
-  contextPanelOpen: true,
+  contextPanelOpen: false,
   preferDiffPanel: false,
   autoConnectOnLaunch: false,
 };

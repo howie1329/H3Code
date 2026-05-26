@@ -5,17 +5,17 @@
   const label = $derived.by(() => {
     switch (status.state) {
       case "connected":
-        return "PI connected";
+        return "Pi connected";
       case "starting":
-        return "PI starting";
+        return "Pi starting";
       case "exited":
-        return "PI exited";
+        return "Pi exited";
       case "error":
-        return "PI error";
+        return "Pi error";
       case "disconnected":
-        return "PI disconnected";
+        return "Pi disconnected";
       default:
-        return `PI ${status.state}`;
+        return `Pi ${status.state}`;
     }
   });
 
@@ -37,5 +37,5 @@
 
 <div class={`flex shrink-0 items-center gap-2 text-xs ${className}`} role="status" aria-label={label}>
   <span class={`size-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden="true"></span>
-  <span class="font-medium text-foreground/90">{label}</span>
+  <span class="hidden font-medium text-foreground/90 sm:inline">{label.replace(/^Pi /, "")}</span>
 </div>
