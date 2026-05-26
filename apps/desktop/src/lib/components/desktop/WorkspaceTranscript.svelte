@@ -307,7 +307,7 @@
   }
 </script>
 
-<section class="flex min-h-0 min-w-0 flex-col" aria-label="Workspace transcript">
+<section class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Workspace transcript">
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if hasTranscriptMessages}
       <Conversation class="h-full min-h-0">
@@ -444,5 +444,7 @@
     {/if}
   </div>
 
-  {@render children?.()}
+  <div class="shrink-0">
+    {@render children?.()}
+  </div>
 </section>

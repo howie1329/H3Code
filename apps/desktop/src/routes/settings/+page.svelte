@@ -70,8 +70,8 @@
       </div>
       <div class="flex items-center justify-between gap-4">
         <div>
-          <p class="text-xs font-medium">Show context panel</p>
-          <p class="text-[11px] text-muted-foreground">Open the session context inspector by default.</p>
+          <p class="text-xs font-medium">Show context inspector</p>
+          <p class="text-[11px] text-muted-foreground">Open the context inspector on the right when you enter the workspace (session diff is toggled separately).</p>
         </div>
         <Button
           variant={desktopState.desktopSettings.contextPanelOpen ? "default" : "outline"}

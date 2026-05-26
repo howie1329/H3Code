@@ -2,44 +2,44 @@
   import { FileDiffIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
-  import AppHeader from "$lib/components/desktop/AppHeader.svelte";
   import ContextPanel from "$lib/components/desktop/ContextPanel.svelte";
+  import PageShell from "$lib/components/desktop/PageShell.svelte";
   import PromptComposer from "$lib/components/desktop/PromptComposer.svelte";
   import SessionDiffPanel from "$lib/components/desktop/SessionDiffPanel.svelte";
   import WorkspaceTranscript from "$lib/components/desktop/WorkspaceTranscript.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import { desktopState } from "$lib/desktop-state.svelte";
 
-  const isContextPanelOpen = $derived(desktopState.desktopSettings.contextPanelOpen);
-  const isDiffPanelOpen = $derived(desktopState.sessionDiffPanelOpen && desktopState.hasSessionDiff);
-  const toggleLabel = $derived(isContextPanelOpen ? "Hide context panel" : "Show context panel");
-  const diffToggleLabel = $derived(isDiffPanelOpen ? "Hide session diff" : "Show session diff");
+  const activeInspector = $derived(desktopState.activeInspector);
+  const isInspectorOpen = $derived(activeInspector !== null);
+  const contextToggleLabel = $derived(
+    activeInspector === "context" ? "Hide context panel" : "Show context panel"
+  );
+  const diffToggleLabel = $derived(activeInspector === "diff" ? "Hide session diff" : "Show session diff");
 
   function getWorkspaceGridTemplate() {
-    const columns = ["minmax(0,1fr)"];
+    return isInspectorOpen ? "minmax(0,1fr) var(--context-panel-width)" : "minmax(0,1fr)";
+  }
 
-    if (isDiffPanelOpen) {
-      columns.push("minmax(20rem,32rem)");
-    }
+  function toggleContextPanel() {
+    desktopState.setContextPanelOpen(activeInspector !== "context");
+  }
 
-    if (isContextPanelOpen) {
-      columns.push("var(--context-panel-width)");
-    }
-
-    return columns.join(" ");
+  function toggleDiffPanel() {
+    desktopState.setSessionDiffPanelOpen(activeInspector !== "diff");
   }
 </script>
 
-<AppHeader>
+<PageShell>
   {#snippet actions()}
     {#if desktopState.hasSessionDiff}
       <Button
         variant="ghost"
         size="icon-sm"
         aria-label={diffToggleLabel}
-        aria-pressed={isDiffPanelOpen}
+        aria-pressed={activeInspector === "diff"}
         title={diffToggleLabel}
-        onclick={() => desktopState.setSessionDiffPanelOpen(!isDiffPanelOpen)}
+        onclick={toggleDiffPanel}
       >
         <HugeiconsIcon icon={FileDiffIcon} data-icon />
       </Button>
@@ -47,26 +47,29 @@
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label={toggleLabel}
-      aria-pressed={isContextPanelOpen}
-      title={toggleLabel}
-      onclick={() => desktopState.setContextPanelOpen(!isContextPanelOpen)}
+      aria-label={contextToggleLabel}
+      aria-pressed={activeInspector === "context"}
+      title={contextToggleLabel}
+      onclick={toggleContextPanel}
     >
-      <HugeiconsIcon icon={isContextPanelOpen ? PanelRightCloseIcon : PanelRightOpenIcon} data-icon />
+      <HugeiconsIcon icon={activeInspector === "context" ? PanelRightCloseIcon : PanelRightOpenIcon} data-icon />
     </Button>
   {/snippet}
-</AppHeader>
 
-<div class="grid min-h-0 flex-1 overflow-hidden" style:grid-template-columns={getWorkspaceGridTemplate()}>
-  <WorkspaceTranscript>
-    <PromptComposer />
-  </WorkspaceTranscript>
+  <div
+    class="grid h-full min-h-0 flex-1 grid-rows-1 overflow-hidden"
+    style:grid-template-columns={getWorkspaceGridTemplate()}
+  >
+    <div class="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <WorkspaceTranscript>
+        <PromptComposer />
+      </WorkspaceTranscript>
+    </div>
 
-  {#if isDiffPanelOpen}
-    <SessionDiffPanel />
-  {/if}
-
-  {#if isContextPanelOpen}
-    <ContextPanel />
-  {/if}
-</div>
+    {#if activeInspector === "diff"}
+      <SessionDiffPanel />
+    {:else if activeInspector === "context"}
+      <ContextPanel />
+    {/if}
+  </div>
+</PageShell>

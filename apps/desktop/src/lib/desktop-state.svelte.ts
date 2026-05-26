@@ -1,4 +1,9 @@
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
+
+export type WorkspaceInspector = "diff" | "context";
 
 export type ActivityItem = {
   type: string;
@@ -87,6 +92,27 @@ class DesktopState {
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
   hasSessionDiff = $derived(this.sessionDiff.patch.trim().length > 0);
+  activeInspector = $derived.by((): WorkspaceInspector | null => {
+    if (this.sessionDiffPanelOpen && this.hasSessionDiff) {
+      return "diff";
+    }
+
+    if (this.desktopSettings.contextPanelOpen) {
+      return "context";
+    }
+
+    return null;
+  });
+
+  ensureWorkspaceRoute() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (page.url.pathname !== "/workspace") {
+      void goto("/workspace");
+    }
+  }
 
   initializeListeners() {
     const removeEventListener = window.h3code?.onPiEvent((event) => {
@@ -237,12 +263,15 @@ class DesktopState {
     this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
+    this.ensureWorkspaceRoute();
   }
 
   async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
     if (!repoPath) {
       return;
     }
+
+    this.ensureWorkspaceRoute();
 
     if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
       await this.connectRepo(repoPath, sessionPath);
@@ -301,6 +330,7 @@ class DesktopState {
       });
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
+      this.ensureWorkspaceRoute();
     });
   }
 
@@ -474,7 +504,18 @@ class DesktopState {
       return;
     }
 
-    this.sessionDiffPanelOpen = open;
+    if (open) {
+      this.sessionDiffPanelOpen = true;
+
+      if (this.desktopSettings.contextPanelOpen) {
+        this.desktopSettings = { ...this.desktopSettings, contextPanelOpen: false };
+        void this.persistDesktopSettings({ contextPanelOpen: false });
+      }
+
+      return;
+    }
+
+    this.sessionDiffPanelOpen = false;
   }
 
   resetSessionDiff() {
@@ -541,6 +582,10 @@ class DesktopState {
   }
 
   setContextPanelOpen(open: boolean) {
+    if (open) {
+      this.sessionDiffPanelOpen = false;
+    }
+
     if (this.desktopSettings.contextPanelOpen === open) {
       return;
     }

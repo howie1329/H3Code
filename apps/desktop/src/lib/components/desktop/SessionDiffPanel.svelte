@@ -85,7 +85,7 @@
   });
 </script>
 
-<aside class="flex min-w-0 flex-col overflow-hidden border-l border-border/50 bg-background" aria-label="Session diff">
+<aside class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border/50 bg-background" aria-label="Session diff">
   <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3">
     <div class="min-w-0">
       <h3 class="truncate text-xs font-medium">Session diff</h3>
