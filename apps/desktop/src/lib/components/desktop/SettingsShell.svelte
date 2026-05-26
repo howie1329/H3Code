@@ -52,9 +52,9 @@
 </script>
 
 <PageShell>
-  <div class="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+  <div class="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden md:flex-row">
     <nav
-      class="flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 px-4 py-2 md:sticky md:top-0 md:w-44 md:max-h-full md:flex-col md:self-start md:overflow-y-auto md:border-b-0 md:border-r md:px-0 md:py-4"
+      class="flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 px-4 py-2 md:w-44 md:shrink-0 md:flex-col md:border-b-0 md:border-r md:px-0 md:py-4"
       aria-label="Settings"
     >
       {#each sections as section}
@@ -72,7 +72,7 @@
         </a>
       {/each}
     </nav>
-    <div bind:this={contentRef} class="min-h-0 flex-1 overflow-auto p-6">
+    <div bind:this={contentRef} class="min-h-0 min-w-0 flex-1 overflow-y-auto p-6">
       {@render children()}
     </div>
   </div>
