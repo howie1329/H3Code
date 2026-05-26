@@ -9,6 +9,15 @@ export const PI_THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
   xhigh: "Extra high",
 };
 
+export const PI_THINKING_LEVEL_SHORT_LABELS: Record<PiThinkingLevel, string> = {
+  off: "Off",
+  minimal: "Min",
+  low: "Low",
+  medium: "Med",
+  high: "High",
+  xhigh: "XHi",
+};
+
 export function getModelId(model: PiModel | undefined) {
   return model?.id ?? model?.modelId;
 }
@@ -46,6 +55,10 @@ export function normalizeThinkingLevel(level: string | undefined): PiThinkingLev
 
 export function getThinkingLevelLabel(level: string | undefined) {
   return PI_THINKING_LEVEL_LABELS[normalizeThinkingLevel(level)];
+}
+
+export function getThinkingLevelShortLabel(level: string | undefined) {
+  return PI_THINKING_LEVEL_SHORT_LABELS[normalizeThinkingLevel(level)];
 }
 
 export function groupModelsByProvider(models: PiModel[]) {

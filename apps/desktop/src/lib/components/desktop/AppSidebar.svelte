@@ -115,7 +115,7 @@
                   <Sidebar.MenuButton
                     size="sm"
                     isActive={isRepoActive}
-                    tooltipContent={repo.name}
+                    tooltipContent={`${repo.name}${repo.path !== repo.name ? ` · ${repo.path}` : ""}`}
                     aria-expanded={repo.expanded ? "true" : "false"}
                     class={menuButtonClass}
                     aria-disabled={desktopState.isBusy}
@@ -212,7 +212,7 @@
                                   <button
                                     {...props}
                                     type="button"
-                                    title={sessionLabel}
+                                    title={`${sessionLabel} · ${repo.name}`}
                                     aria-current={isSessionActive ? "page" : undefined}
                                     disabled={desktopState.isBusy}
                                     onclick={() => handleSessionClick(session.path, repo.path)}
