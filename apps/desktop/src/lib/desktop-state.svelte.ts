@@ -577,10 +577,10 @@ class DesktopState {
       this.sessionDiffPanelOpen = true;
 
       if (this.desktopSettings.contextPanelOpen) {
-        this.desktopSettings = { ...this.desktopSettings, contextPanelOpen: false };
         void this.persistDesktopSettings({ contextPanelOpen: false });
       }
 
+      void this.refreshSessionDiff();
       return;
     }
 
@@ -646,7 +646,6 @@ class DesktopState {
       return;
     }
 
-    this.desktopSettings = { ...this.desktopSettings, sidebarOpen: open };
     void this.persistDesktopSettings({ sidebarOpen: open });
   }
 
@@ -659,14 +658,17 @@ class DesktopState {
       return;
     }
 
-    this.desktopSettings = { ...this.desktopSettings, contextPanelOpen: open };
     void this.persistDesktopSettings({ contextPanelOpen: open });
   }
 
   async persistDesktopSettings(settings: Partial<DesktopSettings>) {
+    const previous = this.desktopSettings;
+    this.desktopSettings = { ...this.desktopSettings, ...settings };
+
     try {
-      this.desktopSettings = await this.requireApi().updateDesktopSettings(settings);
+      await this.requireApi().updateDesktopSettings(settings);
     } catch (error) {
+      this.desktopSettings = previous;
       this.errorMessage = getErrorMessage(error);
     }
   }

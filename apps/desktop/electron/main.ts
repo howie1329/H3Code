@@ -5,9 +5,15 @@ import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { SessionManager, type RpcCommand, type RpcResponse, type RpcSessionState, type SessionInfo } from "@earendil-works/pi-coding-agent";
-import { attachJsonlLineReader, serializeJsonLine } from "@earendil-works/pi-coding-agent/dist/modes/rpc/jsonl.js";
-import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-types.js";
+import {
+  SessionManager,
+  type RpcCommand,
+  type RpcResponse,
+  type RpcSessionState,
+  type SessionInfo,
+} from "@earendil-works/pi-coding-agent";
+import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
+import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "./pi-extension-ui-types.js";
 import {
   closePreferencesDatabase,
   getPiExecutablePath,
@@ -317,7 +323,13 @@ async function getUntrackedFileDiff(repoPath: string, filePath: string) {
 }
 
 function countChangedFiles(patch: string) {
-  return patch.split("\n").filter((line) => line.startsWith("diff --git ")).length;
+  const gitDiffHeaders = patch.split("\n").filter((line) => line.startsWith("diff --git ")).length;
+
+  if (gitDiffHeaders > 0) {
+    return gitDiffHeaders;
+  }
+
+  return patch.split("\n").filter((line) => line.startsWith("diff ")).length;
 }
 
 function runGit(args: string[], cwd: string) {
@@ -384,7 +396,7 @@ async function startPiProcess(repoPath: string) {
   });
 
   stopReadingStdout?.();
-  stopReadingStdout = attachJsonlLineReader(piProcess.stdout, (line) => {
+  stopReadingStdout = attachJsonlLineReader(piProcess.stdout, (line: string) => {
     try {
       handleRpcMessage(JSON.parse(line) as RpcResponse | unknown);
     } catch (error) {
