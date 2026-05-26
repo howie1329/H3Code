@@ -54,7 +54,9 @@ type OptimisticUserMessage = {
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
   promptValue = $state("");
+  activeAgentId = $state<string | undefined>();
   repoPath = $state<string | undefined>();
+  worktreePath = $state<string | undefined>();
   repos = $state<SidebarRepo[]>([]);
   sessions = $state<PiSessionSummary[]>([]);
   selectedSessionPath = $state<string | undefined>();
@@ -144,6 +146,14 @@ class DesktopState {
     });
 
     const removeStatusListener = window.h3code?.onPiStatus((status) => {
+      if (status.agentId && this.activeAgentId && status.agentId !== this.activeAgentId) {
+        return;
+      }
+
+      if (status.agentId) {
+        this.activeAgentId = status.agentId;
+      }
+
       this.piStatus = status;
 
       if (status.state !== "connected") {
@@ -280,6 +290,8 @@ class DesktopState {
     const result = await this.requireApi().connectRepo(nextRepoPath, selectedSessionPath);
 
     this.repoPath = result.repoPath;
+    this.activeAgentId = result.agentId;
+    this.worktreePath = result.worktreePath;
     this.repos = upsertRepo(this.repos, result.repoPath, {
       expanded: true,
       sessions: result.sessions,
@@ -325,6 +337,9 @@ class DesktopState {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
       const result = await this.requireApi().switchSession(sessionPath);
+      this.activeAgentId = result.agentId;
+      this.repoPath = result.repoPath ?? this.repoPath;
+      this.worktreePath = result.worktreePath;
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
       this.sessionStats = null;
@@ -353,12 +368,14 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
+      const parentSessionPath = this.selectedSessionPath;
 
-      if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
-        await this.connectRepoInternal(repoPath);
-      }
+      await this.connectRepoInternal(repoPath);
 
-      const result = await this.requireApi().newSession(this.selectedSessionPath);
+      const result = await this.requireApi().newSession(parentSessionPath);
+      this.activeAgentId = result.agentId;
+      this.repoPath = result.repoPath ?? repoPath;
+      this.worktreePath = result.worktreePath;
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
       this.sessionStats = null;
@@ -405,6 +422,8 @@ class DesktopState {
 
       if (this.repoPath === repoPath) {
         this.repoPath = undefined;
+        this.activeAgentId = undefined;
+        this.worktreePath = undefined;
         this.sessions = [];
         this.selectedSessionPath = undefined;
         this.sessionState = undefined;
@@ -853,10 +872,16 @@ class DesktopState {
     return this.requireApi().revealPreferencesDatabase();
   }
 
+  async revealWorktree() {
+    return this.requireApi().revealWorktree();
+  }
+
   async clearAllIndexedData() {
     const preferences = await this.requireApi().clearAllIndexedData();
     this.applyPreferencesSnapshot(preferences);
     this.repoPath = undefined;
+    this.activeAgentId = undefined;
+    this.worktreePath = undefined;
     this.selectedSessionPath = undefined;
     this.sessions = [];
     this.sessionState = undefined;
@@ -932,6 +957,16 @@ class DesktopState {
   }
 
   handleSessionEvent(event: SessionDomainEvent) {
+    const agentEvent = event as SessionDomainEvent & { agentId?: string };
+
+    if (agentEvent.agentId && this.activeAgentId && agentEvent.agentId !== this.activeAgentId) {
+      return;
+    }
+
+    if (agentEvent.agentId) {
+      this.activeAgentId = agentEvent.agentId;
+    }
+
     this.sessionReadModel = applySessionEvent(this.sessionReadModel, event);
 
     if (event.type === "run.started") {
@@ -1090,6 +1125,7 @@ function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[])
       path: session.path,
       id: session.id,
       cwd: session.repoPath,
+      worktreePath: session.worktreePath,
       name: session.name,
       created: session.created,
       modified: session.modified,

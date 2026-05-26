@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { stat, unlink } from "node:fs/promises";
+import { mkdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,10 +22,13 @@ import {
   closePreferencesDatabase,
   getPiExecutablePath,
   getPreferences,
+  getRepoWorktrees,
+  getSessionWorktree,
   removeIndexedRepo,
   removeIndexedSession,
-  recordRepoSessions,
+  recordRepoSessionRows,
   recordRepoUsage,
+  recordSessionWorktree,
   revealPreferencesDatabase,
   setPiExecutablePath,
   updateDesktopSettings,
@@ -35,7 +39,9 @@ type PiConnectionState = "disconnected" | "starting" | "connected" | "exited" | 
 
 type PiStatus = {
   state: PiConnectionState;
+  agentId?: string;
   repoPath?: string;
+  worktreePath?: string;
   diagnostic?: string;
 };
 
@@ -43,6 +49,8 @@ type PiSessionSummary = {
   path: string;
   id: string;
   cwd: string;
+  agentId?: string;
+  worktreePath?: string;
   name?: string;
   created: string;
   modified: string;
@@ -52,6 +60,8 @@ type PiSessionSummary = {
 
 type ConnectRepoResult = {
   repoPath: string;
+  agentId?: string;
+  worktreePath?: string;
   sessions: PiSessionSummary[];
   selectedSessionPath?: string;
   state?: RpcSessionState;
@@ -83,6 +93,19 @@ type PendingRequest = {
   reject: (error: Error) => void;
 };
 
+type PiAgentConnection = {
+  id: string;
+  process: ChildProcessWithoutNullStreams;
+  repoPath: string;
+  worktreePath: string;
+  status: PiStatus;
+  selectedSessionPath?: string;
+  nextRequestId: number;
+  rpcQueue: Promise<unknown>;
+  stopReadingStdout?: () => void;
+  pendingRequests: Map<string, PendingRequest>;
+};
+
 type SessionSnapshot = {
   state: RpcSessionState;
   messages: unknown[];
@@ -106,28 +129,24 @@ function getWindowIconPath() {
 }
 
 let mainWindow: BrowserWindow | undefined;
-let piProcess: ChildProcessWithoutNullStreams | undefined;
-let selectedRepoPath: string | undefined;
-let nextRequestId = 1;
 let status: PiStatus = { state: "disconnected" };
-let stopReadingStdout: (() => void) | undefined;
-const pendingRequests = new Map<string, PendingRequest>();
+let activeAgentId: string | undefined;
+const piAgents = new Map<string, PiAgentConnection>();
+const extensionUiRequestAgents = new Map<string, string>();
 const maxDiffBytes = 8 * 1024 * 1024;
 const RPC_REQUEST_TIMEOUT_MS = 30_000;
 
-let piRpcQueue: Promise<unknown> = Promise.resolve();
-
-function enqueuePiRpc<T>(task: () => Promise<T>): Promise<T> {
-  const run = piRpcQueue.then(task, task);
-  piRpcQueue = run.then(
+function enqueuePiRpc<T>(agent: PiAgentConnection, task: () => Promise<T>): Promise<T> {
+  const run = agent.rpcQueue.then(task, task);
+  agent.rpcQueue = run.then(
     () => undefined,
     () => undefined,
   );
   return run;
 }
 
-function resetPiRpcQueue() {
-  piRpcQueue = Promise.resolve();
+function resetPiRpcQueue(agent: PiAgentConnection) {
+  agent.rpcQueue = Promise.resolve();
 }
 
 function createMainWindow() {
@@ -174,26 +193,43 @@ function emitStatus(nextStatus: PiStatus) {
   mainWindow?.webContents.send("pi:status", status);
 }
 
-function emitSessionEvent(event: SessionEventEnvelope) {
-  mainWindow?.webContents.send("pi:session-event", event);
+function emitAgentStatus(agent: PiAgentConnection, nextStatus: Omit<PiStatus, "agentId" | "repoPath" | "worktreePath">) {
+  agent.status = {
+    ...nextStatus,
+    agentId: agent.id,
+    repoPath: agent.repoPath,
+    worktreePath: agent.worktreePath,
+  };
+
+  if (activeAgentId === agent.id) {
+    emitStatus(agent.status);
+    return;
+  }
+
+  mainWindow?.webContents.send("pi:status", agent.status);
 }
 
-function emitDomainEventsFromRaw(raw: unknown) {
+function emitSessionEvent(agentId: string, event: SessionEventEnvelope) {
+  mainWindow?.webContents.send("pi:session-event", { ...event, agentId });
+}
+
+function emitDomainEventsFromRaw(agentId: string, raw: unknown) {
   for (const domainEvent of piRpcToDomainEvents(raw)) {
-    emitSessionEvent(createSessionEventEnvelope(domainEvent));
+    emitSessionEvent(agentId, createSessionEventEnvelope(domainEvent));
   }
 }
 
-function emitExtensionUiRequest(request: RpcExtensionUIRequest) {
-  mainWindow?.webContents.send("pi:extension-ui-request", request);
+function emitExtensionUiRequest(agentId: string, request: RpcExtensionUIRequest) {
+  extensionUiRequestAgents.set(request.id, agentId);
+  mainWindow?.webContents.send("pi:extension-ui-request", { ...request, agentId });
 }
 
-function rejectPendingRequests(error: Error) {
-  for (const request of pendingRequests.values()) {
+function rejectPendingRequests(agent: PiAgentConnection, error: Error) {
+  for (const request of agent.pendingRequests.values()) {
     request.reject(error);
   }
 
-  pendingRequests.clear();
+  agent.pendingRequests.clear();
 }
 
 async function assertDirectory(repoPath: string) {
@@ -219,12 +255,78 @@ function serializeSession(session: SessionInfo): PiSessionSummary {
 
 async function listSessionsForRepo(repoPath: string, markRecent = false) {
   await assertDirectory(repoPath);
-  const sessions = await SessionManager.list(repoPath);
+  const sessions = await listAllSessionsForLogicalRepo(repoPath);
   if (markRecent) {
     recordRepoUsage(repoPath);
   }
-  recordRepoSessions(repoPath, sessions);
-  return sessions.map(serializeSession);
+  recordRepoSessionRows(repoPath, sessions);
+  return sessions;
+}
+
+async function listAllSessionsForLogicalRepo(repoPath: string): Promise<PiSessionSummary[]> {
+  const sessionsByPath = new Map<string, PiSessionSummary>();
+
+  for (const session of await SessionManager.list(repoPath)) {
+    sessionsByPath.set(session.path, serializeSession(session));
+  }
+
+  for (const worktree of getRepoWorktrees(repoPath)) {
+    if (!existsSync(worktree.worktreePath)) {
+      continue;
+    }
+
+    for (const session of await SessionManager.list(worktree.worktreePath)) {
+      sessionsByPath.set(session.path, {
+        ...serializeSession(session),
+        cwd: repoPath,
+        worktreePath: worktree.worktreePath,
+      });
+    }
+  }
+
+  for (const agent of piAgents.values()) {
+    if (agent.repoPath !== repoPath) {
+      continue;
+    }
+
+    for (const session of await SessionManager.list(agent.worktreePath)) {
+      sessionsByPath.set(session.path, {
+        ...serializeSession(session),
+        cwd: repoPath,
+        agentId: agent.id,
+        worktreePath: agent.worktreePath,
+      });
+    }
+  }
+
+  return [...sessionsByPath.values()].sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified));
+}
+
+async function createAgentWorktree(repoPath: string) {
+  const repoCheck = await runGit(["rev-parse", "--is-inside-work-tree"], repoPath);
+
+  if (repoCheck.status !== 0 || repoCheck.stdout.trim() !== "true") {
+    throw new Error("Multiple live PI agents require a git repository.");
+  }
+
+  const rootResult = await runGit(["rev-parse", "--show-toplevel"], repoPath);
+  const root = rootResult.stdout.trim() || repoPath;
+  const worktreesDir = path.join(app.getPath("userData"), "pi-worktrees");
+  await mkdir(worktreesDir, { recursive: true });
+
+  const worktreePath = path.join(worktreesDir, `${basename(root)}-${randomUUID().slice(0, 8)}`);
+  const result = await runGit(["worktree", "add", "--detach", worktreePath, "HEAD"], root);
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || "Could not create git worktree.");
+  }
+
+  return worktreePath;
+}
+
+function basename(value: string) {
+  const clean = value.replace(/\/+$/, "");
+  return clean.slice(clean.lastIndexOf("/") + 1) || clean;
 }
 
 async function deleteSessionFile(sessionPath: string): Promise<"trash" | "unlink"> {
@@ -263,17 +365,18 @@ function getTrashErrorMessage(result: ReturnType<typeof spawnSync>) {
 
 async function deletePiSession(repoPath: string, sessionPath: string) {
   await assertDirectory(repoPath);
-  const sessions = await SessionManager.list(repoPath);
+  const sessionWorktree = getSessionWorktree(sessionPath);
+  const sessionCwd = sessionWorktree?.worktreePath ?? repoPath;
+  const sessions = await SessionManager.list(sessionCwd);
   const session = sessions.find((item) => item.path === sessionPath);
 
   if (!session) {
     throw new Error("Session does not belong to this repo.");
   }
 
-  if (selectedRepoPath === repoPath && sessionPath === await getActiveSessionPath()) {
-    await stopPiProcess();
-    selectedRepoPath = undefined;
-    emitStatus({ state: "disconnected" });
+  const activeAgent = getAgentBySessionPath(sessionPath);
+  if (activeAgent) {
+    await stopPiAgent(activeAgent);
   }
 
   await deleteSessionFile(sessionPath);
@@ -282,43 +385,38 @@ async function deletePiSession(repoPath: string, sessionPath: string) {
   return listSessionsForRepo(repoPath, true);
 }
 
-async function getActiveSessionPath() {
-  if (!piProcess || status.state !== "connected") {
-    return undefined;
-  }
-
-  const { state } = await getStateAndMessages();
-  return state.sessionFile;
-}
-
 async function listPiSessions() {
-  if (!selectedRepoPath) {
+  const agent = getActiveAgent();
+
+  if (!agent) {
     throw new Error("Select a repo before listing sessions.");
   }
 
-  return listSessionsForRepo(selectedRepoPath, true);
+  return listSessionsForRepo(agent.repoPath, true);
 }
 
 async function getSessionDiff(): Promise<SessionDiff> {
-  if (!selectedRepoPath) {
+  const agent = getActiveAgent();
+
+  if (!agent) {
     return { patch: "", changedFiles: 0 };
   }
 
-  await assertDirectory(selectedRepoPath);
+  await assertDirectory(agent.worktreePath);
 
-  const repoCheck = await runGit(["rev-parse", "--is-inside-work-tree"], selectedRepoPath);
+  const repoCheck = await runGit(["rev-parse", "--is-inside-work-tree"], agent.worktreePath);
 
   if (repoCheck.status !== 0 || repoCheck.stdout.trim() !== "true") {
     return { patch: "", changedFiles: 0 };
   }
 
-  const trackedDiff = await runGit(["diff", "HEAD", "--no-ext-diff", "--no-color", "--binary"], selectedRepoPath);
-  const untrackedFiles = await getUntrackedFiles(selectedRepoPath);
+  const trackedDiff = await runGit(["diff", "HEAD", "--no-ext-diff", "--no-color", "--binary"], agent.worktreePath);
+  const untrackedFiles = await getUntrackedFiles(agent.worktreePath);
   const patches = trackedDiff.stdout ? [trackedDiff.stdout] : [];
   let patchBytes = trackedDiff.stdout.length;
 
   for (const file of untrackedFiles) {
-    const fileDiff = await getUntrackedFileDiff(selectedRepoPath, file);
+    const fileDiff = await getUntrackedFileDiff(agent.worktreePath, file);
 
     if (fileDiff) {
       patches.push(fileDiff);
@@ -398,83 +496,127 @@ function runGit(args: string[], cwd: string) {
   });
 }
 
-async function stopPiProcess() {
-  if (!piProcess) {
-    return;
-  }
-
-  const processToStop = piProcess;
-  piProcess = undefined;
-  stopReadingStdout?.();
-  stopReadingStdout = undefined;
-  processToStop.removeAllListeners();
-  processToStop.stdout.removeAllListeners();
-  processToStop.stderr.removeAllListeners();
-  processToStop.kill();
-  rejectPendingRequests(new Error("PI RPC process stopped."));
-  resetPiRpcQueue();
+function getActiveAgent() {
+  return activeAgentId ? piAgents.get(activeAgentId) : undefined;
 }
 
-async function startPiProcess(repoPath: string) {
-  await stopPiProcess();
-  await assertDirectory(repoPath);
+function getAgentBySessionPath(sessionPath: string) {
+  const directAgent = [...piAgents.values()].find((agent) => agent.selectedSessionPath === sessionPath);
 
-  selectedRepoPath = repoPath;
-  emitStatus({ state: "starting", repoPath });
+  if (directAgent) {
+    return directAgent;
+  }
+
+  const worktree = getSessionWorktree(sessionPath);
+
+  if (!worktree) {
+    return undefined;
+  }
+
+  return [...piAgents.values()].find((agent) => agent.worktreePath === worktree.worktreePath);
+}
+
+async function stopPiAgent(agent: PiAgentConnection) {
+  piAgents.delete(agent.id);
+
+  if (activeAgentId === agent.id) {
+    activeAgentId = undefined;
+    emitStatus({ state: "disconnected" });
+  }
+
+  agent.stopReadingStdout?.();
+  agent.stopReadingStdout = undefined;
+  agent.process.removeAllListeners();
+  agent.process.stdout.removeAllListeners();
+  agent.process.stderr.removeAllListeners();
+  agent.process.kill();
+  rejectPendingRequests(agent, new Error("PI RPC process stopped."));
+  resetPiRpcQueue(agent);
+}
+
+async function stopAllPiAgents() {
+  await Promise.all([...piAgents.values()].map((agent) => stopPiAgent(agent)));
+}
+
+async function startPiAgent(repoPath: string, worktreePath?: string) {
+  await assertDirectory(repoPath);
+  const agentWorktreePath = worktreePath ?? await createAgentWorktree(repoPath);
+  await assertDirectory(agentWorktreePath);
+
+  const agent: PiAgentConnection = {
+    id: `agent-${randomUUID()}`,
+    process: undefined as unknown as ChildProcessWithoutNullStreams,
+    repoPath,
+    worktreePath: agentWorktreePath,
+    status: { state: "starting", repoPath, worktreePath: agentWorktreePath },
+    nextRequestId: 1,
+    rpcQueue: Promise.resolve(),
+    pendingRequests: new Map(),
+  };
+
+  activeAgentId = agent.id;
+  emitAgentStatus(agent, { state: "starting" });
 
   const piExecutable = getPiExecutablePath();
-  piProcess = spawn(piExecutable, ["--mode", "rpc"], {
-    cwd: repoPath,
+  agent.process = spawn(piExecutable, ["--mode", "rpc"], {
+    cwd: agentWorktreePath,
     env: process.env,
   });
+  piAgents.set(agent.id, agent);
 
-  stopReadingStdout?.();
-  stopReadingStdout = attachJsonlLineReader(piProcess.stdout, (line: string) => {
+  agent.stopReadingStdout = attachJsonlLineReader(agent.process.stdout, (line: string) => {
     try {
-      handleRpcMessage(JSON.parse(line) as RpcResponse | unknown);
+      handleRpcMessage(agent, JSON.parse(line) as RpcResponse | unknown);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      emitStatus({
+      emitAgentStatus(agent, {
         state: "error",
-        repoPath: selectedRepoPath,
         diagnostic: `Malformed PI RPC JSON: ${message}`,
       });
     }
   });
 
-  piProcess.stderr.setEncoding("utf8");
-  piProcess.stderr.on("data", (chunk: string) => {
+  agent.process.stderr.setEncoding("utf8");
+  agent.process.stderr.on("data", (chunk: string) => {
     const diagnostic = chunk.trim();
 
     if (diagnostic) {
-      emitStatus({ state: status.state, repoPath, diagnostic });
+      emitAgentStatus(agent, { state: agent.status.state, diagnostic });
     }
   });
 
-  piProcess.on("error", (error) => {
-    rejectPendingRequests(error);
-    emitStatus({ state: "error", repoPath, diagnostic: error.message });
+  agent.process.on("error", (error) => {
+    rejectPendingRequests(agent, error);
+    emitAgentStatus(agent, { state: "error", diagnostic: error.message });
   });
 
-  piProcess.on("exit", (code, signal) => {
+  agent.process.on("exit", (code, signal) => {
     const diagnostic = `PI exited${code === null ? "" : ` with code ${code}`}${signal ? ` (${signal})` : ""}.`;
-    piProcess = undefined;
-    rejectPendingRequests(new Error(diagnostic));
-    emitStatus({ state: "exited", repoPath, diagnostic });
+    piAgents.delete(agent.id);
+    if (activeAgentId === agent.id) {
+      activeAgentId = undefined;
+    }
+    rejectPendingRequests(agent, new Error(diagnostic));
+    emitAgentStatus(agent, { state: "exited", diagnostic });
+  });
+
+  return agent;
+}
+
+async function ensurePiHandshake(agent: PiAgentConnection) {
+  await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>(agent, { type: "get_state" });
+  emitAgentStatus(agent, {
+    state: "connected",
+    diagnostic: piAgents.size >= 4 ? "Four or more PI agents are running. Watch CPU usage and provider spend." : undefined,
   });
 }
 
-async function ensurePiHandshake(repoPath: string) {
-  await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
-  emitStatus({ state: "connected", repoPath });
-}
-
-function handleRpcMessage(message: RpcResponse | unknown) {
+function handleRpcMessage(agent: PiAgentConnection, message: RpcResponse | unknown) {
   if (isRpcResponse(message)) {
-    const pending = message.id ? pendingRequests.get(message.id) : undefined;
+    const pending = message.id ? agent.pendingRequests.get(message.id) : undefined;
 
     if (pending && message.id) {
-      pendingRequests.delete(message.id);
+      agent.pendingRequests.delete(message.id);
       pending.resolve(message);
       return;
     }
@@ -482,8 +624,10 @@ function handleRpcMessage(message: RpcResponse | unknown) {
     if (message.id) {
       const command = "command" in message && typeof message.command === "string" ? message.command : "unknown";
       emitStatus({
-        state: status.state,
-        repoPath: selectedRepoPath,
+        state: agent.status.state,
+        agentId: agent.id,
+        repoPath: agent.repoPath,
+        worktreePath: agent.worktreePath,
         diagnostic: `Unexpected PI RPC response for ${command} (${message.id}).`,
       });
       return;
@@ -491,69 +635,76 @@ function handleRpcMessage(message: RpcResponse | unknown) {
   }
 
   if (isExtensionUiRequest(message)) {
-    handleExtensionUiRequest(message);
+    handleExtensionUiRequest(agent, message);
     return;
   }
 
-  emitDomainEventsFromRaw(message);
+  emitDomainEventsFromRaw(agent.id, message);
 }
 
 function isExtensionUiRequest(message: unknown): message is RpcExtensionUIRequest {
   return Boolean(message && typeof message === "object" && "type" in message && message.type === "extension_ui_request");
 }
 
-function handleExtensionUiRequest(request: RpcExtensionUIRequest) {
+function handleExtensionUiRequest(agent: PiAgentConnection, request: RpcExtensionUIRequest) {
   if (
     request.method === "notify" ||
     request.method === "setStatus" ||
     request.method === "setWidget" ||
     request.method === "setTitle"
   ) {
-    emitDomainEventsFromRaw(request);
+    emitDomainEventsFromRaw(agent.id, request);
     return;
   }
 
-  emitExtensionUiRequest(request);
+  emitExtensionUiRequest(agent.id, request);
 }
 
 async function sendExtensionUiResponse(response: RpcExtensionUIResponse) {
-  return enqueuePiRpc(async () => {
-    writeExtensionUiResponse(response);
-  });
-}
+  const agentId = extensionUiRequestAgents.get(response.id) ?? activeAgentId;
+  const agent = agentId ? piAgents.get(agentId) : undefined;
 
-function writeExtensionUiResponse(response: RpcExtensionUIResponse) {
-  if (!piProcess || !piProcess.stdin.writable) {
+  if (!agent) {
     throw new Error("PI RPC is not connected.");
   }
 
-  const id = `h3code-${nextRequestId++}`;
-  piProcess.stdin.write(serializeJsonLine({ ...response, id }));
+  extensionUiRequestAgents.delete(response.id);
+  return enqueuePiRpc(agent, async () => {
+    writeExtensionUiResponse(agent, response);
+  });
+}
+
+function writeExtensionUiResponse(agent: PiAgentConnection, response: RpcExtensionUIResponse) {
+  if (!agent.process.stdin.writable) {
+    throw new Error("PI RPC is not connected.");
+  }
+
+  agent.process.stdin.write(serializeJsonLine(response));
 }
 
 function isRpcResponse(message: unknown): message is RpcResponse {
   return Boolean(message && typeof message === "object" && "type" in message && message.type === "response");
 }
 
-async function sendCommand<T extends RpcResponse>(command: RpcCommand): Promise<T> {
-  return enqueuePiRpc(() => sendCommandImmediate<T>(command));
+async function sendCommand<T extends RpcResponse>(agent: PiAgentConnection, command: RpcCommand): Promise<T> {
+  return enqueuePiRpc(agent, () => sendCommandImmediate<T>(agent, command));
 }
 
-function sendCommandImmediate<T extends RpcResponse>(command: RpcCommand): Promise<T> {
-  if (!piProcess || !piProcess.stdin.writable) {
+function sendCommandImmediate<T extends RpcResponse>(agent: PiAgentConnection, command: RpcCommand): Promise<T> {
+  if (!agent.process.stdin.writable) {
     return Promise.reject(new Error("PI RPC is not connected."));
   }
 
-  const id = `h3code-${nextRequestId++}`;
+  const id = `h3code-${agent.nextRequestId++}`;
   const commandWithId = { ...command, id };
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      pendingRequests.delete(id);
+      agent.pendingRequests.delete(id);
       reject(new Error(`Timeout waiting for response to ${command.type}.`));
     }, RPC_REQUEST_TIMEOUT_MS);
 
-    pendingRequests.set(id, {
+    agent.pendingRequests.set(id, {
       resolve: (response) => {
         clearTimeout(timeout);
 
@@ -570,26 +721,37 @@ function sendCommandImmediate<T extends RpcResponse>(command: RpcCommand): Promi
       },
     });
 
-    piProcess?.stdin.write(serializeJsonLine(commandWithId), (error) => {
+    agent.process.stdin.write(serializeJsonLine(commandWithId), (error) => {
       if (!error) {
         return;
       }
 
       clearTimeout(timeout);
-      pendingRequests.delete(id);
+      agent.pendingRequests.delete(id);
       reject(error);
     });
   });
 }
 
 async function getSessionState() {
-  const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
+  const agent = requireActiveAgent();
+  const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>(agent, { type: "get_state" });
   return stateResponse.data;
 }
 
-async function getStateAndMessages(): Promise<SessionSnapshot> {
-  const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>({ type: "get_state" });
-  const messagesResponse = await sendCommand<Extract<RpcResponse, { command: "get_messages"; success: true }>>({ type: "get_messages" });
+function requireActiveAgent() {
+  const agent = getActiveAgent();
+
+  if (!agent) {
+    throw new Error("PI RPC is not connected.");
+  }
+
+  return agent;
+}
+
+async function getStateAndMessages(agent = requireActiveAgent()): Promise<SessionSnapshot> {
+  const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>(agent, { type: "get_state" });
+  const messagesResponse = await sendCommand<Extract<RpcResponse, { command: "get_messages"; success: true }>>(agent, { type: "get_messages" });
 
   return {
     state: stateResponse.data,
@@ -598,24 +760,24 @@ async function getStateAndMessages(): Promise<SessionSnapshot> {
 }
 
 async function getSessionStats() {
-  const response = await sendCommand<Extract<RpcResponse, { command: "get_session_stats"; success: true }>>({ type: "get_session_stats" });
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_session_stats"; success: true }>>(requireActiveAgent(), { type: "get_session_stats" });
   return response.data;
 }
 
 async function getPiCommands() {
-  const response = await sendCommand<Extract<RpcResponse, { command: "get_commands"; success: true }>>({ type: "get_commands" });
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_commands"; success: true }>>(requireActiveAgent(), { type: "get_commands" });
   return response.data.commands.map(normalizeSlashCommand);
 }
 
 async function getAvailableModels() {
-  const response = await sendCommand<Extract<RpcResponse, { command: "get_available_models"; success: true }>>({
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_available_models"; success: true }>>(requireActiveAgent(), {
     type: "get_available_models",
   });
   return response.data.models;
 }
 
 async function setPiModel(provider: string, modelId: string) {
-  const response = await sendCommand<Extract<RpcResponse, { command: "set_model"; success: true }>>({
+  const response = await sendCommand<Extract<RpcResponse, { command: "set_model"; success: true }>>(requireActiveAgent(), {
     type: "set_model",
     provider,
     modelId,
@@ -626,7 +788,7 @@ async function setPiModel(provider: string, modelId: string) {
 type PiThinkingLevel = Extract<RpcCommand, { type: "set_thinking_level" }>["level"];
 
 async function setPiThinkingLevel(level: PiThinkingLevel) {
-  await sendCommand<Extract<RpcResponse, { command: "set_thinking_level"; success: true }>>({
+  await sendCommand<Extract<RpcResponse, { command: "set_thinking_level"; success: true }>>(requireActiveAgent(), {
     type: "set_thinking_level",
     level,
   });
@@ -635,21 +797,21 @@ async function setPiThinkingLevel(level: PiThinkingLevel) {
 type PiQueueMode = Extract<RpcCommand, { type: "set_steering_mode" }>["mode"];
 
 async function setPiSteeringMode(mode: PiQueueMode) {
-  await sendCommand<Extract<RpcResponse, { command: "set_steering_mode"; success: true }>>({
+  await sendCommand<Extract<RpcResponse, { command: "set_steering_mode"; success: true }>>(requireActiveAgent(), {
     type: "set_steering_mode",
     mode,
   });
 }
 
 async function setPiFollowUpMode(mode: PiQueueMode) {
-  await sendCommand<Extract<RpcResponse, { command: "set_follow_up_mode"; success: true }>>({
+  await sendCommand<Extract<RpcResponse, { command: "set_follow_up_mode"; success: true }>>(requireActiveAgent(), {
     type: "set_follow_up_mode",
     mode,
   });
 }
 
 async function setPiAutoCompaction(enabled: boolean) {
-  await sendCommand<Extract<RpcResponse, { command: "set_auto_compaction"; success: true }>>({
+  await sendCommand<Extract<RpcResponse, { command: "set_auto_compaction"; success: true }>>(requireActiveAgent(), {
     type: "set_auto_compaction",
     enabled,
   });
@@ -686,16 +848,33 @@ function toRecord(value: unknown): Record<string, unknown> {
 }
 
 async function switchPiSession(sessionPath: string) {
-  await sendCommand<Extract<RpcResponse, { command: "switch_session"; success: true }>>({
+  let agent = getAgentBySessionPath(sessionPath);
+  const mappedWorktree = getSessionWorktree(sessionPath);
+
+  if (!agent && mappedWorktree) {
+    agent = await startPiAgent(mappedWorktree.repoPath, mappedWorktree.worktreePath);
+    await ensurePiHandshake(agent);
+  }
+
+  agent ??= requireActiveAgent();
+  activeAgentId = agent.id;
+  emitStatus(agent.status);
+
+  await sendCommand<Extract<RpcResponse, { command: "switch_session"; success: true }>>(agent, {
     type: "switch_session",
     sessionPath,
   });
 
-  if (selectedRepoPath) {
-    recordRepoUsage(selectedRepoPath, sessionPath);
-  }
+  recordRepoUsage(agent.repoPath, sessionPath);
 
-  return getStateAndMessages();
+  const snapshot = await getStateAndMessages(agent);
+  agent.selectedSessionPath = snapshot.state.sessionFile ?? sessionPath;
+  return {
+    ...snapshot,
+    agentId: agent.id,
+    repoPath: agent.repoPath,
+    worktreePath: agent.worktreePath,
+  };
 }
 
 ipcMain.handle("repo:select", async () => {
@@ -724,20 +903,30 @@ ipcMain.handle("dialog:pick-executable", async () => {
 });
 
 ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessionPath?: string): Promise<ConnectRepoResult> => {
-  await startPiProcess(repoPath);
-  await ensurePiHandshake(repoPath);
+  let agent = selectedSessionPath ? getAgentBySessionPath(selectedSessionPath) : undefined;
+  const mappedWorktree = selectedSessionPath ? getSessionWorktree(selectedSessionPath) : undefined;
+
+  if (!agent) {
+    agent = await startPiAgent(repoPath, mappedWorktree?.worktreePath);
+    await ensurePiHandshake(agent);
+  } else {
+    activeAgentId = agent.id;
+    emitStatus(agent.status);
+  }
 
   const sessions = await listPiSessions();
   const selectedSession = sessions.find((session) => session.path === selectedSessionPath) ?? sessions[0];
 
   if (!selectedSession) {
-    return { repoPath, sessions };
+    return { repoPath, agentId: agent.id, worktreePath: agent.worktreePath, sessions };
   }
 
   const { state, messages } = await switchPiSession(selectedSession.path);
 
   return {
     repoPath,
+    agentId: agent.id,
+    worktreePath: agent.worktreePath,
     sessions,
     selectedSessionPath: selectedSession.path,
     state,
@@ -750,6 +939,11 @@ ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string, markRec
 ipcMain.handle("pi:delete-session", async (_event, repoPath: string, sessionPath: string) => deletePiSession(repoPath, sessionPath));
 ipcMain.handle("pi:get-session-stats", getSessionStats);
 ipcMain.handle("pi:get-session-diff", getSessionDiff);
+ipcMain.handle("pi:reveal-worktree", () => {
+  const agent = requireActiveAgent();
+  shell.showItemInFolder(agent.worktreePath);
+  return agent.worktreePath;
+});
 ipcMain.handle("pi:get-commands", getPiCommands);
 ipcMain.handle("pi:get-available-models", getAvailableModels);
 ipcMain.handle("pi:set-model", async (_event, provider: string, modelId: string) => setPiModel(provider, modelId));
@@ -768,28 +962,36 @@ ipcMain.handle("pi:set-auto-compaction", async (_event, enabled: boolean) => {
   await setPiAutoCompaction(enabled);
   return getSessionState();
 });
-ipcMain.handle("pi:get-session-snapshot", getStateAndMessages);
+ipcMain.handle("pi:get-session-snapshot", async () => getStateAndMessages());
 ipcMain.handle("pi:get-session-state", getSessionState);
 
 ipcMain.handle("pi:switch-session", async (_event, sessionPath: string) => switchPiSession(sessionPath));
 
 ipcMain.handle("pi:new-session", async (_event, parentSession?: string) => {
-  await sendCommand<Extract<RpcResponse, { command: "new_session"; success: true }>>({
+  const agent = requireActiveAgent();
+  await sendCommand<Extract<RpcResponse, { command: "new_session"; success: true }>>(agent, {
     type: "new_session",
     parentSession,
   });
 
-  const result = await getStateAndMessages();
+  const result = await getStateAndMessages(agent);
 
-  if (selectedRepoPath && result.state.sessionFile) {
-    recordRepoUsage(selectedRepoPath, result.state.sessionFile);
+  if (result.state.sessionFile) {
+    agent.selectedSessionPath = result.state.sessionFile;
+    recordRepoUsage(agent.repoPath, result.state.sessionFile);
+    recordSessionWorktree(agent.repoPath, result.state.sessionFile, agent.worktreePath);
   }
 
-  return result;
+  return {
+    ...result,
+    agentId: agent.id,
+    repoPath: agent.repoPath,
+    worktreePath: agent.worktreePath,
+  };
 });
 
 ipcMain.handle("pi:send-prompt", async (_event, message: string, streamingBehavior?: "steer" | "followUp") => {
-  await sendCommand<Extract<RpcResponse, { command: "prompt"; success: true }>>({
+  await sendCommand<Extract<RpcResponse, { command: "prompt"; success: true }>>(requireActiveAgent(), {
     type: "prompt",
     message,
     streamingBehavior,
@@ -797,21 +999,21 @@ ipcMain.handle("pi:send-prompt", async (_event, message: string, streamingBehavi
 });
 
 ipcMain.handle("pi:send-steer", async (_event, message: string) => {
-  await sendCommand<Extract<RpcResponse, { command: "steer"; success: true }>>({
+  await sendCommand<Extract<RpcResponse, { command: "steer"; success: true }>>(requireActiveAgent(), {
     type: "steer",
     message,
   });
 });
 
 ipcMain.handle("pi:send-follow-up", async (_event, message: string) => {
-  await sendCommand<Extract<RpcResponse, { command: "follow_up"; success: true }>>({
+  await sendCommand<Extract<RpcResponse, { command: "follow_up"; success: true }>>(requireActiveAgent(), {
     type: "follow_up",
     message,
   });
 });
 
 ipcMain.handle("pi:abort", async () => {
-  await sendCommand<Extract<RpcResponse, { command: "abort"; success: true }>>({ type: "abort" });
+  await sendCommand<Extract<RpcResponse, { command: "abort"; success: true }>>(requireActiveAgent(), { type: "abort" });
 });
 
 ipcMain.handle("pi:extension-ui-response", async (_event, response: RpcExtensionUIResponse) => {
@@ -826,21 +1028,13 @@ ipcMain.handle("preferences:set-pi-executable-path", async (_event, executablePa
   return { piExecutablePath: nextPath };
 });
 ipcMain.handle("preferences:remove-repo", async (_event, repoPath: string) => {
-  if (selectedRepoPath === repoPath) {
-    await stopPiProcess();
-    selectedRepoPath = undefined;
-    emitStatus({ state: "disconnected" });
-  }
+  await Promise.all([...piAgents.values()].filter((agent) => agent.repoPath === repoPath).map((agent) => stopPiAgent(agent)));
 
   return removeIndexedRepo(repoPath);
 });
 ipcMain.handle("preferences:update-desktop-settings", async (_event, settings: Partial<DesktopSettings>) => updateDesktopSettings(settings));
 ipcMain.handle("preferences:clear-all-indexed", async () => {
-  if (selectedRepoPath) {
-    await stopPiProcess();
-    selectedRepoPath = undefined;
-    emitStatus({ state: "disconnected" });
-  }
+  await stopAllPiAgents();
 
   return clearAllIndexedData();
 });
@@ -865,7 +1059,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
-  void stopPiProcess();
+  void stopAllPiAgents();
   closePreferencesDatabase();
 });
 

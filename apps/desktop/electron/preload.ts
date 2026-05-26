@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("h3code", {
   getSessionState: () => ipcRenderer.invoke("pi:get-session-state"),
   getSessionStats: () => ipcRenderer.invoke("pi:get-session-stats"),
   getSessionDiff: () => ipcRenderer.invoke("pi:get-session-diff"),
+  revealWorktree: () => ipcRenderer.invoke("pi:reveal-worktree"),
   getCommands: () => ipcRenderer.invoke("pi:get-commands"),
   getAvailableModels: () => ipcRenderer.invoke("pi:get-available-models"),
   setModel: (provider: string, modelId: string) => ipcRenderer.invoke("pi:set-model", provider, modelId),
