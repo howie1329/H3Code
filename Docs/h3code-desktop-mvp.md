@@ -10,7 +10,7 @@ H3Code is not the agent runtime, session system, message store, model router, or
 
 ## Implementation Status
 
-This document describes the MVP target. The current `apps/desktop` app implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt/steer/follow-up, abort, transcript rendering, session stats, diagnostics, recent activity, SQLite-backed recent repos and session metadata index, configurable PI executable path, extension UI prompts (select/confirm/input/editor), and RPC sync after agent runs. Remaining MVP gaps include stronger live tool activity rendering and better discovery across workspace repo/session metadata.
+This document describes the MVP target. The current `apps/desktop` app implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt/steer/follow-up, abort, transcript rendering, session stats, diagnostics, recent activity, SQLite-backed recent repos and session metadata index, configurable PI executable path, extension UI prompts (select/confirm/input/editor), and PI RPC event sync (transcript from `agent_end.messages` with `get_messages` fallback, session git diff on `turn_end` and `agent_end`, serialized main-process RPC commands, renderer resync when connected after reload). Remaining MVP gaps include stronger live tool activity rendering and better discovery across workspace repo/session metadata.
 
 ## Product Boundary
 
@@ -100,8 +100,10 @@ Main process responsibilities:
 
 - Spawn and stop PI.
 - Own JSONL parsing and command correlation.
+- Serialize RPC commands and extension UI responses on a single queue (one stdin write at a time).
 - Validate selected repo paths before using them as `cwd`.
 - Capture stdout events, command responses, stderr diagnostics, exit codes, and start failures.
+- Do not forward uncorrelated `type: "response"` lines to the renderer as agent events.
 - Expose a small typed IPC surface to the renderer.
 
 Renderer responsibilities:
@@ -109,8 +111,11 @@ Renderer responsibilities:
 - Show connection state.
 - Let the user select a repo.
 - Render current PI state.
-- Render messages returned by PI.
+- Render messages returned by PI; prefer `agent_end.messages`, with `get_messages` as fallback.
 - Render streaming assistant deltas and tool activity events.
+- Refresh session git diff on `turn_end` (debounced) and after `agent_end`.
+- Clear running/streaming UI as soon as `agent_end` arrives, before slow refresh work.
+- Resync transcript/diff when the renderer reloads while PI remains connected.
 - Provide composer controls for prompt, steer, follow-up, abort, and new session.
 
 ## Local Preferences

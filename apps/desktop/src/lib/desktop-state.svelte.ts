@@ -88,6 +88,10 @@ class DesktopState {
   extensionUiRequest = $state<PiExtensionUiRequest | undefined>();
   desktopSettings = $state<DesktopSettings>(defaultDesktopSettings);
 
+  reconcileInFlight = false;
+  reconcileAgain = false;
+  diffRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
   canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
@@ -142,6 +146,7 @@ class DesktopState {
         this.resetTransientTranscript();
         this.resetSessionDiff();
         this.clearExtensionUiRequest();
+        this.cancelDebouncedDiffRefresh();
       }
 
       if (status.diagnostic) {
@@ -195,6 +200,8 @@ class DesktopState {
           this.piStatus.state !== "connected"
         ) {
           await this.connectRepo(preferences.lastSelectedRepoPath, preferences.lastSelectedSessionPath);
+        } else {
+          await this.resyncConnectedSessionIfNeeded();
         }
       }
     } catch (error) {
@@ -610,10 +617,56 @@ class DesktopState {
   }
 
   resetSessionDiff() {
+    this.cancelDebouncedDiffRefresh();
     this.sessionDiff = { patch: "", changedFiles: 0 };
     this.sessionDiffLoading = false;
     this.sessionDiffError = undefined;
     this.sessionDiffPanelOpen = false;
+  }
+
+  cancelDebouncedDiffRefresh() {
+    if (this.diffRefreshTimer === undefined) {
+      return;
+    }
+
+    clearTimeout(this.diffRefreshTimer);
+    this.diffRefreshTimer = undefined;
+  }
+
+  scheduleDebouncedDiffRefresh() {
+    if (!this.canUseSession) {
+      return;
+    }
+
+    this.cancelDebouncedDiffRefresh();
+    this.diffRefreshTimer = setTimeout(() => {
+      this.diffRefreshTimer = undefined;
+      void this.refreshSessionDiff();
+    }, 400);
+  }
+
+  async resyncConnectedSessionIfNeeded() {
+    if (this.piStatus.state !== "connected" || !this.canUseSession || this.messages.length > 0) {
+      return;
+    }
+
+    try {
+      await this.refreshActiveSessionData();
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    }
+  }
+
+  applyAgentEndMessages(record: Record<string, unknown>) {
+    const messages = record.messages;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return false;
+    }
+
+    this.pendingUserMessages = [];
+    this.messages = messages;
+    return true;
   }
 
   async ensureSlashCommands(refresh = false) {
@@ -935,18 +988,57 @@ class DesktopState {
       return;
     }
 
+    if (type === "turn_end") {
+      this.scheduleDebouncedDiffRefresh();
+      return;
+    }
+
+    if (type === "extension_error") {
+      this.errorMessage = formatExtensionError(record);
+      void this.refreshSessionStateFromPi();
+      return;
+    }
+
     if (type === "agent_end") {
-      void this.reconcileAgentEnd();
+      void this.reconcileAgentEnd(record);
+      return;
     }
   }
 
-  async reconcileAgentEnd() {
-    await this.refreshActiveSessionData();
-    await this.syncSidebarSessionsForActiveRepo();
-    this.resetTransientTranscript();
-    this.isAgentRunning = false;
-    this.setSessionStreaming(false);
-    void this.ensureSlashCommands(true);
+  async reconcileAgentEnd(record: Record<string, unknown> = {}) {
+    if (this.reconcileInFlight) {
+      this.reconcileAgain = true;
+      return;
+    }
+
+    this.reconcileInFlight = true;
+
+    try {
+      const appliedFromEvent = this.applyAgentEndMessages(record);
+
+      this.isAgentRunning = false;
+      this.setSessionStreaming(false);
+      this.resetTransientTranscript();
+
+      await this.refreshSessionStats();
+
+      if (!appliedFromEvent) {
+        await this.refreshActiveMessages();
+      }
+
+      await this.refreshSessionDiff();
+      await this.syncSidebarSessionsForActiveRepo();
+      void this.ensureSlashCommands(true);
+    } catch (error) {
+      this.errorMessage = getErrorMessage(error);
+    } finally {
+      this.reconcileInFlight = false;
+
+      if (this.reconcileAgain) {
+        this.reconcileAgain = false;
+        void this.reconcileAgentEnd(record);
+      }
+    }
   }
 
   clearExtensionUiRequest() {
@@ -1068,6 +1160,24 @@ function shouldRefreshSessionStateFromEvent(type: string) {
     type === "auto_retry_start" ||
     type === "auto_retry_end"
   );
+}
+
+function formatExtensionError(record: Record<string, unknown>) {
+  const error = record.error;
+  const extensionPath = typeof record.extensionPath === "string" ? record.extensionPath : undefined;
+  const event = typeof record.event === "string" ? record.event : undefined;
+  const message = typeof error === "string" ? error : getErrorMessage(error);
+  const parts = [message];
+
+  if (extensionPath) {
+    parts.push(`(${extensionPath})`);
+  }
+
+  if (event) {
+    parts.push(`during ${event}`);
+  }
+
+  return parts.join(" ");
 }
 
 function createOptimisticUserMessage(content: string): OptimisticUserMessage {

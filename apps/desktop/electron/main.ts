@@ -113,6 +113,21 @@ const pendingRequests = new Map<string, PendingRequest>();
 const maxDiffBytes = 8 * 1024 * 1024;
 const RPC_REQUEST_TIMEOUT_MS = 30_000;
 
+let piRpcQueue: Promise<unknown> = Promise.resolve();
+
+function enqueuePiRpc<T>(task: () => Promise<T>): Promise<T> {
+  const run = piRpcQueue.then(task, task);
+  piRpcQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+function resetPiRpcQueue() {
+  piRpcQueue = Promise.resolve();
+}
+
 function createMainWindow() {
   const window = new BrowserWindow({
     width: 1200,
@@ -389,6 +404,7 @@ async function stopPiProcess() {
   processToStop.stderr.removeAllListeners();
   processToStop.kill();
   rejectPendingRequests(new Error("PI RPC process stopped."));
+  resetPiRpcQueue();
 }
 
 async function startPiProcess(repoPath: string) {
@@ -454,6 +470,16 @@ function handleRpcMessage(message: RpcResponse | unknown) {
       pending.resolve(message);
       return;
     }
+
+    if (message.id) {
+      const command = "command" in message && typeof message.command === "string" ? message.command : "unknown";
+      emitStatus({
+        state: status.state,
+        repoPath: selectedRepoPath,
+        diagnostic: `Unexpected PI RPC response for ${command} (${message.id}).`,
+      });
+      return;
+    }
   }
 
   if (isExtensionUiRequest(message)) {
@@ -482,7 +508,13 @@ function handleExtensionUiRequest(request: RpcExtensionUIRequest) {
   emitExtensionUiRequest(request);
 }
 
-function sendExtensionUiResponse(response: RpcExtensionUIResponse) {
+async function sendExtensionUiResponse(response: RpcExtensionUIResponse) {
+  return enqueuePiRpc(async () => {
+    writeExtensionUiResponse(response);
+  });
+}
+
+function writeExtensionUiResponse(response: RpcExtensionUIResponse) {
   if (!piProcess || !piProcess.stdin.writable) {
     throw new Error("PI RPC is not connected.");
   }
@@ -496,8 +528,12 @@ function isRpcResponse(message: unknown): message is RpcResponse {
 }
 
 async function sendCommand<T extends RpcResponse>(command: RpcCommand): Promise<T> {
+  return enqueuePiRpc(() => sendCommandImmediate<T>(command));
+}
+
+function sendCommandImmediate<T extends RpcResponse>(command: RpcCommand): Promise<T> {
   if (!piProcess || !piProcess.stdin.writable) {
-    throw new Error("PI RPC is not connected.");
+    return Promise.reject(new Error("PI RPC is not connected."));
   }
 
   const id = `h3code-${nextRequestId++}`;
