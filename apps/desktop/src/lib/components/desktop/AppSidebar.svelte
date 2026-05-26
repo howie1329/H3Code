@@ -2,9 +2,9 @@
   import { page } from "$app/state";
   import {
     AddCircleIcon,
-    AiBrain02Icon,
     ArrowDown01Icon,
     ArrowRight01Icon,
+    BubbleChatIcon,
     FolderAddIcon,
     FolderCodeIcon,
     Settings05Icon,
@@ -14,9 +14,10 @@
 
   import { desktopState, type SidebarRepo } from "$lib/desktop-state.svelte";
   import ConfirmDeleteDialog from "$lib/components/desktop/ConfirmDeleteDialog.svelte";
+  import { formatSessionModified, getSessionDisplayTitle } from "$lib/session-display-title.js";
+  import { Button } from "$lib/components/ui/button/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
-  const visibleSessionCount = 5;
   let repoRemovalOpen = $state(false);
   let repoRemovalTarget = $state<SidebarRepo | undefined>();
   let sessionDeletionOpen = $state(false);
@@ -42,180 +43,164 @@
     <div class="flex h-8 items-center justify-between gap-1">
       <a
         href="/workspace"
-        class="flex min-w-0 items-center gap-2 rounded-full px-1.5 py-1 text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        class="flex min-w-0 flex-1 items-center gap-2 rounded-full px-1.5 py-1 text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
         aria-label="H3Code workspace"
       >
         <span class="grid size-6 shrink-0 place-items-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">H3</span>
         <span class="truncate text-xs font-semibold tracking-tight group-data-[collapsible=icon]:hidden">H3Code</span>
       </a>
+      <Sidebar.Trigger class="shrink-0" />
     </div>
   </Sidebar.Header>
 
-  <Sidebar.Content>
-    <Sidebar.Group class="min-h-0 flex-1">
+  <Sidebar.Content class="min-h-0 flex-1">
+    <Sidebar.Group class="flex min-h-0 flex-1 flex-col">
       <Sidebar.GroupLabel class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide">Repositories</Sidebar.GroupLabel>
       <Sidebar.GroupAction
         aria-label="Add repository"
         title="Add repository"
-        onclick={() => desktopState.handleSelectRepo()}
         disabled={desktopState.isBusy}
+        onclick={() => desktopState.handleSelectRepo()}
       >
         <HugeiconsIcon icon={FolderAddIcon} />
       </Sidebar.GroupAction>
-      <Sidebar.GroupContent>
-        <Sidebar.Menu aria-label="Repositories">
-          {#if desktopState.repos.length === 0}
-            <Sidebar.MenuItem>
-              <Sidebar.MenuButton
-                size="sm"
-                tooltipContent="Add a repository"
-                class="rounded-full px-2.5 text-muted-foreground [&_svg]:size-3"
-                aria-disabled={desktopState.isBusy}
-                onclick={() => !desktopState.isBusy && desktopState.handleSelectRepo()}
-              >
-                <HugeiconsIcon icon={FolderCodeIcon} />
-                <span>Add a repository</span>
-              </Sidebar.MenuButton>
-            </Sidebar.MenuItem>
-          {:else}
-            {#each desktopState.repos as repo}
-              {@const sessionCount = repo.sessions?.length ?? 0}
-              {@const isRepoActive = repo.path === desktopState.repoPath}
-              {@const sessionLimit = repo.showAllSessions ? sessionCount : visibleSessionCount}
-              {@const visibleSessions = (repo.sessions ?? []).slice(0, sessionLimit)}
-              {@const hiddenSessionCount = Math.max(sessionCount - sessionLimit, 0)}
+
+      <Sidebar.GroupContent class="flex min-h-0 flex-1 flex-col">
+        <nav aria-label="Workspace" class="flex min-h-0 flex-1 flex-col">
+          <Sidebar.Menu aria-label="Repositories" class="flex min-h-0 flex-1 flex-col">
+            {#if desktopState.repos.length === 0}
               <Sidebar.MenuItem>
                 <Sidebar.MenuButton
                   size="sm"
-                  isActive={isRepoActive}
-                  tooltipContent={repo.path}
-                  aria-expanded={repo.expanded ? "true" : "false"}
-                  class="h-7 rounded-full px-2.5 [&_svg]:size-3"
+                  tooltipContent="Add a repository"
+                  class="h-7 rounded-full px-2.5 text-muted-foreground [&_svg]:size-3"
                   aria-disabled={desktopState.isBusy}
-                  onclick={() => !desktopState.isBusy && desktopState.toggleRepo(repo.path)}
+                  onclick={() => !desktopState.isBusy && desktopState.handleSelectRepo()}
                 >
-                  {#if repo.expanded}
-                    <HugeiconsIcon icon={ArrowDown01Icon} class="shrink-0 text-muted-foreground" />
-                  {:else}
-                    <HugeiconsIcon icon={ArrowRight01Icon} class="shrink-0 text-muted-foreground" />
-                  {/if}
                   <HugeiconsIcon icon={FolderCodeIcon} />
-                  <span class="min-w-0 flex-1 truncate font-medium">{repo.name}</span>
-                  {#if sessionCount > 0 && !repo.expanded}
-                    <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">{sessionCount}</span>
-                  {/if}
+                  <span>Add a repository</span>
                 </Sidebar.MenuButton>
-                <Sidebar.MenuAction
-                  showOnHover
-                  aria-label={`Remove ${repo.name} from startup`}
-                  title="Remove from startup"
-                  disabled={desktopState.isBusy}
-                  class="text-muted-foreground hover:text-destructive"
-                  onclick={(event) => handleRepoRemoveClick(event, repo)}
-                >
-                  <HugeiconsIcon icon={WasteIcon} />
-                </Sidebar.MenuAction>
-
-                {#if repo.expanded}
-                  <Sidebar.MenuSub class="overflow-hidden transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none">
-                    {#if repo.sessionsLoading}
-                      <Sidebar.MenuSubItem>
-                        <div class="flex h-7 items-center gap-2 px-2 text-xs text-muted-foreground">
-                          <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true"></span>
-                          <span class="truncate">Loading sessions</span>
-                        </div>
-                      </Sidebar.MenuSubItem>
-                    {:else if repo.sessionsError}
-                      <Sidebar.MenuSubItem>
-                        <div class="px-2 py-1 text-xs leading-5 text-muted-foreground">Could not load sessions</div>
-                      </Sidebar.MenuSubItem>
-                    {:else if visibleSessions.length === 0}
-                      <Sidebar.MenuSubItem>
-                        <div class="px-2 py-1 text-xs leading-5 text-muted-foreground">No sessions</div>
-                      </Sidebar.MenuSubItem>
-                      <Sidebar.MenuSubItem>
-                        <Sidebar.MenuSubButton aria-disabled={desktopState.isBusy} class="h-7 w-full max-w-full rounded-full px-2.5 text-muted-foreground">
-                          {#snippet child({ props })}
-                            <button {...props} type="button" disabled={desktopState.isBusy} onclick={() => desktopState.handleNewSession(repo.path)}>
-                              <HugeiconsIcon icon={AddCircleIcon} />
-                              <span class="truncate">New session</span>
-                            </button>
-                          {/snippet}
-                        </Sidebar.MenuSubButton>
-                      </Sidebar.MenuSubItem>
-                    {:else}
-                      {#each visibleSessions as session}
-                        {@const isSessionActive = session.path === desktopState.selectedSessionPath}
-                        {@const sessionLabel = session.name ?? (session.firstMessage || "Untitled session")}
-                        <Sidebar.MenuSubItem class="group/menu-sub-item">
-                          <Sidebar.MenuSubButton
-                            isActive={isSessionActive}
-                            aria-disabled={desktopState.isBusy}
-                            class={isSessionActive
-                              ? "h-auto min-h-7 w-full max-w-full rounded-full py-1.5 pr-8 font-medium"
-                              : "h-auto min-h-7 w-full max-w-full rounded-full py-1.5 pr-8 text-muted-foreground"}
-                          >
-                            {#snippet child({ props })}
-                              <button
-                                {...props}
-                                type="button"
-                                title={sessionLabel}
-                                disabled={desktopState.isBusy}
-                                onclick={() => desktopState.handleSwitchSession(session.path, repo.path)}
-                              >
-                                <HugeiconsIcon icon={AiBrain02Icon} />
-                                <span class="block min-w-0 flex-1 text-left leading-snug line-clamp-2">{sessionLabel}</span>
-                              </button>
-                            {/snippet}
-                          </Sidebar.MenuSubButton>
-                          <button
-                            type="button"
-                            class="absolute right-1 top-1/2 z-10 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground opacity-100 outline-none transition-colors hover:bg-sidebar-accent hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 sm:opacity-0 sm:group-hover/menu-sub-item:opacity-100 sm:group-focus-within/menu-sub-item:opacity-100"
-                            aria-label={`Delete ${sessionLabel}`}
-                            title="Delete PI session"
-                            disabled={desktopState.isBusy}
-                            onclick={(event) => handleSessionDeleteClick(event, repo, session)}
-                          >
-                            <HugeiconsIcon icon={WasteIcon} class="size-3" />
-                          </button>
-                        </Sidebar.MenuSubItem>
-                      {/each}
-
-                      {#if hiddenSessionCount > 0}
-                        <Sidebar.MenuSubItem>
-                          <Sidebar.MenuSubButton class="h-7 w-full max-w-full rounded-full px-2.5 text-foreground/70">
-                            {#snippet child({ props })}
-                              <button
-                                {...props}
-                                type="button"
-                                aria-label={`Show ${hiddenSessionCount} more sessions for ${repo.name}`}
-                                onclick={() => desktopState.showAllRepoSessions(repo.path)}
-                              >
-                                <span class="font-mono">···</span>
-                                <span class="truncate">{hiddenSessionCount} more</span>
-                              </button>
-                            {/snippet}
-                          </Sidebar.MenuSubButton>
-                        </Sidebar.MenuSubItem>
-                      {/if}
-
-                      <Sidebar.MenuSubItem>
-                        <Sidebar.MenuSubButton aria-disabled={desktopState.isBusy} class="h-7 w-full max-w-full rounded-full px-2.5 text-muted-foreground">
-                          {#snippet child({ props })}
-                            <button {...props} type="button" disabled={desktopState.isBusy} onclick={() => desktopState.handleNewSession(repo.path)}>
-                              <HugeiconsIcon icon={AddCircleIcon} />
-                              <span class="truncate">New session</span>
-                            </button>
-                          {/snippet}
-                        </Sidebar.MenuSubButton>
-                      </Sidebar.MenuSubItem>
-                    {/if}
-                  </Sidebar.MenuSub>
-                {/if}
               </Sidebar.MenuItem>
-            {/each}
-          {/if}
-        </Sidebar.Menu>
+            {:else}
+              {#each desktopState.repos as repo}
+                {@const sessionCount = repo.sessions?.length ?? 0}
+                {@const isRepoActive = repo.path === desktopState.repoPath}
+                {@const repoSessions = repo.sessions ?? []}
+                <Sidebar.MenuItem class={repo.expanded ? "flex min-h-0 flex-col" : undefined}>
+                  <Sidebar.MenuButton
+                    size="sm"
+                    isActive={isRepoActive}
+                    tooltipContent={repo.name}
+                    aria-expanded={repo.expanded ? "true" : "false"}
+                    class="h-7 rounded-full px-2.5 [&_svg]:size-3"
+                    aria-disabled={desktopState.isBusy}
+                    onclick={() => !desktopState.isBusy && desktopState.toggleRepo(repo.path)}
+                  >
+                    {#if repo.expanded}
+                      <HugeiconsIcon icon={ArrowDown01Icon} class="shrink-0 text-muted-foreground" />
+                    {:else}
+                      <HugeiconsIcon icon={ArrowRight01Icon} class="shrink-0 text-muted-foreground" />
+                    {/if}
+                    <HugeiconsIcon icon={FolderCodeIcon} />
+                    <span class={isRepoActive ? "min-w-0 flex-1 truncate font-medium" : "min-w-0 flex-1 truncate"}>{repo.name}</span>
+                    {#if sessionCount > 0 && !repo.expanded}
+                      <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">{sessionCount}</span>
+                    {/if}
+                  </Sidebar.MenuButton>
+                  <Sidebar.MenuAction
+                    showOnHover
+                    aria-label={`Remove ${repo.name} from startup`}
+                    title="Remove from startup"
+                    disabled={desktopState.isBusy}
+                    class="text-muted-foreground hover:text-destructive [&_svg]:size-3"
+                    onclick={(event) => handleRepoRemoveClick(event, repo)}
+                  >
+                    <HugeiconsIcon icon={WasteIcon} />
+                  </Sidebar.MenuAction>
+
+                  {#if repo.expanded}
+                    <div class="flex min-h-0 flex-col gap-0.5 group-data-[collapsible=icon]:hidden">
+                      <div class="px-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          class="h-7 w-full justify-start gap-2 rounded-full px-2.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-3"
+                          disabled={desktopState.isBusy}
+                          onclick={() => desktopState.handleNewSession(repo.path)}
+                        >
+                          <HugeiconsIcon icon={AddCircleIcon} />
+                          <span>New session</span>
+                        </Button>
+                      </div>
+
+                      <Sidebar.MenuSub
+                        class="max-h-[min(50svh,18rem)] min-h-0 overflow-y-auto transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+                      >
+                        {#if repo.sessionsLoading}
+                          <Sidebar.MenuSubItem>
+                            <div class="flex h-7 items-center gap-2 px-2 text-xs text-muted-foreground">
+                              <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true"></span>
+                              <span class="truncate">Loading sessions</span>
+                            </div>
+                          </Sidebar.MenuSubItem>
+                        {:else if repo.sessionsError}
+                          <Sidebar.MenuSubItem>
+                            <div class="px-2 py-1 text-xs leading-5 text-muted-foreground">Could not load sessions</div>
+                          </Sidebar.MenuSubItem>
+                        {:else if repoSessions.length === 0}
+                          <Sidebar.MenuSubItem>
+                            <div class="px-2 py-1 text-xs leading-5 text-muted-foreground">No sessions</div>
+                          </Sidebar.MenuSubItem>
+                        {:else}
+                          {#each repoSessions as session (session.path)}
+                            {@const isSessionActive = session.path === desktopState.selectedSessionPath}
+                            {@const sessionLabel = getSessionDisplayTitle(session)}
+                            {@const sessionModified = formatSessionModified(session.modified)}
+                            <Sidebar.MenuSubItem class="group/menu-sub-item relative">
+                              <Sidebar.MenuSubButton
+                                isActive={isSessionActive}
+                                aria-disabled={desktopState.isBusy}
+                                class="h-7 w-full max-w-full rounded-full px-2.5 pr-8 [&_svg]:size-3"
+                              >
+                                {#snippet child({ props })}
+                                  <button
+                                    {...props}
+                                    type="button"
+                                    title={sessionLabel}
+                                    aria-current={isSessionActive ? "page" : undefined}
+                                    disabled={desktopState.isBusy}
+                                    onclick={() => desktopState.handleSwitchSession(session.path, repo.path)}
+                                  >
+                                    <HugeiconsIcon icon={BubbleChatIcon} />
+                                    <span class="min-w-0 flex-1 truncate text-left">{sessionLabel}</span>
+                                    {#if sessionModified}
+                                      <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">{sessionModified}</span>
+                                    {/if}
+                                  </button>
+                                {/snippet}
+                              </Sidebar.MenuSubButton>
+                              <button
+                                type="button"
+                                class="absolute right-1 top-1/2 z-10 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground opacity-100 outline-none transition-colors hover:bg-sidebar-accent hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 sm:opacity-0 sm:group-hover/menu-sub-item:opacity-100 sm:group-focus-within/menu-sub-item:opacity-100"
+                                aria-label={`Delete ${sessionLabel}`}
+                                title="Delete PI session"
+                                disabled={desktopState.isBusy}
+                                onclick={(event) => handleSessionDeleteClick(event, repo, session)}
+                              >
+                                <HugeiconsIcon icon={WasteIcon} class="size-3" />
+                              </button>
+                            </Sidebar.MenuSubItem>
+                          {/each}
+                        {/if}
+                      </Sidebar.MenuSub>
+                    </div>
+                  {/if}
+                </Sidebar.MenuItem>
+              {/each}
+            {/if}
+          </Sidebar.Menu>
+        </nav>
       </Sidebar.GroupContent>
     </Sidebar.Group>
   </Sidebar.Content>
@@ -223,7 +208,12 @@
   <Sidebar.Footer class="border-t border-sidebar-border px-2 py-2">
     <Sidebar.Menu>
       <Sidebar.MenuItem>
-        <Sidebar.MenuButton size="sm" tooltipContent="Settings" class="rounded-full px-2.5 text-muted-foreground [&_svg]:size-3" isActive={page.url.pathname === "/settings"}>
+        <Sidebar.MenuButton
+          size="sm"
+          tooltipContent="Settings"
+          class="h-7 rounded-full px-2.5 text-muted-foreground [&_svg]:size-3"
+          isActive={page.url.pathname === "/settings"}
+        >
           {#snippet child({ props })}
             <a {...props} href="/settings">
               <HugeiconsIcon icon={Settings05Icon} />
@@ -255,7 +245,7 @@
 <ConfirmDeleteDialog
   bind:open={sessionDeletionOpen}
   title="Delete PI session?"
-  description={`This deletes ${sessionDeletionTarget?.session.name ?? sessionDeletionTarget?.session.firstMessage ?? "this session"} from PI. This cannot be undone.`}
+  description={`This deletes ${sessionDeletionTarget ? getSessionDisplayTitle(sessionDeletionTarget.session) : "this session"} from PI. This cannot be undone.`}
   confirmLabel="Delete session"
   busy={desktopState.isBusy}
   onConfirm={async () => {

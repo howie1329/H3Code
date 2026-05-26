@@ -19,7 +19,6 @@ export type SidebarRepo = {
   sessionsLoaded?: boolean;
   sessionsLoading?: boolean;
   sessionsError?: string;
-  showAllSessions?: boolean;
 };
 
 const defaultDesktopSettings: DesktopSettings = {
@@ -221,10 +220,6 @@ class DesktopState {
     if (expanded && !repo?.sessionsLoaded && !repo?.sessionsLoading) {
       await this.loadRepoSessions(nextRepoPath);
     }
-  }
-
-  showAllRepoSessions(nextRepoPath: string) {
-    this.repos = updateRepo(this.repos, nextRepoPath, { showAllSessions: true });
   }
 
   async loadRepoSessions(nextRepoPath: string, markRecent = false) {
@@ -899,7 +894,6 @@ function createRepo(nextRepoPath: string, updates: Partial<SidebarRepo> = {}): S
     sessions: [],
     sessionsLoaded: false,
     sessionsLoading: false,
-    showAllSessions: false,
     ...updates,
   };
 }
