@@ -38,7 +38,11 @@
   });
 </script>
 
-<div class="absolute inset-x-4 bottom-full z-20 mb-2 max-h-80 overflow-hidden rounded-lg border border-border/70 bg-popover text-popover-foreground shadow-lg transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none motion-reduce:transform-none" role="listbox" aria-label="Pi slash commands">
+<div
+  class="absolute inset-x-0 bottom-full z-20 mb-2 max-h-80 overflow-hidden rounded-lg border border-border/50 bg-popover text-popover-foreground shadow-none transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none motion-reduce:transform-none"
+  role="listbox"
+  aria-label="Pi slash commands"
+>
   <div class="border-b border-border/50 px-3 py-2">
     <div class="text-xs font-medium leading-tight text-foreground">Pi commands</div>
     <div class="mt-0.5 text-[11px] leading-tight text-muted-foreground">Select a command to insert it into the prompt.</div>
@@ -51,7 +55,13 @@
   {:else if error}
     <div class="flex items-center justify-between gap-3 px-3 py-3 text-xs text-muted-foreground">
       <span>Couldn’t load commands — retry</span>
-      <button type="button" class="rounded-md px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none" onclick={onRetry}>Retry</button>
+      <button
+        type="button"
+        class="rounded-md px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        onclick={onRetry}
+      >
+        Retry
+      </button>
     </div>
   {:else if commands.length === 0}
     <div class="px-3 py-4 text-xs text-muted-foreground">No slash commands available.</div>
@@ -67,8 +77,8 @@
           <button
             type="button"
             class={item.index === highlightedIndex
-              ? "flex w-full items-start gap-2 bg-accent px-3 py-2 text-left outline-none"
-              : "flex w-full items-start gap-2 px-3 py-2 text-left outline-none hover:bg-accent/70"}
+              ? "flex w-full items-start gap-2 bg-accent px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              : "flex w-full items-start gap-2 px-3 py-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"}
             role="option"
             aria-selected={item.index === highlightedIndex}
             onmouseenter={() => onHighlight(item.index)}
@@ -82,9 +92,9 @@
               {/if}
             </span>
             <span class="flex shrink-0 items-center gap-1 pt-0.5 text-[10px] leading-tight text-muted-foreground">
-              <span class="rounded-full border border-border/70 px-1.5 py-0.5">{item.command.source}</span>
+              <span class="rounded-full border border-border/50 px-1.5 py-0.5">{item.command.source}</span>
               {#if location}
-                <span class="rounded-full border border-border/70 px-1.5 py-0.5">{location}</span>
+                <span class="rounded-full border border-border/50 px-1.5 py-0.5">{location}</span>
               {/if}
             </span>
           </button>
