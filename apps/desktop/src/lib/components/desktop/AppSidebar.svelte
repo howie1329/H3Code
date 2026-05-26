@@ -38,7 +38,7 @@
   }
 
   const menuButtonClass =
-    "h-7 rounded-full px-2.5 [&_svg]:size-3 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:justify-center";
+    "h-7 rounded-full px-2.5 text-[11px] leading-snug [&_svg]:size-3 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:justify-center";
 </script>
 
 <Sidebar.Sidebar collapsible="icon">
@@ -61,19 +61,23 @@
 
   <Sidebar.Content class="min-h-0 flex-1">
     <Sidebar.Group class="flex min-h-0 flex-1 flex-col">
-      <Sidebar.GroupLabel
-        class="h-7 px-2 text-[11px] font-medium uppercase tracking-wide group-data-[collapsible=icon]:hidden"
+      <div
+        class="flex h-7 shrink-0 items-center justify-between gap-1 px-2 group-data-[collapsible=icon]:hidden"
       >
-        Repositories
-      </Sidebar.GroupLabel>
-      <Sidebar.GroupAction
-        aria-label="Add repository"
-        title="Add repository"
-        disabled={desktopState.isBusy}
-        onclick={() => desktopState.handleSelectRepo()}
-      >
-        <HugeiconsIcon icon={FolderAddIcon} />
-      </Sidebar.GroupAction>
+        <span class="text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/70">
+          Repositories
+        </span>
+        <button
+          type="button"
+          aria-label="Add repository"
+          title="Add repository"
+          disabled={desktopState.isBusy}
+          class="grid size-6 shrink-0 place-items-center rounded-md text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3"
+          onclick={() => desktopState.handleSelectRepo()}
+        >
+          <HugeiconsIcon icon={FolderAddIcon} />
+        </button>
+      </div>
 
       <Sidebar.GroupContent class="flex min-h-0 flex-1 flex-col">
         <nav aria-label="Workspace" class="flex min-h-0 flex-1 flex-col">
@@ -149,7 +153,7 @@
                           type="button"
                           variant="ghost"
                           size="sm"
-                          class="h-7 w-full justify-start gap-2 rounded-full px-2.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-3"
+                          class="h-7 w-full justify-start gap-2 rounded-full px-2.5 text-[11px] leading-snug text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-3"
                           disabled={desktopState.isBusy}
                           onclick={() => desktopState.handleNewSession(repo.path)}
                         >
@@ -163,18 +167,18 @@
                       >
                         {#if repo.sessionsLoading}
                           <Sidebar.MenuSubItem>
-                            <div class="flex h-7 items-center gap-2 px-2 text-xs text-muted-foreground">
+                            <div class="flex h-7 items-center gap-2 px-2 text-[11px] leading-snug text-muted-foreground">
                               <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true"></span>
                               <span class="truncate">Loading sessions</span>
                             </div>
                           </Sidebar.MenuSubItem>
                         {:else if repo.sessionsError}
                           <Sidebar.MenuSubItem>
-                            <div class="px-2 py-1 text-xs leading-5 text-muted-foreground">Could not load sessions</div>
+                            <div class="px-2 py-1 text-[11px] leading-snug text-muted-foreground">Could not load sessions</div>
                           </Sidebar.MenuSubItem>
                         {:else if repoSessions.length === 0}
                           <Sidebar.MenuSubItem>
-                            <div class="px-2 py-1 text-xs leading-5 text-muted-foreground">No sessions</div>
+                            <div class="px-2 py-1 text-[11px] leading-snug text-muted-foreground">No sessions</div>
                           </Sidebar.MenuSubItem>
                         {:else}
                           {#each repoSessions as session (session.path)}
@@ -185,7 +189,7 @@
                               <Sidebar.MenuSubButton
                                 isActive={isSessionActive}
                                 aria-disabled={desktopState.isBusy}
-                                class="h-7 w-full max-w-full rounded-full px-2.5 pr-8 [&_svg]:size-3"
+                                class="h-7 w-full max-w-full rounded-full px-2.5 pr-8 text-[11px] leading-snug [&_svg]:size-3"
                               >
                                 {#snippet child({ props })}
                                   <button
