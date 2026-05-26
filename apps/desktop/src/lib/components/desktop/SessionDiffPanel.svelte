@@ -4,6 +4,7 @@
   import { mode } from "mode-watcher";
 
   import { Button } from "$lib/components/ui/button/index.js";
+  import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "$lib/components/ui/empty/index.js";
   import { desktopState } from "$lib/desktop-state.svelte";
 
   let container = $state<HTMLElement>();
@@ -121,7 +122,19 @@
   {:else if showLoading}
     <div class="p-3 text-xs text-muted-foreground">Loading diff...</div>
   {:else if showEmpty}
-    <div class="p-3 text-xs leading-5 text-muted-foreground">No uncommitted changes in this repo.</div>
+    <div class="flex min-h-0 flex-1 items-center justify-center p-4">
+      <Empty class="border-0 bg-transparent p-0">
+        <EmptyHeader>
+          <EmptyTitle>No uncommitted changes</EmptyTitle>
+          <EmptyDescription>Session diff appears here after PI edits files.</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button variant="outline" size="sm" class="h-7 px-2 text-xs" disabled={desktopState.sessionDiffLoading} onclick={() => desktopState.refreshSessionDiff()}>
+            Refresh
+          </Button>
+        </EmptyContent>
+      </Empty>
+    </div>
   {/if}
 
   <div

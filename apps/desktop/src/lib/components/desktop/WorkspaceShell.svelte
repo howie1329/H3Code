@@ -17,11 +17,11 @@
   const diffToggleLabel = $derived(activeInspector === "diff" ? "Hide session diff" : "Show session diff");
 
   function toggleContextPanel() {
-    desktopState.setContextPanelOpen(!desktopState.desktopSettings.contextPanelOpen);
+    desktopState.toggleContextPanel();
   }
 
   function toggleDiffPanel() {
-    desktopState.setSessionDiffPanelOpen(!desktopState.sessionDiffPanelOpen);
+    desktopState.toggleSessionDiffPanel();
   }
 </script>
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import {
     AddCircleIcon,
@@ -39,6 +40,16 @@
 
   const menuButtonClass =
     "h-7 rounded-full px-2.5 text-[11px] leading-snug [&_svg]:size-3 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:justify-center";
+
+  async function handleNewSessionClick(repoPath: string) {
+    await goto("/workspace");
+    await desktopState.handleNewSession(repoPath);
+  }
+
+  async function handleSessionClick(sessionPath: string, repoPath: string) {
+    await goto("/workspace");
+    await desktopState.handleSwitchSession(sessionPath, repoPath);
+  }
 </script>
 
 <Sidebar.Sidebar collapsible="icon">
@@ -92,7 +103,7 @@
                   onclick={() => !desktopState.isBusy && desktopState.handleSelectRepo()}
                 >
                   <HugeiconsIcon icon={FolderCodeIcon} />
-                  <span class="group-data-[collapsible=icon]:hidden">Add a repository</span>
+                  <span class="group-data-[collapsible=icon]:hidden">No repositories yet</span>
                 </Sidebar.MenuButton>
               </Sidebar.MenuItem>
             {:else}
@@ -155,7 +166,7 @@
                           size="sm"
                           class="h-7 w-full justify-start gap-2 rounded-full px-2.5 text-[11px] leading-snug text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-3"
                           disabled={desktopState.isBusy}
-                          onclick={() => desktopState.handleNewSession(repo.path)}
+                          onclick={() => handleNewSessionClick(repo.path)}
                         >
                           <HugeiconsIcon icon={AddCircleIcon} />
                           <span>New session</span>
@@ -174,11 +185,17 @@
                           </Sidebar.MenuSubItem>
                         {:else if repo.sessionsError}
                           <Sidebar.MenuSubItem>
-                            <div class="px-2 py-1 text-[11px] leading-snug text-muted-foreground">Could not load sessions</div>
+                            <button
+                              type="button"
+                              class="w-full rounded-md px-2 py-1 text-left text-[11px] leading-snug text-muted-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                              onclick={() => desktopState.loadRepoSessions(repo.path)}
+                            >
+                              Could not load sessions. Retry
+                            </button>
                           </Sidebar.MenuSubItem>
                         {:else if repoSessions.length === 0}
                           <Sidebar.MenuSubItem>
-                            <div class="px-2 py-1 text-[11px] leading-snug text-muted-foreground">No sessions</div>
+                            <div class="px-2 py-1 text-[11px] leading-snug text-muted-foreground">No sessions in this repo</div>
                           </Sidebar.MenuSubItem>
                         {:else}
                           {#each repoSessions as session (session.path)}
@@ -198,7 +215,7 @@
                                     title={sessionLabel}
                                     aria-current={isSessionActive ? "page" : undefined}
                                     disabled={desktopState.isBusy}
-                                    onclick={() => desktopState.handleSwitchSession(session.path, repo.path)}
+                                    onclick={() => handleSessionClick(session.path, repo.path)}
                                   >
                                     <HugeiconsIcon icon={BubbleChatIcon} />
                                     <span class="min-w-0 flex-1 truncate text-left">{sessionLabel}</span>

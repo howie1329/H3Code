@@ -16,7 +16,61 @@
 
     return cleanup;
   });
+
+  function isEditableTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+  }
+
+  function handleGlobalKeydown(event: KeyboardEvent) {
+    const modifier = event.metaKey || event.ctrlKey;
+
+    if (!modifier) {
+      return;
+    }
+
+    const key = event.key.toLowerCase();
+    const isTyping = isEditableTarget(event.target);
+
+    if (isTyping) {
+      return;
+    }
+
+    if (key === "l") {
+      event.preventDefault();
+      desktopState.focusComposer();
+      return;
+    }
+
+    if (key === "i") {
+      event.preventDefault();
+      desktopState.toggleContextPanel();
+      return;
+    }
+
+    if (key === "d" && desktopState.hasSessionDiff) {
+      event.preventDefault();
+      desktopState.toggleSessionDiffPanel();
+      return;
+    }
+
+    if (key === "n" && desktopState.repoPath && !desktopState.isBusy) {
+      event.preventDefault();
+      void desktopState.handleNewSession();
+      return;
+    }
+
+    if (key === "." && (desktopState.isAgentRunning || desktopState.sessionState?.isStreaming) && !desktopState.isBusy) {
+      event.preventDefault();
+      void desktopState.handleAbort();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={handleGlobalKeydown} />
 
 <ModeWatcher />
 
