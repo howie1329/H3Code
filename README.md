@@ -41,9 +41,8 @@ The desktop app currently implements the core PI RPC loop:
 
 Still planned:
 
-- Replace placeholder Repos, Sessions, and Activity pages with full product surfaces.
-- Wire up global search.
-- Improve full live activity/tool timeline rendering.
+- Wire up global search across workspace repo and session metadata.
+- Improve live activity and tool timeline rendering inside the workspace context inspector.
 
 ## Architecture
 
@@ -61,7 +60,7 @@ Important desktop files:
 - `apps/desktop/electron/preload.ts` — safe renderer-facing desktop API.
 - `apps/desktop/src/lib/desktop-state.svelte.ts` — centralized renderer state for repos, sessions, messages, status, activity, and stats.
 - `apps/desktop/src/lib/components/desktop/` — desktop shell, sidebar, transcript, composer, context panel, and page primitives.
-- `apps/desktop/src/routes/` — SvelteKit routes for workspace, repos, sessions, activity, and settings.
+- `apps/desktop/src/routes/` — SvelteKit routes for the workspace, settings, and root redirect.
 
 ## MVP Focus
 

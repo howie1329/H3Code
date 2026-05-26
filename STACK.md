@@ -45,7 +45,7 @@ PI communicates over stdin/stdout JSONL RPC. H3Code stores **session-list metada
 | `apps/desktop/electron/preload.ts` | Renderer-facing desktop API |
 | `apps/desktop/src/lib/desktop-state.svelte.ts` | Central renderer state (repos, sessions, messages, status, activity) |
 | `apps/desktop/src/lib/components/desktop/` | Shell, sidebar, transcript, composer, context panel |
-| `apps/desktop/src/routes/` | SvelteKit routes (workspace, repos, sessions, activity, settings) |
+| `apps/desktop/src/routes/` | SvelteKit routes (workspace, settings, root redirect) |
 
 ## Frameworks And Libraries
 

@@ -10,7 +10,7 @@ H3Code is not the agent runtime, session system, message store, model router, or
 
 ## Implementation Status
 
-This document describes the MVP target. The current `apps/desktop` app implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt/steer/follow-up, abort, transcript rendering, session stats, diagnostics, recent activity, SQLite-backed recent repos and session metadata index, configurable PI executable path, extension UI prompts (select/confirm/input/editor), and RPC sync after agent runs. Remaining MVP gaps include richer full-page repo/session/activity surfaces and stronger live tool activity rendering.
+This document describes the MVP target. The current `apps/desktop` app implements the core RPC loop: repo selection, PI process startup, session listing/switching, new sessions, prompt/steer/follow-up, abort, transcript rendering, session stats, diagnostics, recent activity, SQLite-backed recent repos and session metadata index, configurable PI executable path, extension UI prompts (select/confirm/input/editor), and RPC sync after agent runs. Remaining MVP gaps include stronger live tool activity rendering and better discovery across workspace repo/session metadata.
 
 ## Product Boundary
 
