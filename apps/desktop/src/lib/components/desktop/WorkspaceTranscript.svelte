@@ -65,10 +65,10 @@
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if hasTranscriptMessages}
       <Conversation class="h-full min-h-0">
-        <ConversationContent class="min-h-0 flex-1 overflow-y-auto px-6 py-5 pb-24">
+        <ConversationContent class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-24">
           {#if desktopState.errorMessage}
             <div
-              class="mx-auto mb-4 flex max-w-3xl items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive"
+              class="mx-auto mb-4 flex max-w-[46rem] items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive"
               role="alert"
               aria-live="assertive"
             >
@@ -77,7 +77,7 @@
             </div>
           {/if}
 
-          <div class="mx-auto flex max-w-3xl flex-col gap-4">
+          <div class="mx-auto flex max-w-[46rem] flex-col gap-3.5">
             {#each transcriptMessages as message (message.id)}
               {@const renderBlocks = groupBlocksForRender(message.blocks)}
               <Message
@@ -87,20 +87,22 @@
               >
                 <MessageContent
                   class={message.role === "user"
-                    ? "ml-auto max-w-[min(42rem,85%)] rounded-lg bg-accent/50 px-3 py-2"
+                    ? "ml-auto max-w-[min(36rem,78%)] rounded-lg bg-accent/35 px-2.5 py-1.5"
                     : "w-full max-w-full overflow-visible"}
                 >
                   {#each renderBlocks as block, blockIndex (block.kind === "activity" ? block.id : block.id)}
                     {#if block.kind === "text"}
                       {#if message.role === "user"}
-                        <p class="whitespace-pre-wrap break-words text-sm leading-snug">{block.text}</p>
+                        <p class="whitespace-pre-wrap break-words text-[13px] leading-snug">{block.text}</p>
                       {:else}
                         <MessageResponse content={block.text} transcript />
                       {/if}
                     {:else if block.kind === "thinking"}
-                      <details class="py-1 text-xs leading-snug text-muted-foreground">
-                        <summary class="cursor-pointer text-[11px] font-medium text-muted-foreground">Reasoning</summary>
-                        <p class="mt-1 whitespace-pre-wrap break-words">{block.text}</p>
+                      <details class="py-0.5 text-xs leading-snug text-muted-foreground">
+                        <summary class="cursor-pointer text-[10px] font-normal text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                          Reasoning notes
+                        </summary>
+                        <p class="mt-1 whitespace-pre-wrap break-words text-[11px] leading-snug">{block.text}</p>
                       </details>
                     {:else if block.kind === "activity"}
                       <TranscriptActivityGroup
@@ -116,7 +118,7 @@
             {#if isThinking}
               <Message from="assistant" class="max-w-full gap-1.5" aria-label="Pi response">
                 <MessageContent class="w-full max-w-full overflow-visible">
-                  <div class="flex items-center gap-2 text-sm leading-snug text-muted-foreground" aria-live="polite" aria-busy="true">
+                  <div class="flex items-center gap-2 text-xs leading-snug text-muted-foreground" aria-live="polite" aria-busy="true">
                     <span class="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true"></span>
                     <span>Pi is thinking…</span>
                   </div>
@@ -173,9 +175,9 @@
                 <EmptyMedia variant="icon">
                   <HugeiconsIcon icon={TerminalIcon} data-icon />
                 </EmptyMedia>
-                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pi disconnected</p>
-                <EmptyTitle>Connect Pi for this repo.</EmptyTitle>
-                <EmptyDescription>Start Pi RPC before creating sessions or sending prompts.</EmptyDescription>
+                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pi is offline</p>
+                <EmptyTitle>Connect Pi to continue.</EmptyTitle>
+                <EmptyDescription>Start the local Pi RPC process for this repository.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 <Button onclick={() => desktopState.repoPath && desktopState.connectRepo(desktopState.repoPath)} disabled={desktopState.isBusy}>

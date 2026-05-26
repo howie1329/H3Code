@@ -23,9 +23,9 @@
 <div class={cn("w-full", className)}>
   <div
     class={cn(
-      "flex min-h-10 items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-1.5",
+      "flex min-h-10 items-center gap-2 rounded-lg border border-border/45 bg-background/60 px-2.5 py-1.5",
       "transition-[background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-      "focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/20"
+      "focus-within:border-ring/50 focus-within:bg-background focus-within:ring-2 focus-within:ring-ring/15"
     )}
   >
     {#if leading}

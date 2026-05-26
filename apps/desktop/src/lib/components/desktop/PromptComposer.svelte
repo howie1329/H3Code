@@ -516,7 +516,7 @@
             data-prompt-input-submit
             class="size-7 shrink-0 rounded-full shadow-none transition-[background-color,color,opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 {desktopState.canSubmit
               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-              : 'text-muted-foreground'}"
+              : 'text-muted-foreground/55 hover:text-muted-foreground'}"
             title="Send prompt"
             disabled={!desktopState.canSubmit}
           >

@@ -37,10 +37,10 @@
       "disabled:pointer-events-none disabled:opacity-50",
       variant === "inline"
         ? cn(
-            "h-7 gap-1 rounded-md px-1.5 text-[11px] leading-tight font-normal text-muted-foreground",
+            "h-6 gap-1 rounded-md px-1.5 text-[10px] leading-tight font-normal text-muted-foreground",
             maxWidthClass,
-            "hover:bg-accent/50",
-            open && "bg-accent/50"
+            "hover:bg-accent/40 hover:text-foreground",
+            open && "bg-accent/40 text-foreground"
           )
         : variant === "footer"
         ? cn(
@@ -78,7 +78,7 @@
     {#if showChevron}
       <HugeiconsIcon
         icon={ArrowDown01Icon}
-        class="size-2.5 shrink-0 opacity-50"
+        class="size-2.5 shrink-0 opacity-40"
         data-icon
       />
     {/if}
