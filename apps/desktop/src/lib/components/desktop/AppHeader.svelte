@@ -4,8 +4,8 @@
   import { HugeiconsIcon } from "@hugeicons/svelte";
   import { mode, toggleMode } from "mode-watcher";
 
+  import PiStatusIndicator from "$lib/components/desktop/PiStatusIndicator.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
-  import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
@@ -14,9 +14,9 @@
   const themeToggleLabel = $derived(mode.current === "dark" ? "Switch to light mode" : "Switch to dark mode");
 </script>
 
-<header class="flex h-12 items-center gap-2 border-b border-border/50 px-3">
+<header class="flex h-10 shrink-0 items-center gap-2 border-b border-border/50 px-3">
   <Sidebar.Trigger aria-label="Toggle sidebar" />
-  <Badge variant="outline" class="shrink-0">PI {desktopState.piStatus.state}</Badge>
+  <PiStatusIndicator status={desktopState.piStatus} />
 
   <div class="ml-auto flex items-center gap-1">
     {@render actions?.()}

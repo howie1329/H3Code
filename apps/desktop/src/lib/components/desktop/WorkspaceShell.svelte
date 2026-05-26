@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { FileDiffIcon, PanelRightCloseIcon, PanelRightOpenIcon, WasteIcon } from "@hugeicons/core-free-icons";
+  import { FileDiffIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
   import AppHeader from "$lib/components/desktop/AppHeader.svelte";
-  import ConfirmDeleteDialog from "$lib/components/desktop/ConfirmDeleteDialog.svelte";
   import ContextPanel from "$lib/components/desktop/ContextPanel.svelte";
   import PromptComposer from "$lib/components/desktop/PromptComposer.svelte";
   import SessionDiffPanel from "$lib/components/desktop/SessionDiffPanel.svelte";
@@ -15,8 +14,6 @@
   const isDiffPanelOpen = $derived(desktopState.sessionDiffPanelOpen && desktopState.hasSessionDiff);
   const toggleLabel = $derived(isContextPanelOpen ? "Hide context panel" : "Show context panel");
   const diffToggleLabel = $derived(isDiffPanelOpen ? "Hide session diff" : "Show session diff");
-  const selectedSessionLabel = $derived(desktopState.selectedSession?.name ?? desktopState.selectedSession?.firstMessage ?? "this session");
-  let deleteSessionOpen = $state(false);
 
   function getWorkspaceGridTemplate() {
     const columns = ["minmax(0,1fr)"];
@@ -26,7 +23,7 @@
     }
 
     if (isContextPanelOpen) {
-      columns.push("24rem");
+      columns.push("var(--context-panel-width)");
     }
 
     return columns.join(" ");
@@ -35,19 +32,6 @@
 
 <AppHeader>
   {#snippet actions()}
-    {#if desktopState.selectedSessionPath}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Delete active PI session"
-        title="Delete active PI session"
-        disabled={desktopState.isBusy}
-        class="text-muted-foreground hover:text-destructive"
-        onclick={() => (deleteSessionOpen = true)}
-      >
-        <HugeiconsIcon icon={WasteIcon} data-icon />
-      </Button>
-    {/if}
     {#if desktopState.hasSessionDiff}
       <Button
         variant="ghost"
@@ -72,19 +56,6 @@
     </Button>
   {/snippet}
 </AppHeader>
-
-<ConfirmDeleteDialog
-  bind:open={deleteSessionOpen}
-  title="Delete active PI session?"
-  description={`This deletes ${selectedSessionLabel} from PI. H3Code will clear the current transcript view after deletion.`}
-  confirmLabel="Delete session"
-  busy={desktopState.isBusy}
-  onConfirm={async () => {
-    if (desktopState.selectedSessionPath) {
-      await desktopState.deleteSession(desktopState.selectedSessionPath);
-    }
-  }}
-/>
 
 <div class="grid min-h-0 flex-1 overflow-hidden" style:grid-template-columns={getWorkspaceGridTemplate()}>
   <WorkspaceTranscript>

@@ -38,7 +38,7 @@
   });
 </script>
 
-<div class="absolute inset-x-4 bottom-full z-20 mb-2 max-h-80 overflow-hidden rounded-lg border border-border/70 bg-popover text-popover-foreground shadow-lg" role="listbox" aria-label="Pi slash commands">
+<div class="absolute inset-x-4 bottom-full z-20 mb-2 max-h-80 overflow-hidden rounded-lg border border-border/70 bg-popover text-popover-foreground shadow-lg transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none motion-reduce:transform-none" role="listbox" aria-label="Pi slash commands">
   <div class="border-b border-border/50 px-3 py-2">
     <div class="text-xs font-medium leading-tight text-foreground">Pi commands</div>
     <div class="mt-0.5 text-[11px] leading-tight text-muted-foreground">Select a command to insert it into the prompt.</div>

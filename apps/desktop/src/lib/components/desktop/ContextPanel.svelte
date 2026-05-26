@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { AlertCircleIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
+  import { getActivityIcon } from "$lib/components/desktop/activity-icons.js";
   import { desktopState } from "$lib/desktop-state.svelte";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
@@ -9,6 +9,9 @@
   const sessionStatus = $derived(getSessionStatus(desktopState.sessionState));
   const sessionId = $derived(desktopState.sessionStats?.sessionId ?? desktopState.sessionState?.sessionId);
   const contextPercent = $derived(getContextPercent(desktopState.sessionStats));
+  const contextValueText = $derived(
+    contextPercent !== undefined ? `${formatPercent(contextPercent)} of context window used` : undefined
+  );
 
   function getSessionStatus(state: PiSessionState | undefined) {
     if (!state) {
@@ -85,10 +88,10 @@
   }
 </script>
 
-<aside class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-background">
+<aside class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-background" aria-label="Session context">
   <header class="flex h-10 items-center justify-between border-b border-border/50 px-4">
     <h2 class="text-xs font-semibold">Context</h2>
-    <Badge variant="secondary">PI</Badge>
+    <Badge variant="secondary">{sessionStatus}</Badge>
   </header>
 
   <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-auto p-4">
@@ -108,13 +111,16 @@
     <section class="flex flex-col gap-2">
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Session</h3>
-        <Badge variant={desktopState.sessionState?.isStreaming ? "default" : "outline"}>{sessionStatus}</Badge>
       </div>
 
       <div class="grid gap-2 text-xs">
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Session ID</span>
           <span class="truncate text-right font-mono text-[11px] font-medium" title={sessionId}>{shortId(sessionId)}</span>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-muted-foreground">Model</span>
+          <span class="truncate text-right font-medium">{getModelName(desktopState.sessionState?.model)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Messages</span>
@@ -176,10 +182,18 @@
             {/if}
           </div>
           {#if contextPercent !== undefined}
-            <div class="h-1.5 overflow-hidden rounded-full bg-muted" aria-label={`Context usage ${formatPercent(contextPercent)}`} role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow={contextPercent}>
+            <div
+              class="h-1.5 overflow-hidden rounded-full bg-muted"
+              role="meter"
+              aria-label="Context window usage"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={contextPercent}
+              aria-valuetext={contextValueText}
+            >
               <div class={`h-full rounded-full ${getContextBarClass(contextPercent)}`} style={`width: ${contextPercent}%;`}></div>
             </div>
-            <div class="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+            <div class="flex items-center justify-between gap-3 text-[11px] text-foreground/70">
               <span>{formatCount(desktopState.sessionStats.contextUsage?.tokens)} used</span>
               <span>{formatCount(desktopState.sessionStats.contextUsage?.contextWindow)} window</span>
             </div>
@@ -195,45 +209,24 @@
     <Separator />
 
     <section class="flex flex-col gap-2">
-      <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Runtime diagnostics</h3>
-      <div class="grid gap-2 text-xs">
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-muted-foreground">PI RPC</span>
-          <span class="truncate text-right font-medium">{desktopState.piStatus.state}</span>
-        </div>
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-muted-foreground">Model</span>
-          <span class="truncate text-right font-medium">{getModelName(desktopState.sessionState?.model)}</span>
-        </div>
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-muted-foreground">Working dir</span>
-          <span class="truncate text-right font-medium">{desktopState.repoPath ?? "None"}</span>
-        </div>
-        {#if desktopState.piStatus.diagnostic}
-          <div class="text-muted-foreground">{desktopState.piStatus.diagnostic}</div>
-        {/if}
-      </div>
-    </section>
-
-    <Separator />
-
-    <section class="flex flex-col gap-2">
       <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tool activity</h3>
-      <div class="flex flex-col gap-1">
-        {#if desktopState.activity.length === 0}
-          <div class="px-2 py-1 text-xs text-muted-foreground">No activity yet</div>
-        {:else}
-          {#each desktopState.activity as event}
-            <div class="flex h-8 items-center justify-between gap-2 rounded-md px-2 text-xs hover:bg-accent">
-              <span class="flex min-w-0 items-center gap-2">
-                <HugeiconsIcon icon={AlertCircleIcon} data-icon />
-                <span class="truncate font-mono text-[11px]">{event.detail}</span>
-              </span>
-              <span class="text-[11px] text-muted-foreground">{event.type}</span>
-            </div>
+      {#if desktopState.activity.length === 0}
+        <p class="px-2 py-1 text-xs text-muted-foreground">No activity yet</p>
+      {:else}
+        <ul class="flex flex-col gap-1" role="list">
+          {#each desktopState.activity as event (event.type + event.detail)}
+            <li>
+              <div class="flex h-8 items-center justify-between gap-2 rounded-full px-2 text-xs hover:bg-accent">
+                <span class="flex min-w-0 items-center gap-2">
+                  <HugeiconsIcon icon={getActivityIcon(event.type)} data-icon />
+                  <span class="truncate font-mono text-[11px]">{event.detail}</span>
+                </span>
+                <span class="shrink-0 text-[11px] text-foreground/70">{event.type}</span>
+              </div>
+            </li>
           {/each}
-        {/if}
-      </div>
+        </ul>
+      {/if}
     </section>
   </div>
 </aside>
