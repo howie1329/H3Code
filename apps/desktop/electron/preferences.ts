@@ -24,6 +24,15 @@ export type DesktopSettings = {
 
 export type { IndexedSessionPreference, RecentRepoPreference };
 
+export type SessionWorktreePreference = {
+  sessionPath: string;
+  repoPath: string;
+  repoName: string;
+  worktreePath: string;
+  sessionId?: string;
+  sessionName?: string;
+};
+
 export type DesktopPreferences = {
   recentRepos: RecentRepoPreference[];
   indexedSessions: IndexedSessionPreference[];
@@ -259,6 +268,35 @@ export function getRepoWorktrees(repoPath: string) {
   }));
 }
 
+export function getAllSessionWorktrees(): SessionWorktreePreference[] {
+  return getDatabase().prepare(`
+    SELECT
+      worktrees.session_path AS sessionPath,
+      worktrees.repo_path AS repoPath,
+      repos.name AS repoName,
+      worktrees.worktree_path AS worktreePath,
+      sessions.session_id AS sessionId,
+      sessions.name AS sessionName
+    FROM session_worktrees AS worktrees
+    LEFT JOIN recent_repos AS repos
+      ON repos.path = worktrees.repo_path
+    LEFT JOIN repo_sessions AS sessions
+      ON sessions.session_path = worktrees.session_path
+    ORDER BY repos.name ASC, worktrees.created_at DESC
+  `).all().map((row) => ({
+    sessionPath: String(row.sessionPath),
+    repoPath: String(row.repoPath),
+    repoName: toOptionalString(row.repoName) ?? basename(String(row.repoPath)),
+    worktreePath: String(row.worktreePath),
+    sessionId: toOptionalString(row.sessionId),
+    sessionName: toOptionalString(row.sessionName),
+  }));
+}
+
+export function removeSessionWorktreeMapping(sessionPath: string) {
+  getDatabase().prepare("DELETE FROM session_worktrees WHERE session_path = ?").run(sessionPath);
+}
+
 export function removeIndexedRepo(repoPath: string) {
   const db = getDatabase();
   const lastSelectedRepoPath = getSetting(db, "lastSelectedRepoPath");
@@ -310,12 +348,16 @@ export function clearAllIndexedData() {
   return getPreferences();
 }
 
-export function removeIndexedSession(sessionPath: string) {
+export function removeIndexedSession(sessionPath: string, options: { removeWorktreeMapping?: boolean } = {}) {
   const db = getDatabase();
   const lastSelectedSessionPath = getSetting(db, "lastSelectedSessionPath");
+  const removeWorktreeMapping = options.removeWorktreeMapping ?? true;
 
   db.prepare("DELETE FROM repo_sessions WHERE session_path = ?").run(sessionPath);
-  db.prepare("DELETE FROM session_worktrees WHERE session_path = ?").run(sessionPath);
+
+  if (removeWorktreeMapping) {
+    db.prepare("DELETE FROM session_worktrees WHERE session_path = ?").run(sessionPath);
+  }
 
   if (lastSelectedSessionPath === sessionPath) {
     deleteSetting(db, "lastSelectedSessionPath");

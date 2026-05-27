@@ -25,6 +25,11 @@
   let clearIndexOpen = $state(false);
   let clearIndexBusy = $state(false);
   let repoRemovalBusy = $state(false);
+  let worktreeRemovalOpen = $state(false);
+  let worktreeRemovalTarget = $state<PiWorktreeSummary | undefined>();
+  let worktreeRemovalBusy = $state(false);
+  let pruneWorktreesOpen = $state(false);
+  let pruneWorktreesBusy = $state(false);
 
   const piExecutableDirty = $derived(piExecutableDraft.trim() !== desktopState.piExecutablePath);
   const sessionConnected = $derived(desktopState.piStatus.state === "connected");
@@ -34,6 +39,22 @@
       ? `${desktopState.sessionState.model.provider}/${desktopState.sessionState.model.id}`
       : "—",
   );
+  const stalePruneableCount = $derived(desktopState.worktrees.filter((worktree) => worktree.pruneable).length);
+  const worktreeGroups = $derived.by(() => {
+    const groups = new Map<string, { repoName: string; repoPath: string; worktrees: PiWorktreeSummary[] }>();
+
+    for (const worktree of desktopState.worktrees) {
+      const group = groups.get(worktree.repoPath) ?? {
+        repoName: worktree.repoName,
+        repoPath: worktree.repoPath,
+        worktrees: [],
+      };
+      group.worktrees.push(worktree);
+      groups.set(worktree.repoPath, group);
+    }
+
+    return [...groups.values()];
+  });
 
   $effect(() => {
     piExecutableDraft = desktopState.piExecutablePath;
@@ -43,6 +64,7 @@
     void window.h3code?.getAppVersion().then((version) => {
       appVersion = version;
     });
+    void desktopState.refreshWorktrees();
   });
 
   async function savePiExecutablePath() {
@@ -94,6 +116,71 @@
     } finally {
       clearIndexBusy = false;
     }
+  }
+
+  function requestRemoveWorktree(worktree: PiWorktreeSummary) {
+    worktreeRemovalTarget = worktree;
+    worktreeRemovalOpen = true;
+  }
+
+  async function confirmRemoveWorktree() {
+    if (!worktreeRemovalTarget) {
+      return;
+    }
+
+    worktreeRemovalBusy = true;
+
+    try {
+      await desktopState.removeStaleWorktree(worktreeRemovalTarget.sessionPath);
+    } finally {
+      worktreeRemovalBusy = false;
+    }
+  }
+
+  async function confirmPruneWorktrees() {
+    pruneWorktreesBusy = true;
+
+    try {
+      await desktopState.pruneStaleWorktrees();
+    } finally {
+      pruneWorktreesBusy = false;
+    }
+  }
+
+  function getWorktreeTitle(worktree: PiWorktreeSummary) {
+    return worktree.sessionName || worktree.sessionId || "Unmapped session";
+  }
+
+  function getWorktreeStatusLabel(worktree: PiWorktreeSummary) {
+    if (worktree.status === "active") {
+      return "Active";
+    }
+
+    if (worktree.status === "stopped") {
+      return "Stopped";
+    }
+
+    return worktree.exists ? "Stale" : "Missing";
+  }
+
+  function getWorktreeDirtyLabel(worktree: PiWorktreeSummary) {
+    if (!worktree.exists) {
+      return "Path missing";
+    }
+
+    if (!worktree.appOwned) {
+      return "External";
+    }
+
+    if (worktree.dirtyState === "dirty") {
+      return "Dirty - kept";
+    }
+
+    if (worktree.dirtyState === "unknown") {
+      return "Unknown - kept";
+    }
+
+    return "Clean";
   }
 </script>
 
@@ -388,6 +475,104 @@
 
     <Separator />
 
+    <SettingsSection
+      id="worktrees"
+      title="Worktrees"
+      description="H3Code-managed PI worktrees. Dirty worktrees are kept until you review them."
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-8"
+          disabled={desktopState.worktreesLoading}
+          onclick={() => desktopState.refreshWorktrees()}
+        >
+          Refresh
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          class="h-8"
+          disabled={stalePruneableCount === 0 || desktopState.worktreesLoading}
+          onclick={() => {
+            pruneWorktreesOpen = true;
+          }}
+        >
+          Prune stale
+        </Button>
+        <span class="text-[11px] text-muted-foreground">
+          {stalePruneableCount} removable
+        </span>
+      </div>
+
+      {#if desktopState.worktreesError}
+        <p class="text-xs text-destructive">{desktopState.worktreesError}</p>
+      {:else if desktopState.worktreesLoading && desktopState.worktrees.length === 0}
+        <p class="text-xs text-muted-foreground">Loading worktrees...</p>
+      {:else if worktreeGroups.length === 0}
+        <p class="text-xs text-muted-foreground">No H3Code-managed worktrees indexed.</p>
+      {:else}
+        <div class="space-y-4">
+          {#each worktreeGroups as group (group.repoPath)}
+            <div class="space-y-2">
+              <div class="min-w-0">
+                <p class="truncate text-xs font-medium">{group.repoName}</p>
+                <p class="truncate font-mono text-[10px] text-muted-foreground">{group.repoPath}</p>
+              </div>
+              <ul class="divide-y divide-border/50 rounded-lg border border-border/50">
+                {#each group.worktrees as worktree (worktree.sessionPath)}
+                  <li class="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex min-w-0 flex-wrap items-center gap-2">
+                        <p class="truncate text-xs font-medium">{getWorktreeTitle(worktree)}</p>
+                        <span class="rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {getWorktreeStatusLabel(worktree)}
+                        </span>
+                        <span class="rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {getWorktreeDirtyLabel(worktree)}
+                        </span>
+                      </div>
+                      <p class="mt-1 truncate font-mono text-[10px] text-muted-foreground" title={worktree.worktreePath}>
+                        {worktree.worktreePath}
+                      </p>
+                      <p class="mt-0.5 truncate font-mono text-[10px] text-muted-foreground" title={worktree.sessionPath}>
+                        {worktree.sessionPath}
+                      </p>
+                    </div>
+                    <div class="flex shrink-0 gap-2">
+                      {#if worktree.exists}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          class="h-7 text-[11px]"
+                          onclick={() => desktopState.revealWorktreePath(worktree.worktreePath)}
+                        >
+                          Reveal
+                        </Button>
+                      {/if}
+                      {#if worktree.removable}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          class="h-7 text-[11px] text-muted-foreground hover:text-destructive"
+                          onclick={() => requestRemoveWorktree(worktree)}
+                        >
+                          Remove
+                        </Button>
+                      {/if}
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </SettingsSection>
+
+    <Separator />
+
     <SettingsSection id="about" title="About" description="Application and runtime diagnostics.">
       <div class="rounded-lg border border-border/50 bg-muted/30 p-4">
         <dl class="grid gap-3 text-xs">
@@ -440,4 +625,24 @@
   confirmLabel="Clear index"
   busy={clearIndexBusy}
   onConfirm={confirmClearIndex}
+/>
+
+<ConfirmDeleteDialog
+  bind:open={worktreeRemovalOpen}
+  title="Remove clean stale worktree?"
+  description={worktreeRemovalTarget
+    ? `Remove the clean stale H3Code worktree at ${worktreeRemovalTarget.worktreePath}. Dirty worktrees and session-associated worktrees are kept.`
+    : ""}
+  confirmLabel="Remove"
+  busy={worktreeRemovalBusy}
+  onConfirm={confirmRemoveWorktree}
+/>
+
+<ConfirmDeleteDialog
+  bind:open={pruneWorktreesOpen}
+  title="Prune stale worktrees?"
+  description={`Remove ${stalePruneableCount} clean stale H3Code worktree ${stalePruneableCount === 1 ? "entry" : "entries"}. Dirty worktrees are kept.`}
+  confirmLabel="Prune"
+  busy={pruneWorktreesBusy}
+  onConfirm={confirmPruneWorktrees}
 />

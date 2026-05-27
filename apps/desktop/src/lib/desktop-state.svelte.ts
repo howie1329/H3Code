@@ -80,6 +80,9 @@ class DesktopState {
   sessionDiffLoading = $state(false);
   sessionDiffError = $state<string | undefined>();
   sessionDiffPanelOpen = $state(false);
+  worktrees = $state<PiWorktreeSummary[]>([]);
+  worktreesLoading = $state(false);
+  worktreesError = $state<string | undefined>();
   slashCommands = $state<PiSlashCommand[]>([]);
   slashCommandsLoading = $state(false);
   slashCommandsError = $state<string | undefined>();
@@ -253,6 +256,8 @@ class DesktopState {
           await this.resyncConnectedSessionIfNeeded();
         }
       }
+
+      await this.refreshWorktrees();
     } catch (error) {
       this.preferencesLoaded = true;
       this.errorMessage = getErrorMessage(error);
@@ -475,6 +480,8 @@ class DesktopState {
         this.resetSessionReadModel();
         this.resetTransientTranscript();
       }
+
+      await this.refreshWorktrees();
     });
   }
 
@@ -508,6 +515,8 @@ class DesktopState {
         this.resetSessionReadModel();
         this.resetTransientTranscript();
       }
+
+      await this.refreshWorktrees();
     });
   }
 
@@ -933,6 +942,39 @@ class DesktopState {
     return this.requireApi().revealWorktree();
   }
 
+  async refreshWorktrees() {
+    if (!window.h3code) {
+      return;
+    }
+
+    this.worktreesLoading = true;
+    this.worktreesError = undefined;
+
+    try {
+      this.worktrees = await this.requireApi().listWorktrees();
+    } catch (error) {
+      this.worktreesError = getErrorMessage(error);
+    } finally {
+      this.worktreesLoading = false;
+    }
+  }
+
+  async revealWorktreePath(worktreePath: string) {
+    return this.requireApi().revealWorktreePath(worktreePath);
+  }
+
+  async removeStaleWorktree(sessionPath: string) {
+    const result = await this.requireApi().removeStaleWorktree(sessionPath);
+    this.worktrees = result.worktrees;
+    return result.removed;
+  }
+
+  async pruneStaleWorktrees() {
+    const result = await this.requireApi().pruneStaleWorktrees();
+    this.worktrees = result.worktrees;
+    return result.removed;
+  }
+
   async clearAllIndexedData() {
     const preferences = await this.requireApi().clearAllIndexedData();
     this.applyPreferencesSnapshot(preferences);
@@ -945,6 +987,7 @@ class DesktopState {
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
+    await this.refreshWorktrees();
   }
 
   applyPreferencesSnapshot(preferences: DesktopPreferences) {

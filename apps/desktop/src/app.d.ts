@@ -75,6 +75,28 @@ declare global {
     changedFiles: number;
   };
 
+  type PiWorktreeSummary = {
+    sessionPath: string;
+    repoPath: string;
+    repoName: string;
+    worktreePath: string;
+    sessionId?: string;
+    sessionName?: string;
+    status: "active" | "stopped" | "stale";
+    exists: boolean;
+    appOwned: boolean;
+    dirtyState: "clean" | "dirty" | "unknown";
+    sessionFileExists: boolean;
+    activeAgentId?: string;
+    removable: boolean;
+    pruneable: boolean;
+  };
+
+  type PiWorktreeCleanupResult = {
+    worktrees: PiWorktreeSummary[];
+    removed: number;
+  };
+
   type PiSlashCommand = {
     name: string;
     description?: string;
@@ -200,6 +222,10 @@ declare global {
       getSessionStats: () => Promise<PiSessionStats | null>;
       getSessionDiff: () => Promise<PiSessionDiff>;
       revealWorktree: () => Promise<string>;
+      listWorktrees: () => Promise<PiWorktreeSummary[]>;
+      revealWorktreePath: (worktreePath: string) => Promise<string>;
+      removeStaleWorktree: (sessionPath: string) => Promise<PiWorktreeCleanupResult>;
+      pruneStaleWorktrees: () => Promise<PiWorktreeCleanupResult>;
       getCommands: () => Promise<PiSlashCommand[]>;
       getAvailableModels: () => Promise<PiModel[]>;
       setModel: (provider: string, modelId: string) => Promise<PiModel>;

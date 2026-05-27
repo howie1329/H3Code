@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electro
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, stat, unlink } from "node:fs/promises";
+import { mkdir, rm, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,12 +20,14 @@ import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "./pi-extensi
 import {
   clearAllIndexedData,
   closePreferencesDatabase,
+  getAllSessionWorktrees,
   getPiExecutablePath,
   getPreferences,
   getRepoWorktrees,
   getSessionWorktree,
   removeIndexedRepo,
   removeIndexedSession,
+  removeSessionWorktreeMapping,
   recordRepoSessionRows,
   recordRepoUsage,
   recordSessionWorktree,
@@ -34,6 +36,7 @@ import {
   updateDesktopSettings,
   type DesktopSettings,
 } from "./preferences.js";
+import { createWorktreeSummary, type WorktreeMapping, type WorktreeSummary } from "./worktree-inventory.js";
 
 type PiConnectionState = "disconnected" | "starting" | "connected" | "exited" | "error";
 
@@ -86,6 +89,11 @@ type PiSlashCommand = {
 type SessionDiff = {
   patch: string;
   changedFiles: number;
+};
+
+type WorktreeCleanupResult = {
+  worktrees: WorktreeSummary[];
+  removed: number;
 };
 
 type PendingRequest = {
@@ -399,7 +407,15 @@ async function deletePiSession(repoPath: string, sessionPath: string) {
   }
 
   await deleteSessionFile(sessionPath);
-  removeIndexedSession(sessionPath);
+  const removeWorktreeMapping = await cleanupWorktreeForDeletedSession(
+    sessionWorktree
+      ? {
+          ...sessionWorktree,
+          repoName: basename(sessionWorktree.repoPath),
+        }
+      : undefined,
+  );
+  removeIndexedSession(sessionPath, { removeWorktreeMapping });
 
   return listSessionsForRepo(repoPath, true);
 }
@@ -513,6 +529,142 @@ function runGit(args: string[], cwd: string) {
       resolve({ status, stdout, stderr });
     });
   });
+}
+
+function getWorktreesDir() {
+  return path.join(app.getPath("userData"), "pi-worktrees");
+}
+
+function isAppOwnedWorktree(worktreePath: string) {
+  const relativePath = path.relative(getWorktreesDir(), worktreePath);
+  return Boolean(relativePath) && !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
+}
+
+async function getWorktreeDirtyState(worktreePath: string): Promise<WorktreeSummary["dirtyState"]> {
+  if (!existsSync(worktreePath)) {
+    return "clean";
+  }
+
+  const repoCheck = await runGit(["rev-parse", "--is-inside-work-tree"], worktreePath);
+
+  if (repoCheck.status !== 0 || repoCheck.stdout.trim() !== "true") {
+    return "unknown";
+  }
+
+  const statusResult = await runGit(["status", "--porcelain=v1", "--untracked-files=all"], worktreePath);
+
+  if (statusResult.status !== 0) {
+    return "unknown";
+  }
+
+  return statusResult.stdout.trim().length > 0 ? "dirty" : "clean";
+}
+
+function getActiveAgentIdForWorktree(worktreePath: string) {
+  return [...piAgents.values()].find((agent) => agent.worktreePath === worktreePath)?.id;
+}
+
+async function getWorktreeSummary(mapping: WorktreeMapping): Promise<WorktreeSummary> {
+  const exists = existsSync(mapping.worktreePath);
+  const sessionFileExists = existsSync(mapping.sessionPath);
+  const activeAgentId = getActiveAgentIdForWorktree(mapping.worktreePath);
+
+  return createWorktreeSummary(
+    mapping,
+    {
+      exists,
+      appOwned: isAppOwnedWorktree(mapping.worktreePath),
+      dirtyState: await getWorktreeDirtyState(mapping.worktreePath),
+      sessionFileExists,
+    },
+    { activeAgentId },
+  );
+}
+
+async function listWorktrees(): Promise<WorktreeSummary[]> {
+  return Promise.all(getAllSessionWorktrees().map((mapping) => getWorktreeSummary(mapping)));
+}
+
+async function removeCleanWorktreeDirectory(summary: WorktreeSummary) {
+  if (!summary.appOwned) {
+    throw new Error("Only H3Code-managed worktrees can be removed.");
+  }
+
+  if (summary.dirtyState !== "clean") {
+    throw new Error("Dirty worktrees are kept. Reveal the worktree to review its changes.");
+  }
+
+  if (!summary.exists) {
+    return;
+  }
+
+  const gitResult = existsSync(summary.repoPath)
+    ? await runGit(["worktree", "remove", summary.worktreePath], summary.repoPath)
+    : { status: 1, stdout: "", stderr: "" };
+
+  if (gitResult.status === 0 || !existsSync(summary.worktreePath)) {
+    return;
+  }
+
+  await rm(summary.worktreePath, { recursive: true, force: true });
+}
+
+async function cleanupWorktreeForDeletedSession(mapping: WorktreeMapping | undefined) {
+  if (!mapping) {
+    return true;
+  }
+
+  const summary = await getWorktreeSummary(mapping);
+
+  if (!summary.appOwned || !summary.exists) {
+    return true;
+  }
+
+  if (summary.dirtyState !== "clean") {
+    return false;
+  }
+
+  try {
+    await removeCleanWorktreeDirectory(summary);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function removeStaleWorktree(sessionPath: string): Promise<WorktreeCleanupResult> {
+  const mapping = getAllSessionWorktrees().find((worktree) => worktree.sessionPath === sessionPath);
+
+  if (!mapping) {
+    return { worktrees: await listWorktrees(), removed: 0 };
+  }
+
+  const summary = await getWorktreeSummary(mapping);
+
+  if (!summary.pruneable) {
+    throw new Error("This worktree is not a clean stale H3Code worktree.");
+  }
+
+  await removeCleanWorktreeDirectory(summary);
+  removeSessionWorktreeMapping(sessionPath);
+
+  return { worktrees: await listWorktrees(), removed: 1 };
+}
+
+async function pruneStaleWorktrees(): Promise<WorktreeCleanupResult> {
+  let removed = 0;
+
+  for (const summary of await listWorktrees()) {
+    if (!summary.pruneable) {
+      continue;
+    }
+
+    await removeCleanWorktreeDirectory(summary);
+    removeSessionWorktreeMapping(summary.sessionPath);
+    removed += 1;
+  }
+
+  return { worktrees: await listWorktrees(), removed };
 }
 
 function getActiveAgent() {
@@ -963,6 +1115,19 @@ ipcMain.handle("pi:reveal-worktree", () => {
   shell.showItemInFolder(agent.worktreePath);
   return agent.worktreePath;
 });
+ipcMain.handle("worktrees:list", () => listWorktrees());
+ipcMain.handle("worktrees:reveal", async (_event, worktreePath: string) => {
+  const indexed = getAllSessionWorktrees().some((worktree) => worktree.worktreePath === worktreePath);
+
+  if (!indexed) {
+    throw new Error("Only indexed worktrees can be revealed from this view.");
+  }
+
+  shell.showItemInFolder(worktreePath);
+  return worktreePath;
+});
+ipcMain.handle("worktrees:remove-stale", async (_event, sessionPath: string) => removeStaleWorktree(sessionPath));
+ipcMain.handle("worktrees:prune-stale", () => pruneStaleWorktrees());
 ipcMain.handle("pi:get-commands", getPiCommands);
 ipcMain.handle("pi:get-available-models", getAvailableModels);
 ipcMain.handle("pi:set-model", async (_event, provider: string, modelId: string) => setPiModel(provider, modelId));
