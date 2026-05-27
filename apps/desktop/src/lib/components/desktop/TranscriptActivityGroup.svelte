@@ -29,9 +29,9 @@
   });
 </script>
 
-<Collapsible.Root bind:open class={cn("w-full", followsText && "border-t border-border/50 pt-1")}>
+<Collapsible.Root bind:open class={cn("w-full", followsText && "border-t border-border/35 pt-1")}>
   <Collapsible.Trigger
-    class="flex h-7 w-full items-center gap-2 rounded-md px-1 text-left text-[11px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    class="flex h-6 w-full items-center gap-1.5 rounded-md px-1 text-left text-[10px] text-muted-foreground outline-none transition-[background-color,color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-accent/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
     aria-label={`Activity: ${summary}`}
   >
     {#if hasRunning}
@@ -39,12 +39,12 @@
     {:else if hasError}
       <span class="size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true"></span>
     {:else}
-      <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground/60" aria-hidden="true"></span>
+      <span class="size-1 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true"></span>
     {/if}
-    <span class="min-w-0 flex-1 truncate font-medium">{summary}</span>
+    <span class="min-w-0 flex-1 truncate font-normal">{summary}</span>
     <HugeiconsIcon
       icon={ArrowDown01Icon}
-      class={cn("size-3 shrink-0 transition-transform", open && "rotate-180")}
+      class={cn("size-2.5 shrink-0 opacity-50 transition-transform duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none", open && "rotate-180")}
     />
   </Collapsible.Trigger>
   <Collapsible.Content class="flex flex-col gap-0.5 py-1">

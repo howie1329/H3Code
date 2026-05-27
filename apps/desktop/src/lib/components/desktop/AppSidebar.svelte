@@ -5,7 +5,6 @@
     AddCircleIcon,
     ArrowDown01Icon,
     ArrowRight01Icon,
-    BubbleChatIcon,
     FolderAddIcon,
     FolderCodeIcon,
     Settings05Icon,
@@ -15,7 +14,8 @@
 
   import { desktopState, type SidebarRepo } from "$lib/desktop-state.svelte";
   import ConfirmDeleteDialog from "$lib/components/desktop/ConfirmDeleteDialog.svelte";
-  import { formatSessionModified, getSessionDisplayTitle } from "$lib/session-display-title.js";
+  import VirtualSessionList from "$lib/components/desktop/VirtualSessionList.svelte";
+  import { getSessionDisplayTitle } from "$lib/session-display-title.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
@@ -173,17 +173,21 @@
                         </Button>
                       </div>
 
-                      <Sidebar.MenuSub
-                        class="max-h-[min(50svh,18rem)] min-h-0 overflow-y-auto transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
-                      >
-                        {#if repo.sessionsLoading}
+                      {#if repo.sessionsLoading}
+                        <Sidebar.MenuSub
+                          class="max-h-[min(50svh,18rem)] min-h-0 overflow-y-auto transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+                        >
                           <Sidebar.MenuSubItem>
                             <div class="flex h-7 items-center gap-2 px-2 text-[11px] leading-snug text-muted-foreground">
                               <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true"></span>
                               <span class="truncate">Loading sessions</span>
                             </div>
                           </Sidebar.MenuSubItem>
-                        {:else if repo.sessionsError}
+                        </Sidebar.MenuSub>
+                      {:else if repo.sessionsError}
+                        <Sidebar.MenuSub
+                          class="max-h-[min(50svh,18rem)] min-h-0 overflow-y-auto transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+                        >
                           <Sidebar.MenuSubItem>
                             <button
                               type="button"
@@ -193,52 +197,23 @@
                               Could not load sessions. Retry
                             </button>
                           </Sidebar.MenuSubItem>
-                        {:else if repoSessions.length === 0}
+                        </Sidebar.MenuSub>
+                      {:else if repoSessions.length === 0}
+                        <Sidebar.MenuSub
+                          class="max-h-[min(50svh,18rem)] min-h-0 overflow-y-auto transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+                        >
                           <Sidebar.MenuSubItem>
                             <div class="px-2 py-1 text-[11px] leading-snug text-muted-foreground">No sessions in this repo</div>
                           </Sidebar.MenuSubItem>
-                        {:else}
-                          {#each repoSessions as session (session.path)}
-                            {@const isSessionActive = session.path === desktopState.selectedSessionPath}
-                            {@const sessionLabel = getSessionDisplayTitle(session)}
-                            {@const sessionModified = formatSessionModified(session.modified)}
-                            <Sidebar.MenuSubItem class="group/menu-sub-item relative">
-                              <Sidebar.MenuSubButton
-                                isActive={isSessionActive}
-                                aria-disabled={desktopState.isBusy}
-                                class="h-7 w-full max-w-full rounded-full px-2.5 pr-8 text-[11px] leading-snug [&_svg]:size-3"
-                              >
-                                {#snippet child({ props })}
-                                  <button
-                                    {...props}
-                                    type="button"
-                                    title={`${sessionLabel} · ${repo.name}`}
-                                    aria-current={isSessionActive ? "page" : undefined}
-                                    disabled={desktopState.isBusy}
-                                    onclick={() => handleSessionClick(session.path, repo.path)}
-                                  >
-                                    <HugeiconsIcon icon={BubbleChatIcon} />
-                                    <span class="min-w-0 flex-1 truncate text-left">{sessionLabel}</span>
-                                    {#if sessionModified}
-                                      <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">{sessionModified}</span>
-                                    {/if}
-                                  </button>
-                                {/snippet}
-                              </Sidebar.MenuSubButton>
-                              <button
-                                type="button"
-                                class="absolute right-1 top-1/2 z-10 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground opacity-100 outline-none transition-colors hover:bg-sidebar-accent hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 sm:opacity-0 sm:group-hover/menu-sub-item:opacity-100 sm:group-focus-within/menu-sub-item:opacity-100"
-                                aria-label={`Delete ${sessionLabel}`}
-                                title="Delete PI session"
-                                disabled={desktopState.isBusy}
-                                onclick={(event) => handleSessionDeleteClick(event, repo, session)}
-                              >
-                                <HugeiconsIcon icon={WasteIcon} class="size-3" />
-                              </button>
-                            </Sidebar.MenuSubItem>
-                          {/each}
-                        {/if}
-                      </Sidebar.MenuSub>
+                        </Sidebar.MenuSub>
+                      {:else}
+                        <VirtualSessionList
+                          {repo}
+                          sessions={repoSessions}
+                          onSessionClick={handleSessionClick}
+                          onSessionDeleteClick={handleSessionDeleteClick}
+                        />
+                      {/if}
                     </div>
                   {/if}
                 </Sidebar.MenuItem>

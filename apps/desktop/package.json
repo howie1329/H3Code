@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently -k -n renderer,electron -c cyan,magenta \"vite dev --host 127.0.0.1 --port 5173\" \"npm run dev:electron\"",
     "dev:electron": "npm run build:electron && wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
@@ -11,7 +11,9 @@
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "lint": "svelte-check --tsconfig ./tsconfig.json"
+    "lint": "svelte-check --tsconfig ./tsconfig.json",
+    "test:pi-session": "tsc -p tsconfig.pi-session-test.json && node --test dist-electron/src/lib/pi-session/projector.test.js",
+    "test:preferences": "tsc -p tsconfig.preferences-test.json && node --test dist-electron/electron/preferences.test.js"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",
@@ -46,6 +48,7 @@
     "@shikijs/langs": "^4.1.0",
     "@shikijs/themes": "^4.1.0",
     "@streamdown-svelte/code": "^1.1.3",
+    "@tanstack/svelte-virtual": "^3.13.26",
     "ai": "^6.0.190",
     "isomorphic-dompurify": "^3.14.0",
     "mode-watcher": "^1.1.0",

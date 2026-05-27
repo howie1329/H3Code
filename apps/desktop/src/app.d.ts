@@ -3,7 +3,9 @@ declare global {
 
   type PiStatus = {
     state: PiConnectionState;
+    agentId?: string;
     repoPath?: string;
+    worktreePath?: string;
     diagnostic?: string;
   };
 
@@ -11,6 +13,8 @@ declare global {
     path: string;
     id: string;
     cwd: string;
+    agentId?: string;
+    worktreePath?: string;
     name?: string;
     created: string;
     modified: string;
@@ -88,6 +92,8 @@ declare global {
 
   type PiConnectRepoResult = {
     repoPath: string;
+    agentId?: string;
+    worktreePath?: string;
     sessions: PiSessionSummary[];
     selectedSessionPath?: string;
     state?: PiSessionState;
@@ -114,6 +120,7 @@ declare global {
   type IndexedSessionPreference = {
     path: string;
     repoPath: string;
+    worktreePath?: string;
     id: string;
     name?: string;
     created: string;
@@ -126,6 +133,7 @@ declare global {
     | {
         type: "extension_ui_request";
         id: string;
+        agentId?: string;
         method: "select";
         title: string;
         options: string[];
@@ -134,6 +142,7 @@ declare global {
     | {
         type: "extension_ui_request";
         id: string;
+        agentId?: string;
         method: "confirm";
         title: string;
         message: string;
@@ -142,6 +151,7 @@ declare global {
     | {
         type: "extension_ui_request";
         id: string;
+        agentId?: string;
         method: "input";
         title: string;
         placeholder?: string;
@@ -150,6 +160,7 @@ declare global {
     | {
         type: "extension_ui_request";
         id: string;
+        agentId?: string;
         method: "editor";
         title: string;
         prefill?: string;
@@ -180,12 +191,13 @@ declare global {
       listSessions: () => Promise<PiSessionSummary[]>;
       listRepoSessions: (repoPath: string, markRecent?: boolean) => Promise<PiSessionSummary[]>;
       deletePiSession: (repoPath: string, sessionPath: string) => Promise<PiSessionSummary[]>;
-      switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
-      newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[] }>;
+      switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[]; agentId?: string; repoPath?: string; worktreePath?: string }>;
+      newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[]; agentId?: string; repoPath?: string; worktreePath?: string }>;
       getSessionSnapshot: () => Promise<{ state: PiSessionState; messages: unknown[] }>;
       getSessionState: () => Promise<PiSessionState>;
       getSessionStats: () => Promise<PiSessionStats | null>;
       getSessionDiff: () => Promise<PiSessionDiff>;
+      revealWorktree: () => Promise<string>;
       getCommands: () => Promise<PiSlashCommand[]>;
       getAvailableModels: () => Promise<PiModel[]>;
       setModel: (provider: string, modelId: string) => Promise<PiModel>;
@@ -204,7 +216,7 @@ declare global {
       setPiExecutablePath: (executablePath: string) => Promise<{ piExecutablePath: string }>;
       clearAllIndexedData: () => Promise<DesktopPreferences>;
       revealPreferencesDatabase: () => Promise<string>;
-      onPiEvent: (listener: (event: unknown) => void) => () => void;
+      onSessionEvent: (listener: (event: import("$lib/pi-session/domain-events.js").SessionDomainEvent & { agentId?: string }) => void) => () => void;
       onPiStatus: (listener: (status: PiStatus) => void) => () => void;
       onExtensionUiRequest: (listener: (request: PiExtensionUiRequest) => void) => () => void;
     };

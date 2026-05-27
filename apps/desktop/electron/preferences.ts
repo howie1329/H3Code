@@ -4,6 +4,11 @@ import path from "node:path";
 
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 
+import {
+  getIndexedSessions,
+  type IndexedSessionPreference,
+} from "./preferences-indexed-sessions.js";
+
 export type DesktopSettings = {
   sidebarOpen: boolean;
   contextPanelOpen: boolean;
@@ -19,16 +24,7 @@ export type RecentRepoPreference = {
   sessionsIndexedAt?: string;
 };
 
-export type IndexedSessionPreference = {
-  path: string;
-  repoPath: string;
-  id: string;
-  name?: string;
-  created: string;
-  modified: string;
-  messageCount: number;
-  firstMessage: string;
-};
+export type { IndexedSessionPreference };
 
 export type DesktopPreferences = {
   recentRepos: RecentRepoPreference[];
@@ -120,6 +116,29 @@ function ensureRepoStub(db: DatabaseSync, repoPath: string) {
 }
 
 export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
+  recordRepoSessionRows(repoPath, sessions.map((session) => ({
+    path: session.path,
+    id: session.id,
+    name: session.name,
+    created: session.created.toISOString(),
+    modified: session.modified.toISOString(),
+    messageCount: session.messageCount,
+    firstMessage: session.firstMessage,
+  })));
+}
+
+export function recordRepoSessionRows(
+  repoPath: string,
+  sessions: Array<{
+    path: string;
+    id: string;
+    name?: string;
+    created: string;
+    modified: string;
+    messageCount: number;
+    firstMessage: string;
+  }>,
+) {
   const db = getDatabase();
   const now = new Date().toISOString();
 
@@ -150,8 +169,8 @@ export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
         repoPath,
         session.id,
         session.name ?? null,
-        session.created.toISOString(),
-        session.modified.toISOString(),
+        session.created,
+        session.modified,
         session.messageCount,
         session.firstMessage,
         now,
@@ -169,6 +188,57 @@ export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+export function recordSessionWorktree(repoPath: string, sessionPath: string, worktreePath: string) {
+  const db = getDatabase();
+  const createdAt = new Date().toISOString();
+
+  ensureRepoStub(db, repoPath);
+  db.prepare(`
+    INSERT INTO session_worktrees (session_path, repo_path, worktree_path, created_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(session_path) DO UPDATE SET
+      repo_path = excluded.repo_path,
+      worktree_path = excluded.worktree_path
+  `).run(sessionPath, repoPath, worktreePath, createdAt);
+}
+
+export function getSessionWorktree(sessionPath: string) {
+  const row = getDatabase().prepare(`
+    SELECT
+      session_path AS sessionPath,
+      repo_path AS repoPath,
+      worktree_path AS worktreePath
+    FROM session_worktrees
+    WHERE session_path = ?
+  `).get(sessionPath);
+
+  if (!row) {
+    return undefined;
+  }
+
+  return {
+    sessionPath: String(row.sessionPath),
+    repoPath: String(row.repoPath),
+    worktreePath: String(row.worktreePath),
+  };
+}
+
+export function getRepoWorktrees(repoPath: string) {
+  return getDatabase().prepare(`
+    SELECT
+      session_path AS sessionPath,
+      repo_path AS repoPath,
+      worktree_path AS worktreePath
+    FROM session_worktrees
+    WHERE repo_path = ?
+    ORDER BY created_at DESC
+  `).all(repoPath).map((row) => ({
+    sessionPath: String(row.sessionPath),
+    repoPath: String(row.repoPath),
+    worktreePath: String(row.worktreePath),
+  }));
 }
 
 export function removeIndexedRepo(repoPath: string) {
@@ -227,6 +297,7 @@ export function removeIndexedSession(sessionPath: string) {
   const lastSelectedSessionPath = getSetting(db, "lastSelectedSessionPath");
 
   db.prepare("DELETE FROM repo_sessions WHERE session_path = ?").run(sessionPath);
+  db.prepare("DELETE FROM session_worktrees WHERE session_path = ?").run(sessionPath);
 
   if (lastSelectedSessionPath === sessionPath) {
     deleteSetting(db, "lastSelectedSessionPath");
@@ -298,6 +369,17 @@ function getDatabase() {
 
     CREATE INDEX IF NOT EXISTS repo_sessions_repo_modified_idx
       ON repo_sessions(repo_path, modified_at DESC);
+
+    CREATE TABLE IF NOT EXISTS session_worktrees (
+      session_path TEXT PRIMARY KEY,
+      repo_path TEXT NOT NULL,
+      worktree_path TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(repo_path) REFERENCES recent_repos(path) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS session_worktrees_repo_idx
+      ON session_worktrees(repo_path);
   `);
 
   migrateRecentReposSchema(database);
@@ -336,31 +418,6 @@ function getRecentRepos(db: DatabaseSync): RecentRepoPreference[] {
     lastOpenedAt: String(row.lastOpenedAt),
     lastSessionPath: toOptionalString(row.lastSessionPath),
     sessionsIndexedAt: toOptionalString(row.sessionsIndexedAt),
-  }));
-}
-
-function getIndexedSessions(db: DatabaseSync): IndexedSessionPreference[] {
-  return db.prepare(`
-    SELECT
-      session_path AS path,
-      repo_path AS repoPath,
-      session_id AS id,
-      name,
-      created_at AS created,
-      modified_at AS modified,
-      message_count AS messageCount,
-      first_message AS firstMessage
-    FROM repo_sessions
-    ORDER BY modified_at DESC
-  `).all().map((row) => ({
-    path: String(row.path),
-    repoPath: String(row.repoPath),
-    id: String(row.id),
-    name: toOptionalString(row.name),
-    created: String(row.created),
-    modified: String(row.modified),
-    messageCount: Number(row.messageCount),
-    firstMessage: String(row.firstMessage),
   }));
 }
 

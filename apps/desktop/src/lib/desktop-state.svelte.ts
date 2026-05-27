@@ -4,6 +4,19 @@ import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-inpu
 import { extractSessionMetadata } from "$lib/components/desktop/transcript-normalize.js";
 import { formatMessageRole, formatMessageText } from "$lib/message-format.js";
 import { normalizeThinkingLevel } from "$lib/pi-model.js";
+import type { SessionDomainEvent } from "$lib/pi-session/domain-events.js";
+import type { SessionActivity, SessionReadModel } from "$lib/pi-session/read-model.js";
+import {
+  applySessionEvent,
+  createInitialSessionReadModel,
+  hydrateFromSnapshot,
+} from "$lib/pi-session/projector.js";
+import {
+  composerPhase,
+  latestNotification,
+  statusStripLines as selectStatusStripLines,
+  transcriptMessages as selectTranscriptMessages,
+} from "$lib/pi-session/selectors.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
 
 export type WorkspaceInspector = "diff" | "context";
@@ -23,6 +36,14 @@ export type SidebarRepo = {
   sessionsError?: string;
 };
 
+export type SessionRowStatusKind = "error" | "needs_input" | "working" | "connected" | "mapped" | "done";
+
+export type SessionRowStatus = {
+  kind: SessionRowStatusKind;
+  label: string;
+  dotClass: string;
+};
+
 const defaultDesktopSettings: DesktopSettings = {
   sidebarOpen: true,
   contextPanelOpen: false,
@@ -38,22 +59,16 @@ type OptimisticUserMessage = {
   optimistic: true;
 };
 
-type LiveToolExecutionMessage = {
-  id: string;
-  role: "toolExecution";
-  toolCallId: string;
-  toolName: string;
-  content: unknown;
-  args?: unknown;
-  isError: boolean;
-  state: "input-streaming" | "input-available" | "output-available" | "output-error";
-  timestamp: number;
+type AgentSessionEvent = SessionDomainEvent & {
+  agentId?: string;
 };
 
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
   promptValue = $state("");
+  activeAgentId = $state<string | undefined>();
   repoPath = $state<string | undefined>();
+  worktreePath = $state<string | undefined>();
   repos = $state<SidebarRepo[]>([]);
   sessions = $state<PiSessionSummary[]>([]);
   selectedSessionPath = $state<string | undefined>();
@@ -75,15 +90,14 @@ class DesktopState {
   modelsError = $state<string | undefined>();
   modelsLoaded = $state(false);
   modelsSessionKey = $state<string | undefined>();
-  messages = $state<unknown[]>([]);
+  sessionReadModel = $state<SessionReadModel>(createInitialSessionReadModel());
+  agentReadModels = $state<Record<string, SessionReadModel>>({});
+  agentStatuses = $state<Record<string, PiStatus>>({});
+  extensionUiRequestsByAgent = $state<Record<string, PiExtensionUiRequest>>({});
   pendingUserMessages = $state<OptimisticUserMessage[]>([]);
-  streamingMessage = $state<unknown | undefined>();
-  liveToolExecutions = $state<Record<string, LiveToolExecutionMessage>>({});
   piStatus = $state<PiStatus>({ state: "disconnected" });
-  activity = $state<ActivityItem[]>([]);
   isBusy = $state(false);
   isSendingPrompt = $state(false);
-  isAgentRunning = $state(false);
   errorMessage = $state<string | undefined>();
   preferencesLoaded = $state(false);
   preferencesDatabasePath = $state<string | undefined>();
@@ -98,15 +112,20 @@ class DesktopState {
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
   canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  isAgentRunning = $derived(this.sessionReadModel.isAgentRunning);
   canChangeSessionSettings = $derived(
     this.canUseSession && !this.isBusy && !this.isSendingPrompt && !this.isAgentRunning && !this.sessionState?.isStreaming,
   );
-  transcriptMessages = $derived([
-    ...this.messages,
-    ...this.pendingUserMessages,
-    ...(this.streamingMessage ? [this.streamingMessage] : []),
-    ...Object.values(this.liveToolExecutions),
-  ]);
+  activity = $derived(
+    this.sessionReadModel.activities.slice(0, 8).map((item: SessionActivity) => ({
+      type: item.type,
+      detail: item.detail,
+    })),
+  );
+  transcriptMessages = $derived(selectTranscriptMessages(this.sessionReadModel, this.pendingUserMessages));
+  composerPhaseLine = $derived(composerPhase(this.sessionReadModel));
+  statusStripLines = $derived(selectStatusStripLines(this.sessionReadModel));
+  sessionNotification = $derived(latestNotification(this.sessionReadModel));
   sessionMetadata = $derived(extractSessionMetadata(this.transcriptMessages));
   sessionTitle = $derived(
     this.selectedSession ? getSessionDisplayTitle(this.selectedSession) : "No session"
@@ -137,36 +156,59 @@ class DesktopState {
   }
 
   initializeListeners() {
-    const removeEventListener = window.h3code?.onPiEvent((event) => {
-      const item = formatActivity(event);
-      this.activity = [item, ...this.activity].slice(0, 8);
-      this.handlePiEvent(event, item.type);
+    const removeSessionEventListener = window.h3code?.onSessionEvent((event) => {
+      this.handleSessionEvent(event);
     });
 
     const removeStatusListener = window.h3code?.onPiStatus((status) => {
-      this.piStatus = status;
+      if (status.agentId) {
+        this.agentStatuses = {
+          ...this.agentStatuses,
+          [status.agentId]: status,
+        };
 
-      if (status.state !== "connected") {
-        this.isAgentRunning = false;
-        this.resetSlashCommands();
-        this.resetModels();
-        this.resetTransientTranscript();
-        this.resetSessionDiff();
-        this.clearExtensionUiRequest();
-        this.cancelDebouncedDiffRefresh();
+        if (!this.activeAgentId) {
+          this.activeAgentId = status.agentId;
+        }
       }
 
-      if (status.diagnostic) {
-        this.errorMessage = status.diagnostic;
+      const isActiveStatus = !status.agentId || status.agentId === this.activeAgentId;
+
+      if (isActiveStatus) {
+        this.piStatus = status;
+
+        if (status.state !== "connected") {
+          this.resetSlashCommands();
+          this.resetModels();
+          this.resetSessionReadModel();
+          this.resetSessionDiff();
+          this.clearExtensionUiRequest();
+          this.cancelDebouncedDiffRefresh();
+        }
+
+        if (status.diagnostic) {
+          this.errorMessage = status.diagnostic;
+        }
       }
     });
 
     const removeExtensionUiListener = window.h3code?.onExtensionUiRequest((request) => {
-      this.extensionUiRequest = request;
+      const agentId = request.agentId ?? this.activeAgentId;
+
+      if (agentId) {
+        this.extensionUiRequestsByAgent = {
+          ...this.extensionUiRequestsByAgent,
+          [agentId]: request,
+        };
+      }
+
+      if (!agentId || agentId === this.activeAgentId) {
+        this.extensionUiRequest = request;
+      }
     });
 
     return () => {
-      removeEventListener?.();
+      removeSessionEventListener?.();
       removeStatusListener?.();
       removeExtensionUiListener?.();
     };
@@ -278,10 +320,12 @@ class DesktopState {
 
   async connectRepoInternal(nextRepoPath: string, selectedSessionPath?: string) {
     this.errorMessage = undefined;
-    this.activity = [];
     const result = await this.requireApi().connectRepo(nextRepoPath, selectedSessionPath);
 
     this.repoPath = result.repoPath;
+    this.activeAgentId = result.agentId;
+    this.worktreePath = result.worktreePath;
+    this.syncActiveAgentStatus();
     this.repos = upsertRepo(this.repos, result.repoPath, {
       expanded: true,
       sessions: result.sessions,
@@ -296,9 +340,13 @@ class DesktopState {
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
-    this.messages = result.messages ?? [];
+    this.sessionReadModel = hydrateFromSnapshot(
+      createInitialSessionReadModel(),
+      result.state,
+      result.messages ?? [],
+    );
+    this.storeActiveAgentReadModel();
     this.resetTransientTranscript();
-    this.isAgentRunning = Boolean(result.state?.isStreaming);
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
@@ -324,15 +372,26 @@ class DesktopState {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
       const result = await this.requireApi().switchSession(sessionPath);
+      this.activeAgentId = result.agentId;
+      this.repoPath = result.repoPath ?? this.repoPath;
+      this.worktreePath = result.worktreePath;
+      this.syncActiveAgentStatus();
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
       this.sessionStats = null;
       this.resetSessionDiff();
       this.resetSlashCommands();
       this.resetModels();
-      this.messages = result.messages;
+      this.sessionReadModel = hydrateFromSnapshot(
+        createInitialSessionReadModel(),
+        result.state,
+        result.messages,
+      );
+      this.storeActiveAgentReadModel();
       this.resetTransientTranscript();
-      this.isAgentRunning = Boolean(result.state?.isStreaming);
+      if (this.repoPath) {
+        await this.loadRepoSessions(this.repoPath);
+      }
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
       void this.ensureAvailableModels(true);
@@ -349,21 +408,28 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
+      const parentSessionPath = this.selectedSessionPath;
 
-      if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
-        await this.connectRepoInternal(repoPath);
-      }
+      await this.connectRepoInternal(repoPath);
 
-      const result = await this.requireApi().newSession(this.selectedSessionPath);
+      const result = await this.requireApi().newSession(parentSessionPath);
+      this.activeAgentId = result.agentId;
+      this.repoPath = result.repoPath ?? repoPath;
+      this.worktreePath = result.worktreePath;
+      this.syncActiveAgentStatus();
       this.sessionState = result.state;
       this.selectedSessionPath = result.state.sessionFile;
       this.sessionStats = null;
       this.resetSessionDiff();
       this.resetSlashCommands();
       this.resetModels();
-      this.messages = result.messages;
+      this.sessionReadModel = hydrateFromSnapshot(
+        createInitialSessionReadModel(),
+        result.state,
+        result.messages,
+      );
+      this.storeActiveAgentReadModel();
       this.resetTransientTranscript();
-      this.isAgentRunning = Boolean(result.state.isStreaming);
       this.sessions = await this.requireApi().listSessions();
       this.repos = upsertRepo(this.repos, repoPath, {
         expanded: true,
@@ -398,15 +464,16 @@ class DesktopState {
 
       if (this.repoPath === repoPath) {
         this.repoPath = undefined;
+        this.activeAgentId = undefined;
+        this.worktreePath = undefined;
         this.sessions = [];
         this.selectedSessionPath = undefined;
         this.sessionState = undefined;
         this.sessionStats = null;
         this.resetSessionDiff();
         this.resetSlashCommands();
-        this.messages = [];
+        this.resetSessionReadModel();
         this.resetTransientTranscript();
-        this.isAgentRunning = false;
       }
     });
   }
@@ -438,9 +505,8 @@ class DesktopState {
         this.sessionStats = null;
         this.resetSessionDiff();
         this.resetSlashCommands();
-        this.messages = [];
+        this.resetSessionReadModel();
         this.resetTransientTranscript();
-        this.isAgentRunning = false;
       }
     });
   }
@@ -526,20 +592,6 @@ class DesktopState {
     }
   }
 
-  async refreshSessionStateFromPi() {
-    if (!this.canUseSession) {
-      return;
-    }
-
-    try {
-      const state = await this.requireApi().getSessionState();
-      this.sessionState = state;
-      this.isAgentRunning = Boolean(state.isStreaming);
-    } catch (error) {
-      this.errorMessage = getErrorMessage(error);
-    }
-  }
-
   applySessionSnapshot(result: { state: PiSessionState; messages: unknown[] }) {
     this.pendingUserMessages = [];
     this.sessionState = result.state;
@@ -548,8 +600,8 @@ class DesktopState {
       this.selectedSessionPath = result.state.sessionFile;
     }
 
-    this.messages = result.messages;
-    this.isAgentRunning = Boolean(result.state.isStreaming);
+    this.sessionReadModel = hydrateFromSnapshot(this.sessionReadModel, result.state, result.messages);
+    this.storeActiveAgentReadModel();
   }
 
   async syncSidebarSessionsForActiveRepo() {
@@ -558,6 +610,20 @@ class DesktopState {
     }
 
     await this.loadRepoSessions(this.repoPath);
+  }
+
+  async syncSidebarSessionsForAgent(agentId: string | undefined) {
+    if (!agentId) {
+      return;
+    }
+
+    const repoPath = this.agentStatuses[agentId]?.repoPath;
+
+    if (!repoPath) {
+      return;
+    }
+
+    await this.loadRepoSessions(repoPath);
   }
 
   async refreshSessionStats() {
@@ -653,7 +719,7 @@ class DesktopState {
   }
 
   async resyncConnectedSessionIfNeeded() {
-    if (this.piStatus.state !== "connected" || !this.canUseSession || this.messages.length > 0) {
+    if (this.piStatus.state !== "connected" || !this.canUseSession || this.sessionReadModel.messages.length > 0) {
       return;
     }
 
@@ -662,18 +728,6 @@ class DesktopState {
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
-  }
-
-  applyAgentEndMessages(record: Record<string, unknown>) {
-    const messages = record.messages;
-
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return false;
-    }
-
-    this.pendingUserMessages = [];
-    this.messages = messages;
-    return true;
   }
 
   async ensureSlashCommands(refresh = false) {
@@ -875,10 +929,16 @@ class DesktopState {
     return this.requireApi().revealPreferencesDatabase();
   }
 
+  async revealWorktree() {
+    return this.requireApi().revealWorktree();
+  }
+
   async clearAllIndexedData() {
     const preferences = await this.requireApi().clearAllIndexedData();
     this.applyPreferencesSnapshot(preferences);
     this.repoPath = undefined;
+    this.activeAgentId = undefined;
+    this.worktreePath = undefined;
     this.selectedSessionPath = undefined;
     this.sessions = [];
     this.sessionState = undefined;
@@ -953,66 +1013,103 @@ class DesktopState {
     }
   }
 
-  handlePiEvent(event: unknown, type: string) {
-    const record = toRecord(event);
+  getSessionRowStatus(session: PiSessionSummary): SessionRowStatus {
+    const agentId = session.agentId;
 
-    if (shouldRefreshSessionStateFromEvent(type)) {
-      void this.refreshSessionStateFromPi();
+    if (!agentId) {
+      return session.worktreePath
+        ? createSessionRowStatus("mapped")
+        : createSessionRowStatus("done");
     }
 
-    if (type === "agent_start") {
-      this.isAgentRunning = true;
+    const status = this.agentStatuses[agentId];
+    const model = this.agentReadModels[agentId] ?? (agentId === this.activeAgentId ? this.sessionReadModel : undefined);
+    const request = this.extensionUiRequestsByAgent[agentId];
+
+    if (
+      status?.state === "error" ||
+      status?.state === "exited" ||
+      Boolean(model?.streamingError || model?.extensionError)
+    ) {
+      return createSessionRowStatus("error");
+    }
+
+    if (request) {
+      return createSessionRowStatus("needs_input");
+    }
+
+    if (
+      status?.state === "starting" ||
+      model?.isAgentRunning ||
+      model?.isCompacting ||
+      model?.retry?.active ||
+      model?.streamingMessage ||
+      Object.values(model?.tools ?? {}).some((tool) => tool.state === "input-available" || tool.state === "input-streaming")
+    ) {
+      return createSessionRowStatus("working");
+    }
+
+    if (status?.state === "connected" || agentId === this.activeAgentId) {
+      return createSessionRowStatus("connected");
+    }
+
+    return session.worktreePath
+      ? createSessionRowStatus("mapped")
+      : createSessionRowStatus("done");
+  }
+
+  handleSessionEvent(event: AgentSessionEvent) {
+    const agentId = event.agentId ?? this.activeAgentId;
+    const currentModel = agentId
+      ? (this.agentReadModels[agentId] ?? (agentId === this.activeAgentId ? this.sessionReadModel : createInitialSessionReadModel()))
+      : this.sessionReadModel;
+    const nextModel = applySessionEvent(currentModel, event);
+
+    if (agentId) {
+      this.agentReadModels = {
+        ...this.agentReadModels,
+        [agentId]: nextModel,
+      };
+    }
+
+    if (agentId && this.activeAgentId && agentId !== this.activeAgentId) {
+      if (event.type === "run.started" || event.type === "run.ended") {
+        void this.syncSidebarSessionsForAgent(agentId);
+      }
+      return;
+    }
+
+    if (agentId) {
+      this.activeAgentId = agentId;
+    }
+
+    this.sessionReadModel = nextModel;
+
+    if (event.type === "run.started") {
       this.setSessionStreaming(true);
-      return;
+      void this.syncSidebarSessionsForAgent(agentId);
     }
 
-    if (type === "message_start" || type === "message_update" || type === "message_end") {
-      const nextStreamingMessage = getStreamingMessage(record);
-
-      if (nextStreamingMessage !== undefined) {
-        this.streamingMessage = cloneForState(nextStreamingMessage);
-      }
-
-      const streamingError = getStreamingErrorMessage(record);
-
-      if (streamingError) {
-        this.errorMessage = streamingError;
-      }
-
-      return;
+    if (event.type === "run.ended") {
+      this.setSessionStreaming(false);
     }
 
-    if (type === "tool_execution_start" || type === "tool_execution_update" || type === "tool_execution_end") {
-      const toolExecution = createLiveToolExecutionMessage(record, type);
-
-      if (toolExecution) {
-        this.liveToolExecutions = {
-          ...this.liveToolExecutions,
-          [toolExecution.toolCallId]: toolExecution,
-        };
-      }
-
-      return;
+    if (this.sessionReadModel.streamingError) {
+      this.errorMessage = this.sessionReadModel.streamingError;
+    } else if (this.sessionReadModel.extensionError) {
+      this.errorMessage = this.sessionReadModel.extensionError;
     }
 
-    if (type === "turn_end") {
+    if (this.sessionReadModel.needsDiffRefresh) {
       this.scheduleDebouncedDiffRefresh();
-      return;
     }
 
-    if (type === "extension_error") {
-      this.errorMessage = formatExtensionError(record);
-      void this.refreshSessionStateFromPi();
-      return;
-    }
-
-    if (type === "agent_end") {
-      void this.reconcileAgentEnd(record);
-      return;
+    if (this.sessionReadModel.needsRunHousekeeping) {
+      void this.reconcileRunEnded();
     }
   }
 
-  async reconcileAgentEnd(record: Record<string, unknown> = {}) {
+  async reconcileRunEnded() {
     if (this.reconcileInFlight) {
       this.reconcileAgain = true;
       return;
@@ -1021,18 +1118,9 @@ class DesktopState {
     this.reconcileInFlight = true;
 
     try {
-      const appliedFromEvent = this.applyAgentEndMessages(record);
-
-      this.isAgentRunning = false;
-      this.setSessionStreaming(false);
-      this.resetTransientTranscript();
+      this.pendingUserMessages = [];
 
       await this.refreshSessionStats();
-
-      if (!appliedFromEvent) {
-        await this.refreshActiveMessages();
-      }
-
       await this.refreshSessionDiff();
       await this.syncSidebarSessionsForActiveRepo();
       void this.ensureSlashCommands(true);
@@ -1043,12 +1131,39 @@ class DesktopState {
 
       if (this.reconcileAgain) {
         this.reconcileAgain = false;
-        void this.reconcileAgentEnd(record);
+        void this.reconcileRunEnded();
       }
     }
   }
 
+  dismissSessionNotification(notificationId: string) {
+    this.sessionReadModel = {
+      ...this.sessionReadModel,
+      notifications: this.sessionReadModel.notifications.filter(
+        (item: SessionReadModel["notifications"][number]) => item.id !== notificationId,
+      ),
+    };
+    this.storeActiveAgentReadModel();
+  }
+
   clearExtensionUiRequest() {
+    if (this.extensionUiRequest) {
+      const nextRequests = { ...this.extensionUiRequestsByAgent };
+      const requestAgentId = this.extensionUiRequest.agentId ?? this.activeAgentId;
+
+      if (requestAgentId) {
+        delete nextRequests[requestAgentId];
+      }
+
+      for (const [agentId, request] of Object.entries(nextRequests)) {
+        if (request.id === this.extensionUiRequest.id) {
+          delete nextRequests[agentId];
+        }
+      }
+
+      this.extensionUiRequestsByAgent = nextRequests;
+    }
+
     this.extensionUiRequest = undefined;
   }
 
@@ -1064,8 +1179,36 @@ class DesktopState {
 
   resetTransientTranscript() {
     this.pendingUserMessages = [];
-    this.streamingMessage = undefined;
-    this.liveToolExecutions = {};
+  }
+
+  resetSessionReadModel() {
+    this.sessionReadModel = createInitialSessionReadModel();
+    this.storeActiveAgentReadModel();
+  }
+
+  storeActiveAgentReadModel() {
+    if (!this.activeAgentId) {
+      return;
+    }
+
+    this.agentReadModels = {
+      ...this.agentReadModels,
+      [this.activeAgentId]: this.sessionReadModel,
+    };
+  }
+
+  syncActiveAgentStatus() {
+    if (!this.activeAgentId) {
+      return;
+    }
+
+    const status = this.agentStatuses[this.activeAgentId];
+
+    if (status) {
+      this.piStatus = status;
+    }
+
+    this.extensionUiRequest = this.extensionUiRequestsByAgent[this.activeAgentId];
   }
 
   setSessionStreaming(isStreaming: boolean) {
@@ -1143,6 +1286,7 @@ function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[])
       path: session.path,
       id: session.id,
       cwd: session.repoPath,
+      worktreePath: session.worktreePath,
       name: session.name,
       created: session.created,
       modified: session.modified,
@@ -1155,36 +1299,49 @@ function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[])
   return sessionsByRepo;
 }
 
+function createSessionRowStatus(kind: SessionRowStatusKind): SessionRowStatus {
+  switch (kind) {
+    case "error":
+      return {
+        kind,
+        label: "Pi error",
+        dotClass: "bg-destructive",
+      };
+    case "needs_input":
+      return {
+        kind,
+        label: "Needs input",
+        dotClass: "animate-pulse bg-amber-500",
+      };
+    case "working":
+      return {
+        kind,
+        label: "Pi running",
+        dotClass: "animate-pulse bg-primary",
+      };
+    case "connected":
+      return {
+        kind,
+        label: "Connected",
+        dotClass: "bg-primary",
+      };
+    case "mapped":
+      return {
+        kind,
+        label: "Worktree available",
+        dotClass: "border border-muted-foreground/45 bg-transparent",
+      };
+    case "done":
+      return {
+        kind,
+        label: "Done",
+        dotClass: "bg-muted-foreground/25",
+      };
+  }
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function shouldRefreshSessionStateFromEvent(type: string) {
-  return (
-    type === "compaction_start" ||
-    type === "compaction_end" ||
-    type === "queue_update" ||
-    type === "auto_retry_start" ||
-    type === "auto_retry_end"
-  );
-}
-
-function formatExtensionError(record: Record<string, unknown>) {
-  const error = record.error;
-  const extensionPath = typeof record.extensionPath === "string" ? record.extensionPath : undefined;
-  const event = typeof record.event === "string" ? record.event : undefined;
-  const message = typeof error === "string" ? error : getErrorMessage(error);
-  const parts = [message];
-
-  if (extensionPath) {
-    parts.push(`(${extensionPath})`);
-  }
-
-  if (event) {
-    parts.push(`during ${event}`);
-  }
-
-  return parts.join(" ");
 }
 
 function createOptimisticUserMessage(content: string): OptimisticUserMessage {
@@ -1197,66 +1354,6 @@ function createOptimisticUserMessage(content: string): OptimisticUserMessage {
   };
 }
 
-function getStreamingMessage(event: Record<string, unknown>) {
-  if (event.message !== undefined) {
-    return event.message;
-  }
-
-  const assistantEvent = toRecord(event.assistantMessageEvent);
-
-  return assistantEvent.partial ?? assistantEvent.message ?? assistantEvent.error;
-}
-
-function createLiveToolExecutionMessage(event: Record<string, unknown>, eventType: string): LiveToolExecutionMessage | undefined {
-  const toolCallId = getString(event.toolCallId);
-
-  if (!toolCallId) {
-    return undefined;
-  }
-
-  const partialResult = toRecord(event.partialResult);
-  const result = toRecord(event.result);
-  const isError = event.isError === true;
-  const content = eventType === "tool_execution_update" ? partialResult.content : eventType === "tool_execution_end" ? result.content : [];
-  const errorText = getString(event.errorText) ?? getString(result.errorText) ?? getString(result.errorMessage);
-
-  return {
-    id: `live-tool-${toolCallId}`,
-    role: "toolExecution",
-    toolCallId,
-    toolName: getString(event.toolName) ?? "tool",
-    content: errorText ? [{ type: "text", text: errorText }] : (content ?? []),
-    args: event.args,
-    isError,
-    state: getToolExecutionState(eventType, isError),
-    timestamp: Date.now(),
-  };
-}
-
-function getToolExecutionState(eventType: string, isError: boolean): LiveToolExecutionMessage["state"] {
-  if (eventType === "tool_execution_start") {
-    return "input-available";
-  }
-
-  if (eventType === "tool_execution_update") {
-    return "input-available";
-  }
-
-  return isError ? "output-error" : "output-available";
-}
-
-function cloneForState(value: unknown) {
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  return Array.isArray(value) ? [...value] : { ...(value as Record<string, unknown>) };
-}
-
-function getString(value: unknown) {
-  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
-}
-
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
@@ -1267,38 +1364,3 @@ export function formatDate(value: string) {
 }
 
 export { formatMessageRole, formatMessageText } from "$lib/message-format.js";
-
-function formatActivity(event: unknown): ActivityItem {
-  const record = toRecord(event);
-  const type = typeof record.type === "string" ? record.type : "event";
-  const toolName = typeof record.toolName === "string" ? record.toolName : undefined;
-  const message = typeof record.message === "string" ? record.message : undefined;
-
-  return {
-    type,
-    detail: toolName ?? message ?? type,
-  };
-}
-
-function getStreamingErrorMessage(event: Record<string, unknown>) {
-  const assistantEvent = toRecord(event.assistantMessageEvent);
-
-  if (assistantEvent.type !== "error") {
-    return undefined;
-  }
-
-  const error = assistantEvent.error;
-
-  if (typeof error === "string") {
-    return error;
-  }
-
-  const errorRecord = toRecord(error);
-  const errorMessage = errorRecord.errorMessage ?? errorRecord.message;
-
-  return typeof errorMessage === "string" ? errorMessage : "PI streaming failed.";
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}

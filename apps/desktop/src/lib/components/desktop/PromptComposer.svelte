@@ -1,6 +1,13 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { ArrowUp02Icon, StopCircleIcon } from "@hugeicons/core-free-icons";
+  import {
+    Alert01Icon,
+    AlertCircleIcon,
+    ArrowUp02Icon,
+    Cancel01Icon,
+    InformationCircleIcon,
+    StopCircleIcon,
+  } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
   import ComposerModelMenuPanel from "$lib/components/desktop/ComposerModelMenuPanel.svelte";
@@ -37,8 +44,9 @@
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
   const isSlashMenuOpen = $derived(activeMenu === "slash" && Boolean(slashToken && tokenKey !== dismissedTokenKey));
-  const showAbort = $derived(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming);
   const isRunning = $derived(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming);
+  const showAbort = $derived(isRunning);
+  const showSessionControls = $derived(desktopState.canUseSession);
   const showSlashHint = $derived(
     desktopState.canUseSession && desktopState.slashCommands.length > 0 && !desktopState.slashCommandsLoading
   );
@@ -77,26 +85,20 @@
       return { showDot: true, dotClass: "size-1.5 shrink-0 animate-pulse rounded-full bg-primary", text: "Sending…" };
     }
 
-    if (isRunning) {
-      return {
-        showDot: true,
-        dotClass: "size-1.5 shrink-0 animate-pulse rounded-full bg-primary",
-        text: "Pi is working…",
-      };
-    }
+    const phase = desktopState.composerPhaseLine;
 
-    if (!desktopState.canUseSession) {
-      if (!desktopState.repoPath) {
-        return { showDot: false, dotClass: "", text: "Select a repository to send prompts" };
-      }
+    if (phase) {
+      const showDot = phase.tone === "working" || phase.tone === "warning" || phase.tone === "error";
+      const dotClass =
+        phase.tone === "error"
+          ? "size-1.5 shrink-0 rounded-full bg-destructive"
+          : phase.tone === "warning"
+            ? "size-1.5 shrink-0 animate-pulse rounded-full bg-amber-500"
+            : phase.tone === "working"
+              ? "size-1.5 shrink-0 animate-pulse rounded-full bg-primary"
+              : "size-1.5 shrink-0 rounded-full bg-muted-foreground/60";
 
-      if (desktopState.piStatus.state !== "connected") {
-        return { showDot: false, dotClass: "", text: "Connect Pi to send prompts" };
-      }
-
-      if (!desktopState.selectedSessionPath && !desktopState.sessionState?.sessionFile) {
-        return { showDot: false, dotClass: "", text: "Select a session to send prompts" };
-      }
+      return { showDot, dotClass, text: phase.text };
     }
 
     if (desktopState.isBusy) {
@@ -399,12 +401,72 @@
     closeMenus();
     await desktopState.setThinkingLevel(level);
   }
+
+  function getNotificationIcon(type: "info" | "warning" | "error") {
+    if (type === "error") {
+      return AlertCircleIcon;
+    }
+
+    if (type === "warning") {
+      return Alert01Icon;
+    }
+
+    return InformationCircleIcon;
+  }
+
+  function getNotificationClass(type: "info" | "warning" | "error") {
+    if (type === "error") {
+      return "border-destructive/35 bg-destructive/10 text-foreground";
+    }
+
+    if (type === "warning") {
+      return "border-amber-500/35 bg-amber-500/10 text-foreground";
+    }
+
+    return "border-border/60 bg-muted/35 text-foreground";
+  }
+
+  function getNotificationIconClass(type: "info" | "warning" | "error") {
+    if (type === "error") {
+      return "text-destructive";
+    }
+
+    if (type === "warning") {
+      return "text-amber-600 dark:text-amber-400";
+    }
+
+    return "text-primary";
+  }
 </script>
 
 <svelte:window onclick={handleWindowClick} />
 
 <div class="border-t border-border/50 px-6 py-1.5">
   <div bind:this={wrapperRef} class="relative mx-auto max-w-3xl">
+    {#if desktopState.sessionNotification}
+      {@const notification = desktopState.sessionNotification}
+      <div
+        class="mb-2 flex items-start gap-2 rounded-md border px-3 py-2 text-[11px] leading-tight {getNotificationClass(notification.notifyType)}"
+        role={notification.notifyType === "error" ? "alert" : "status"}
+        aria-live={notification.notifyType === "error" ? "assertive" : "polite"}
+      >
+        <HugeiconsIcon
+          icon={getNotificationIcon(notification.notifyType)}
+          class="mt-0.5 size-3 shrink-0 {getNotificationIconClass(notification.notifyType)}"
+          aria-hidden="true"
+        />
+        <span class="min-w-0 flex-1">{notification.message}</span>
+        <button
+          type="button"
+          class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3"
+          aria-label="Dismiss notification"
+          title="Dismiss notification"
+          onclick={() => desktopState.dismissSessionNotification(notification.id)}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} aria-hidden="true" />
+        </button>
+      </div>
+    {/if}
     {#if isSlashMenuOpen}
       <SlashCommandMenu
         commands={filteredCommands}
@@ -451,7 +513,7 @@
             id="prompt"
             bind:ref={textareaRef}
             bind:value={desktopState.promptValue}
-            class="max-h-40 min-h-5! w-full resize-none border-none bg-transparent p-0 text-[11px] leading-tight text-foreground shadow-none placeholder:text-[11px] placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            class="max-h-40 min-h-6! w-full resize-none border-none bg-transparent p-0 text-xs leading-snug text-foreground shadow-none placeholder:text-xs placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             placeholder={promptPlaceholder}
             title={textareaTitle}
             disabled={!desktopState.canUseSession || desktopState.isBusy}
@@ -467,26 +529,30 @@
         {/snippet}
 
         {#snippet trailing()}
-          <ModelSelector
-            open={activeMenu === "model"}
-            disabled={selectorsDisabled}
-            variant="inline"
-            bind:anchor={modelAnchor}
-            onToggle={toggleModelMenu}
-          />
-          <ThinkingLevelSelector
-            open={activeMenu === "thinking"}
-            disabled={selectorsDisabled}
-            variant="inline"
-            bind:anchor={thinkingAnchor}
-            onToggle={toggleThinkingMenu}
-          />
-          <span class="mx-0.5 h-4 w-px shrink-0 bg-border/50" aria-hidden="true"></span>
+          {#if showSessionControls}
+            <div class="flex shrink-0 items-center gap-0.5 rounded-md bg-transparent" role="group" aria-label="Prompt settings">
+              <ModelSelector
+                open={activeMenu === "model"}
+                disabled={selectorsDisabled}
+                variant="inline"
+                bind:anchor={modelAnchor}
+                onToggle={toggleModelMenu}
+              />
+              <ThinkingLevelSelector
+                open={activeMenu === "thinking"}
+                disabled={selectorsDisabled}
+                variant="inline"
+                bind:anchor={thinkingAnchor}
+                onToggle={toggleThinkingMenu}
+              />
+            </div>
+            <span class="mx-0.5 h-5 w-px shrink-0 bg-border/50" aria-hidden="true"></span>
+          {/if}
           {#if showAbort}
             <Button
               variant="ghost"
               size="icon-sm"
-              class="size-7 text-muted-foreground hover:text-foreground"
+              class="size-7 text-muted-foreground shadow-none transition-[background-color,color,opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-foreground active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
               aria-label="Abort run"
               title="Abort run"
               onclick={() => desktopState.handleAbort()}
@@ -499,9 +565,9 @@
             variant={desktopState.canSubmit ? "default" : "ghost"}
             size="icon"
             data-prompt-input-submit
-            class="size-7 shrink-0 rounded-full shadow-none {desktopState.canSubmit
+            class="size-7 shrink-0 rounded-full shadow-none transition-[background-color,color,opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 {desktopState.canSubmit
               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-              : 'text-muted-foreground'}"
+              : 'text-muted-foreground/55 hover:text-muted-foreground'}"
             title="Send prompt"
             disabled={!desktopState.canSubmit}
           >

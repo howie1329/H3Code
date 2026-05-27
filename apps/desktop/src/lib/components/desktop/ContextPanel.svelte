@@ -5,6 +5,7 @@
   import { desktopState } from "$lib/desktop-state.svelte";
   import { getModelLabel } from "$lib/pi-model.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
 
   const sessionStatus = $derived(getSessionStatus(desktopState.sessionState));
@@ -102,9 +103,19 @@
         <span class="min-w-0">
           <span class="block truncate font-medium">{desktopState.repoName}</span>
           <span class="block truncate font-mono text-[10px] text-muted-foreground">{desktopState.repoPath ?? "None"}</span>
+          {#if desktopState.worktreePath}
+            <span class="mt-1 block truncate font-mono text-[10px] text-muted-foreground" title={desktopState.worktreePath}>
+              {desktopState.worktreePath}
+            </span>
+          {/if}
         </span>
         <Badge variant="outline">{desktopState.repoPath ? "Selected" : "Empty"}</Badge>
       </div>
+      {#if desktopState.worktreePath}
+        <Button variant="outline" size="sm" class="h-7 w-fit px-2 text-xs" onclick={() => desktopState.revealWorktree()}>
+          Reveal worktree
+        </Button>
+      {/if}
     </section>
 
     <Separator />
@@ -125,7 +136,7 @@
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Messages</span>
-          <span class="font-medium">{formatCount(desktopState.sessionStats?.totalMessages ?? desktopState.sessionState?.messageCount ?? desktopState.messages.length)}</span>
+          <span class="font-medium">{formatCount(desktopState.sessionStats?.totalMessages ?? desktopState.sessionState?.messageCount ?? desktopState.sessionReadModel.messages.length)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">User / assistant</span>
