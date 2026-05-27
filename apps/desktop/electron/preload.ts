@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("h3code", {
   listWorktrees: () => ipcRenderer.invoke("worktrees:list"),
   revealWorktreePath: (worktreePath: string) => ipcRenderer.invoke("worktrees:reveal", worktreePath),
   removeStaleWorktree: (sessionPath: string) => ipcRenderer.invoke("worktrees:remove-stale", sessionPath),
+  archiveSessionWorktree: (sessionPath: string) => ipcRenderer.invoke("worktrees:archive-session-worktree", sessionPath),
   pruneStaleWorktrees: () => ipcRenderer.invoke("worktrees:prune-stale"),
   getCommands: () => ipcRenderer.invoke("pi:get-commands"),
   getAvailableModels: () => ipcRenderer.invoke("pi:get-available-models"),

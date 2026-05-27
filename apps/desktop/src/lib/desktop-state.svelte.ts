@@ -969,6 +969,12 @@ class DesktopState {
     return result.removed;
   }
 
+  async archiveSessionWorktree(sessionPath: string) {
+    const result = await this.requireApi().archiveSessionWorktree(sessionPath);
+    this.worktrees = result.worktrees;
+    this.applyPreferencesSnapshot(result.preferences);
+  }
+
   async pruneStaleWorktrees() {
     const result = await this.requireApi().pruneStaleWorktrees();
     this.worktrees = result.worktrees;

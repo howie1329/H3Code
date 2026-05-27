@@ -12,7 +12,7 @@ const mapping: WorktreeMapping = {
   sessionName: "Session A",
 };
 
-test("classifies active worktrees as non-removable", () => {
+test("classifies running worktrees as non-removable and non-archivable", () => {
   const summary = createWorktreeSummary(
     mapping,
     {
@@ -21,15 +21,34 @@ test("classifies active worktrees as non-removable", () => {
       dirtyState: "clean",
       sessionFileExists: true,
     },
-    { activeAgentId: "agent-1" },
+    { activeAgentId: "agent-1", isRunning: true },
   );
 
-  assert.equal(summary.status, "active");
+  assert.equal(summary.status, "running");
   assert.equal(summary.removable, false);
   assert.equal(summary.pruneable, false);
+  assert.equal(summary.archivable, false);
 });
 
-test("classifies existing session worktrees as stopped and non-removable", () => {
+test("classifies connected idle session worktrees as archivable", () => {
+  const summary = createWorktreeSummary(
+    mapping,
+    {
+      exists: true,
+      appOwned: true,
+      dirtyState: "clean",
+      sessionFileExists: true,
+    },
+    { activeAgentId: "agent-1", isRunning: false },
+  );
+
+  assert.equal(summary.status, "idle");
+  assert.equal(summary.removable, false);
+  assert.equal(summary.pruneable, false);
+  assert.equal(summary.archivable, true);
+});
+
+test("classifies existing session worktrees as stopped and archivable", () => {
   const summary = createWorktreeSummary(mapping, {
     exists: true,
     appOwned: true,
@@ -40,6 +59,80 @@ test("classifies existing session worktrees as stopped and non-removable", () =>
   assert.equal(summary.status, "stopped");
   assert.equal(summary.removable, false);
   assert.equal(summary.pruneable, false);
+  assert.equal(summary.archivable, true);
+});
+
+test("keeps running worktrees non-archivable", () => {
+  const summary = createWorktreeSummary(
+    mapping,
+    {
+      exists: true,
+      appOwned: true,
+      dirtyState: "clean",
+      sessionFileExists: true,
+    },
+    { activeAgentId: "agent-1", isRunning: true },
+  );
+
+  assert.equal(summary.archivable, false);
+});
+
+test("keeps dirty idle worktrees non-archivable", () => {
+  const summary = createWorktreeSummary(
+    mapping,
+    {
+      exists: true,
+      appOwned: true,
+      dirtyState: "dirty",
+      sessionFileExists: true,
+    },
+    { activeAgentId: "agent-1", isRunning: false },
+  );
+
+  assert.equal(summary.status, "idle");
+  assert.equal(summary.archivable, false);
+});
+
+test("keeps dirty stopped worktrees non-archivable", () => {
+  const summary = createWorktreeSummary(mapping, {
+    exists: true,
+    appOwned: true,
+    dirtyState: "dirty",
+    sessionFileExists: true,
+  });
+
+  assert.equal(summary.status, "stopped");
+  assert.equal(summary.archivable, false);
+});
+
+test("keeps unknown-state stopped worktrees non-archivable", () => {
+  const summary = createWorktreeSummary(mapping, {
+    exists: true,
+    appOwned: true,
+    dirtyState: "unknown",
+    sessionFileExists: true,
+  });
+
+  assert.equal(summary.status, "stopped");
+  assert.equal(summary.archivable, false);
+});
+
+test("keeps stopped worktrees with in-worktree session files non-archivable", () => {
+  const summary = createWorktreeSummary(
+    {
+      ...mapping,
+      sessionPath: "/app/pi-worktrees/repo-session-a/.pi/sessions/session-a.json",
+    },
+    {
+      exists: true,
+      appOwned: true,
+      dirtyState: "clean",
+      sessionFileExists: true,
+    },
+  );
+
+  assert.equal(summary.status, "stopped");
+  assert.equal(summary.archivable, false);
 });
 
 test("classifies missing mapped worktrees as pruneable stale mappings", () => {
@@ -69,6 +162,7 @@ test("allows clean orphaned app-owned worktrees to be removed", () => {
   assert.equal(summary.status, "stale");
   assert.equal(summary.removable, true);
   assert.equal(summary.pruneable, true);
+  assert.equal(summary.archivable, false);
 });
 
 test("keeps dirty stale worktrees", () => {

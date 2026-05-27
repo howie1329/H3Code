@@ -15,7 +15,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import { createSessionEventEnvelope, piRpcToDomainEvents } from "../src/lib/pi-session/adapter.js";
-import type { SessionEventEnvelope } from "../src/lib/pi-session/domain-events.js";
+import type { SessionDomainEvent, SessionEventEnvelope } from "../src/lib/pi-session/domain-events.js";
 import type { RpcExtensionUIRequest, RpcExtensionUIResponse } from "./pi-extension-ui-types.js";
 import {
   clearAllIndexedData,
@@ -34,6 +34,7 @@ import {
   revealPreferencesDatabase,
   setPiExecutablePath,
   updateDesktopSettings,
+  type DesktopPreferences,
   type DesktopSettings,
 } from "./preferences.js";
 import { createWorktreeSummary, type WorktreeMapping, type WorktreeSummary } from "./worktree-inventory.js";
@@ -96,6 +97,11 @@ type WorktreeCleanupResult = {
   removed: number;
 };
 
+type WorktreeArchiveResult = {
+  worktrees: WorktreeSummary[];
+  preferences: DesktopPreferences;
+};
+
 type PendingRequest = {
   resolve: (response: RpcResponse) => void;
   reject: (error: Error) => void;
@@ -108,6 +114,7 @@ type PiAgentConnection = {
   worktreePath: string;
   status: PiStatus;
   selectedSessionPath?: string;
+  isRunning: boolean;
   nextRequestId: number;
   rpcQueue: Promise<unknown>;
   stopReadingStdout?: () => void;
@@ -221,10 +228,26 @@ function emitSessionEvent(agentId: string, event: SessionEventEnvelope) {
   mainWindow?.webContents.send("pi:session-event", { ...event, agentId });
 }
 
-function emitDomainEventsFromRaw(agentId: string, raw: unknown) {
+function emitDomainEventsFromRaw(agent: PiAgentConnection, raw: unknown) {
   for (const domainEvent of piRpcToDomainEvents(raw)) {
-    emitSessionEvent(agentId, createSessionEventEnvelope(domainEvent));
+    updateAgentRunStateFromEvent(agent, domainEvent);
+    emitSessionEvent(agent.id, createSessionEventEnvelope(domainEvent));
   }
+}
+
+function updateAgentRunStateFromEvent(agent: PiAgentConnection, event: SessionDomainEvent) {
+  if (event.type === "run.started" || (event.type === "compaction.updated" && event.phase === "start")) {
+    agent.isRunning = true;
+    return;
+  }
+
+  if (event.type === "run.ended" || (event.type === "compaction.updated" && event.phase === "end")) {
+    agent.isRunning = false;
+  }
+}
+
+function setAgentRunningFromState(agent: PiAgentConnection, state: RpcSessionState) {
+  agent.isRunning = state.isStreaming || state.isCompacting;
 }
 
 function emitExtensionUiRequest(agentId: string, request: RpcExtensionUIRequest) {
@@ -263,12 +286,36 @@ function serializeSession(session: SessionInfo): PiSessionSummary {
 
 async function listSessionsForRepo(repoPath: string, markRecent = false) {
   await assertDirectory(repoPath);
-  const sessions = await listAllSessionsForLogicalRepo(repoPath);
+  const sessions = includeIndexedSessionsForRepo(repoPath, await listAllSessionsForLogicalRepo(repoPath));
   if (markRecent) {
     recordRepoUsage(repoPath);
   }
   recordRepoSessionRows(repoPath, sessions);
   return sortSessionsForRepoByIndexedRecency(repoPath, sessions);
+}
+
+function includeIndexedSessionsForRepo(repoPath: string, sessions: PiSessionSummary[]) {
+  const sessionsByPath = new Map(sessions.map((session) => [session.path, session]));
+
+  for (const session of getPreferences().indexedSessions) {
+    if (session.repoPath !== repoPath || sessionsByPath.has(session.path) || !existsSync(session.path)) {
+      continue;
+    }
+
+    sessionsByPath.set(session.path, {
+      path: session.path,
+      id: session.id,
+      cwd: repoPath,
+      worktreePath: session.worktreePath,
+      name: session.name,
+      created: session.created,
+      modified: session.modified,
+      messageCount: session.messageCount,
+      firstMessage: session.firstMessage,
+    });
+  }
+
+  return [...sessionsByPath.values()];
 }
 
 function sortSessionsForRepoByIndexedRecency(repoPath: string, sessions: PiSessionSummary[]) {
@@ -560,14 +607,19 @@ async function getWorktreeDirtyState(worktreePath: string): Promise<WorktreeSumm
   return statusResult.stdout.trim().length > 0 ? "dirty" : "clean";
 }
 
-function getActiveAgentIdForWorktree(worktreePath: string) {
-  return [...piAgents.values()].find((agent) => agent.worktreePath === worktreePath)?.id;
+function getWorktreeRuntimeState(worktreePath: string) {
+  const agent = [...piAgents.values()].find((item) => item.worktreePath === worktreePath);
+
+  return {
+    activeAgentId: agent?.id,
+    isRunning: agent?.isRunning,
+  };
 }
 
 async function getWorktreeSummary(mapping: WorktreeMapping): Promise<WorktreeSummary> {
   const exists = existsSync(mapping.worktreePath);
   const sessionFileExists = existsSync(mapping.sessionPath);
-  const activeAgentId = getActiveAgentIdForWorktree(mapping.worktreePath);
+  const runtime = getWorktreeRuntimeState(mapping.worktreePath);
 
   return createWorktreeSummary(
     mapping,
@@ -577,7 +629,7 @@ async function getWorktreeSummary(mapping: WorktreeMapping): Promise<WorktreeSum
       dirtyState: await getWorktreeDirtyState(mapping.worktreePath),
       sessionFileExists,
     },
-    { activeAgentId },
+    runtime,
   );
 }
 
@@ -651,6 +703,44 @@ async function removeStaleWorktree(sessionPath: string): Promise<WorktreeCleanup
   return { worktrees: await listWorktrees(), removed: 1 };
 }
 
+async function archiveSessionWorktree(sessionPath: string): Promise<WorktreeArchiveResult> {
+  const mapping = getAllSessionWorktrees().find((worktree) => worktree.sessionPath === sessionPath);
+
+  if (!mapping) {
+    throw new Error("This session does not have an indexed worktree.");
+  }
+
+  const summary = await getWorktreeSummary(mapping);
+
+  if (!summary.archivable) {
+    throw new Error("Only clean idle or stopped H3Code worktrees with external PI session files can be archived.");
+  }
+
+  const attachedAgent = [...piAgents.values()].find((agent) => agent.worktreePath === summary.worktreePath);
+
+  if (attachedAgent?.isRunning) {
+    throw new Error("PI is still running for this worktree.");
+  }
+
+  if (attachedAgent) {
+    await stopPiAgent(attachedAgent);
+  }
+
+  const stoppedSummary = await getWorktreeSummary(mapping);
+
+  if (!stoppedSummary.archivable) {
+    throw new Error("Only clean idle or stopped H3Code worktrees with external PI session files can be archived.");
+  }
+
+  await removeCleanWorktreeDirectory(stoppedSummary);
+  removeSessionWorktreeMapping(sessionPath);
+
+  return {
+    worktrees: await listWorktrees(),
+    preferences: getPreferences(),
+  };
+}
+
 async function pruneStaleWorktrees(): Promise<WorktreeCleanupResult> {
   let removed = 0;
 
@@ -681,6 +771,10 @@ function getAgentBySessionPath(sessionPath: string) {
   const worktree = getSessionWorktree(sessionPath);
 
   if (!worktree) {
+    return undefined;
+  }
+
+  if (!existsSync(worktree.worktreePath)) {
     return undefined;
   }
 
@@ -720,6 +814,7 @@ async function startPiAgent(repoPath: string, worktreePath?: string) {
     repoPath,
     worktreePath: agentWorktreePath,
     status: { state: "starting", repoPath, worktreePath: agentWorktreePath },
+    isRunning: false,
     nextRequestId: 1,
     rpcQueue: Promise.resolve(),
     pendingRequests: new Map(),
@@ -775,7 +870,8 @@ async function startPiAgent(repoPath: string, worktreePath?: string) {
 }
 
 async function ensurePiHandshake(agent: PiAgentConnection) {
-  await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>(agent, { type: "get_state" });
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>(agent, { type: "get_state" });
+  setAgentRunningFromState(agent, response.data);
   emitAgentStatus(agent, {
     state: "connected",
     diagnostic: piAgents.size >= 4 ? "Four or more PI agents are running. Watch CPU usage and provider spend." : undefined,
@@ -810,7 +906,7 @@ function handleRpcMessage(agent: PiAgentConnection, message: RpcResponse | unkno
     return;
   }
 
-  emitDomainEventsFromRaw(agent.id, message);
+  emitDomainEventsFromRaw(agent, message);
 }
 
 function isExtensionUiRequest(message: unknown): message is RpcExtensionUIRequest {
@@ -824,7 +920,7 @@ function handleExtensionUiRequest(agent: PiAgentConnection, request: RpcExtensio
     request.method === "setWidget" ||
     request.method === "setTitle"
   ) {
-    emitDomainEventsFromRaw(agent.id, request);
+    emitDomainEventsFromRaw(agent, request);
     return;
   }
 
@@ -907,6 +1003,7 @@ function sendCommandImmediate<T extends RpcResponse>(agent: PiAgentConnection, c
 async function getSessionState() {
   const agent = requireActiveAgent();
   const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>(agent, { type: "get_state" });
+  setAgentRunningFromState(agent, stateResponse.data);
   return stateResponse.data;
 }
 
@@ -923,6 +1020,7 @@ function requireActiveAgent() {
 async function getStateAndMessages(agent = requireActiveAgent()): Promise<SessionSnapshot> {
   const stateResponse = await sendCommand<Extract<RpcResponse, { command: "get_state"; success: true }>>(agent, { type: "get_state" });
   const messagesResponse = await sendCommand<Extract<RpcResponse, { command: "get_messages"; success: true }>>(agent, { type: "get_messages" });
+  setAgentRunningFromState(agent, stateResponse.data);
 
   return {
     state: stateResponse.data,
@@ -1023,7 +1121,10 @@ async function switchPiSession(sessionPath: string) {
   const mappedWorktree = getSessionWorktree(sessionPath);
 
   if (!agent && mappedWorktree) {
-    agent = await startPiAgent(mappedWorktree.repoPath, mappedWorktree.worktreePath);
+    agent = await startPiAgent(
+      mappedWorktree.repoPath,
+      existsSync(mappedWorktree.worktreePath) ? mappedWorktree.worktreePath : undefined,
+    );
     await ensurePiHandshake(agent);
   }
 
@@ -1040,6 +1141,7 @@ async function switchPiSession(sessionPath: string) {
 
   const snapshot = await getStateAndMessages(agent);
   agent.selectedSessionPath = snapshot.state.sessionFile ?? sessionPath;
+  recordSessionWorktree(agent.repoPath, agent.selectedSessionPath, agent.worktreePath);
   return {
     ...snapshot,
     agentId: agent.id,
@@ -1078,7 +1180,10 @@ ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessi
   const mappedWorktree = selectedSessionPath ? getSessionWorktree(selectedSessionPath) : undefined;
 
   if (!agent) {
-    agent = await startPiAgent(repoPath, mappedWorktree?.worktreePath);
+    agent = await startPiAgent(
+      repoPath,
+      mappedWorktree && existsSync(mappedWorktree.worktreePath) ? mappedWorktree.worktreePath : undefined,
+    );
     await ensurePiHandshake(agent);
   } else {
     activeAgentId = agent.id;
@@ -1127,6 +1232,7 @@ ipcMain.handle("worktrees:reveal", async (_event, worktreePath: string) => {
   return worktreePath;
 });
 ipcMain.handle("worktrees:remove-stale", async (_event, sessionPath: string) => removeStaleWorktree(sessionPath));
+ipcMain.handle("worktrees:archive-session-worktree", async (_event, sessionPath: string) => archiveSessionWorktree(sessionPath));
 ipcMain.handle("worktrees:prune-stale", () => pruneStaleWorktrees());
 ipcMain.handle("pi:get-commands", getPiCommands);
 ipcMain.handle("pi:get-available-models", getAvailableModels);

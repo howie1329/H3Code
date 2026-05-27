@@ -30,6 +30,9 @@
   let worktreeRemovalBusy = $state(false);
   let pruneWorktreesOpen = $state(false);
   let pruneWorktreesBusy = $state(false);
+  let worktreeArchiveOpen = $state(false);
+  let worktreeArchiveTarget = $state<PiWorktreeSummary | undefined>();
+  let worktreeArchiveBusy = $state(false);
 
   const piExecutableDirty = $derived(piExecutableDraft.trim() !== desktopState.piExecutablePath);
   const sessionConnected = $derived(desktopState.piStatus.state === "connected");
@@ -123,6 +126,11 @@
     worktreeRemovalOpen = true;
   }
 
+  function requestArchiveWorktree(worktree: PiWorktreeSummary) {
+    worktreeArchiveTarget = worktree;
+    worktreeArchiveOpen = true;
+  }
+
   async function confirmRemoveWorktree() {
     if (!worktreeRemovalTarget) {
       return;
@@ -134,6 +142,20 @@
       await desktopState.removeStaleWorktree(worktreeRemovalTarget.sessionPath);
     } finally {
       worktreeRemovalBusy = false;
+    }
+  }
+
+  async function confirmArchiveWorktree() {
+    if (!worktreeArchiveTarget) {
+      return;
+    }
+
+    worktreeArchiveBusy = true;
+
+    try {
+      await desktopState.archiveSessionWorktree(worktreeArchiveTarget.sessionPath);
+    } finally {
+      worktreeArchiveBusy = false;
     }
   }
 
@@ -152,8 +174,12 @@
   }
 
   function getWorktreeStatusLabel(worktree: PiWorktreeSummary) {
-    if (worktree.status === "active") {
-      return "Active";
+    if (worktree.status === "running") {
+      return "Running";
+    }
+
+    if (worktree.status === "idle") {
+      return "Idle";
     }
 
     if (worktree.status === "stopped") {
@@ -178,6 +204,10 @@
 
     if (worktree.dirtyState === "unknown") {
       return "Unknown - kept";
+    }
+
+    if (worktree.sessionFileInWorktree) {
+      return "Clean - session local";
     }
 
     return "Clean";
@@ -561,6 +591,16 @@
                           Remove
                         </Button>
                       {/if}
+                      {#if worktree.archivable}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          class="h-7 text-[11px] text-muted-foreground hover:text-foreground"
+                          onclick={() => requestArchiveWorktree(worktree)}
+                        >
+                          Archive
+                        </Button>
+                      {/if}
                     </div>
                   </li>
                 {/each}
@@ -636,6 +676,17 @@
   confirmLabel="Remove"
   busy={worktreeRemovalBusy}
   onConfirm={confirmRemoveWorktree}
+/>
+
+<ConfirmDeleteDialog
+  bind:open={worktreeArchiveOpen}
+  title="Archive clean worktree?"
+  description={worktreeArchiveTarget
+    ? `Stop PI if needed, remove the clean H3Code worktree at ${worktreeArchiveTarget.worktreePath}, and keep the PI session. Reopening the session will create a fresh worktree.`
+    : ""}
+  confirmLabel="Archive"
+  busy={worktreeArchiveBusy}
+  onConfirm={confirmArchiveWorktree}
 />
 
 <ConfirmDeleteDialog
