@@ -4,6 +4,11 @@ import path from "node:path";
 
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 
+import {
+  getIndexedSessions,
+  type IndexedSessionPreference,
+} from "./preferences-indexed-sessions.js";
+
 export type DesktopSettings = {
   sidebarOpen: boolean;
   contextPanelOpen: boolean;
@@ -19,17 +24,7 @@ export type RecentRepoPreference = {
   sessionsIndexedAt?: string;
 };
 
-export type IndexedSessionPreference = {
-  path: string;
-  repoPath: string;
-  worktreePath?: string;
-  id: string;
-  name?: string;
-  created: string;
-  modified: string;
-  messageCount: number;
-  firstMessage: string;
-};
+export type { IndexedSessionPreference };
 
 export type DesktopPreferences = {
   recentRepos: RecentRepoPreference[];
@@ -423,35 +418,6 @@ function getRecentRepos(db: DatabaseSync): RecentRepoPreference[] {
     lastOpenedAt: String(row.lastOpenedAt),
     lastSessionPath: toOptionalString(row.lastSessionPath),
     sessionsIndexedAt: toOptionalString(row.sessionsIndexedAt),
-  }));
-}
-
-function getIndexedSessions(db: DatabaseSync): IndexedSessionPreference[] {
-  return db.prepare(`
-    SELECT
-      session_path AS path,
-      repo_path AS repoPath,
-      session_id AS id,
-      session_worktrees.worktree_path AS worktreePath,
-      name,
-      created_at AS created,
-      modified_at AS modified,
-      message_count AS messageCount,
-      first_message AS firstMessage
-    FROM repo_sessions
-    LEFT JOIN session_worktrees
-      ON session_worktrees.session_path = repo_sessions.session_path
-    ORDER BY modified_at DESC
-  `).all().map((row) => ({
-    path: String(row.path),
-    repoPath: String(row.repoPath),
-    worktreePath: toOptionalString(row.worktreePath),
-    id: String(row.id),
-    name: toOptionalString(row.name),
-    created: String(row.created),
-    modified: String(row.modified),
-    messageCount: Number(row.messageCount),
-    firstMessage: String(row.firstMessage),
   }));
 }
 
