@@ -1,7 +1,9 @@
 <script lang="ts">
   import { AiBrain02Icon, AlertCircleIcon, FolderCodeIcon, TerminalIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
-  import type { Snippet } from "svelte";
+  import { createVirtualizer } from "@tanstack/svelte-virtual";
+  import { get } from "svelte/store";
+  import { tick, type Snippet } from "svelte";
 
   import { desktopState } from "$lib/desktop-state.svelte";
   import {
@@ -31,15 +33,62 @@
   import { Kbd } from "$lib/components/ui/kbd/index.js";
 
   let { children }: { children?: Snippet } = $props();
+  let transcriptScrollElement = $state<HTMLDivElement | null>(null);
+  let hasScrolledInitialTranscript = $state(false);
+  let transcriptSessionKey = $state<string | undefined>();
 
   const transcriptView = $derived(buildTranscriptViewModel(desktopState.transcriptMessages));
   const transcriptMessages = $derived(transcriptView.messages);
   const isThinking = $derived(desktopState.composerPhaseLine?.text === "Thinking…");
+  const transcriptItems = $derived([
+    ...transcriptMessages.map((message) => ({ kind: "message" as const, key: message.id, message })),
+    ...(isThinking ? [{ kind: "thinking" as const, key: "pi-thinking" }] : []),
+  ]);
+
+  const transcriptVirtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: 0,
+    getScrollElement: () => transcriptScrollElement,
+    estimateSize: () => 180,
+    getItemKey: (index) => transcriptItems[index]?.key ?? index,
+    anchorTo: "end",
+    followOnAppend: true,
+    scrollEndThreshold: 200,
+    overscan: 6,
+    gap: 14,
+    useAnimationFrameWithResizeObserver: true,
+  });
 
   const hasTranscriptMessages = $derived(
     Boolean(desktopState.repoPath && desktopState.sessions.length > 0 && (transcriptMessages.length > 0 || isThinking))
   );
   const shortcutModifier = $derived(desktopState.platform === "darwin" ? "⌘" : "Ctrl");
+
+  $effect(() => {
+    const nextSessionKey = desktopState.selectedSessionPath;
+
+    if (nextSessionKey !== transcriptSessionKey) {
+      transcriptSessionKey = nextSessionKey;
+      hasScrolledInitialTranscript = false;
+      get(transcriptVirtualizer).measure();
+    }
+  });
+
+  $effect(() => {
+    const count = transcriptItems.length;
+    get(transcriptVirtualizer).setOptions({ count });
+
+    if (!count) {
+      hasScrolledInitialTranscript = false;
+      return;
+    }
+
+    if (!hasScrolledInitialTranscript) {
+      void tick().then(() => {
+        get(transcriptVirtualizer).scrollToEnd({ behavior: "auto" });
+        hasScrolledInitialTranscript = true;
+      });
+    }
+  });
 
   function messageAriaLabel(role: string) {
     if (role === "user") {
@@ -59,13 +108,17 @@
 
     return false;
   }
+
+  function measureTranscriptItem(node: HTMLDivElement) {
+    get(transcriptVirtualizer).measureElement(node);
+  }
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Workspace transcript">
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if hasTranscriptMessages}
       <Conversation class="h-full min-h-0">
-        <ConversationContent class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-24">
+        <ConversationContent bind:ref={transcriptScrollElement} class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-24">
           {#if desktopState.errorMessage}
             <div
               class="mx-auto mb-4 flex max-w-[46rem] items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive"
@@ -77,58 +130,78 @@
             </div>
           {/if}
 
-          <div class="mx-auto flex max-w-[46rem] flex-col gap-3.5">
-            {#each transcriptMessages as message (message.id)}
-              {@const renderBlocks = groupBlocksForRender(message.blocks)}
-              <Message
-                from={message.role}
-                class="max-w-full gap-1.5"
-                aria-label={messageAriaLabel(message.role)}
-              >
-                <MessageContent
-                  class={message.role === "user"
-                    ? "ml-auto max-w-[min(36rem,78%)] rounded-lg bg-accent/35 px-2.5 py-1.5"
-                    : "w-full max-w-full overflow-visible"}
+          <div
+            class="relative mx-auto max-w-[46rem]"
+            style={`height: ${$transcriptVirtualizer.getTotalSize()}px;`}
+          >
+            {#each $transcriptVirtualizer.getVirtualItems() as virtualItem (virtualItem.key)}
+              {@const item = transcriptItems[virtualItem.index]}
+              {#if item?.kind === "message"}
+                {@const message = item.message}
+                {@const renderBlocks = groupBlocksForRender(message.blocks)}
+                <div
+                  data-index={virtualItem.index}
+                  use:measureTranscriptItem
+                  class="absolute top-0 left-0 w-full"
+                  style={`transform: translateY(${virtualItem.start}px);`}
                 >
-                  {#each renderBlocks as block, blockIndex (block.kind === "activity" ? block.id : block.id)}
-                    {#if block.kind === "text"}
-                      {#if message.role === "user"}
-                        <p class="whitespace-pre-wrap break-words text-[13px] leading-snug">{block.text}</p>
-                      {:else}
-                        <MessageResponse content={block.text} transcript />
-                      {/if}
-                    {:else if block.kind === "thinking"}
-                      <details class="py-0.5 text-xs leading-snug text-muted-foreground">
-                        <summary class="cursor-pointer text-[10px] font-normal text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                          Reasoning notes
-                        </summary>
-                        <p class="mt-1 whitespace-pre-wrap break-words text-[11px] leading-snug">{block.text}</p>
-                      </details>
-                    {:else if block.kind === "activity"}
-                      <TranscriptActivityGroup
-                        tools={block.tools}
-                        followsText={hasTextBeforeActivity(renderBlocks, blockIndex)}
-                      />
-                    {/if}
-                  {/each}
-                </MessageContent>
-              </Message>
+                  <Message
+                    from={message.role}
+                    class="max-w-full gap-1.5"
+                    aria-label={messageAriaLabel(message.role)}
+                  >
+                    <MessageContent
+                      class={message.role === "user"
+                        ? "ml-auto max-w-[min(36rem,78%)] rounded-lg bg-accent/35 px-2.5 py-1.5"
+                        : "w-full max-w-full overflow-visible"}
+                    >
+                      {#each renderBlocks as block, blockIndex (block.kind === "activity" ? block.id : block.id)}
+                        {#if block.kind === "text"}
+                          {#if message.role === "user"}
+                            <p class="whitespace-pre-wrap break-words text-[13px] leading-snug">{block.text}</p>
+                          {:else}
+                            <MessageResponse content={block.text} transcript />
+                          {/if}
+                        {:else if block.kind === "thinking"}
+                          <details class="py-0.5 text-xs leading-snug text-muted-foreground">
+                            <summary class="cursor-pointer text-[10px] font-normal text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                              Reasoning notes
+                            </summary>
+                            <p class="mt-1 whitespace-pre-wrap break-words text-[11px] leading-snug">{block.text}</p>
+                          </details>
+                        {:else if block.kind === "activity"}
+                          <TranscriptActivityGroup
+                            tools={block.tools}
+                            followsText={hasTextBeforeActivity(renderBlocks, blockIndex)}
+                          />
+                        {/if}
+                      {/each}
+                    </MessageContent>
+                  </Message>
+                </div>
+              {:else if item?.kind === "thinking"}
+                <div
+                  data-index={virtualItem.index}
+                  use:measureTranscriptItem
+                  class="absolute top-0 left-0 w-full"
+                  style={`transform: translateY(${virtualItem.start}px);`}
+                >
+                  <Message from="assistant" class="max-w-full gap-1.5" aria-label="Pi response">
+                    <MessageContent class="w-full max-w-full overflow-visible">
+                      <div class="flex items-center gap-2 text-xs leading-snug text-muted-foreground" aria-live="polite" aria-busy="true">
+                        <span class="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true"></span>
+                        <span>Pi is thinking…</span>
+                      </div>
+                    </MessageContent>
+                  </Message>
+                </div>
+              {/if}
             {/each}
-
-            {#if isThinking}
-              <Message from="assistant" class="max-w-full gap-1.5" aria-label="Pi response">
-                <MessageContent class="w-full max-w-full overflow-visible">
-                  <div class="flex items-center gap-2 text-xs leading-snug text-muted-foreground" aria-live="polite" aria-busy="true">
-                    <span class="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true"></span>
-                    <span>Pi is thinking…</span>
-                  </div>
-                </MessageContent>
-              </Message>
-            {/if}
           </div>
         </ConversationContent>
         <ConversationScrollButton
           class="size-8 border-border/50 bg-background text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
+          onclick={() => get(transcriptVirtualizer).scrollToEnd({ behavior: "smooth" })}
         />
       </Conversation>
     {:else}
