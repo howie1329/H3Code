@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>H3Code Agent Server Architecture</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #181b24;
+            --border: #2a3040;
+            --text: #e8eaef;
+            --muted: #9aa3b2;
+            --accent: #6b9fff;
+            --accent-dim: #3d5a99;
+            --ok: #5fd38d;
+            --warn: #e8b84a;
+            --danger: #f07178;
+            --mono: ui-monospace, "SF Mono", Menlo, monospace;
+            --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            --max: 52rem;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            font-family: var(--sans);
+            font-size: 1rem;
+            line-height: 1.65;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        header {
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            padding: 2rem 1.5rem;
+        }
+
+        header .inner,
+        main {
+            max-width: var(--max);
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        header h1 {
+            margin: 0 0 0.35em;
+            font-size: 1.75rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        header .meta {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        header .meta strong {
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        nav.toc {
+            margin-top: 1.25rem;
+            padding: 1rem 1.25rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        nav.toc ol {
+            margin: 0.5rem 0 0;
+            padding-left: 1.25rem;
+        }
+
+        nav.toc a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        nav.toc a:hover {
+            text-decoration: underline;
+        }
+
+        main {
+            padding: 2rem 1.5rem 4rem;
+        }
+
+        h2 {
+            margin: 2.5rem 0 1rem;
+            font-size: 1.35rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--border);
+        }
+
+        h2:first-of-type {
+            border-top: none;
+            margin-top: 0;
+        }
+
+        h3 {
+            margin: 1.5rem 0 0.75rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        p {
+            margin: 0 0 1rem;
+        }
+
+        ul,
+        ol {
+            margin: 0 0 1rem;
+            padding-left: 1.35rem;
+        }
+
+        li {
+            margin-bottom: 0.35rem;
+        }
+
+        .lead {
+            font-size: 1.05rem;
+            color: var(--muted);
+        }
+
+        .diagram {
+            margin: 1.25rem 0;
+            padding: 1.25rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: var(--mono);
+            font-size: 0.8rem;
+            line-height: 1.5;
+            white-space: pre;
+            color: var(--muted);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            margin: 1rem 0 1.5rem;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 0.6rem 0.75rem;
+            border: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        th {
+            background: var(--surface);
+            font-weight: 600;
+        }
+
+        code {
+            font-family: var(--mono);
+            font-size: 0.88em;
+            background: var(--surface);
+            padding: 0.15em 0.4em;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+        }
+
+        pre {
+            margin: 1rem 0 1.5rem;
+            padding: 1rem 1.15rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: var(--mono);
+            font-size: 0.82rem;
+            line-height: 1.5;
+        }
+
+        .callout {
+            margin: 1.25rem 0;
+            padding: 1rem 1.15rem;
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+            background: var(--surface);
+        }
+
+        .callout.warn {
+            border-left-color: var(--warn);
+        }
+
+        .callout.danger {
+            border-left-color: var(--danger);
+        }
+
+        .callout.ok {
+            border-left-color: var(--ok);
+        }
+
+        .callout strong {
+            display: block;
+            margin-bottom: 0.35rem;
+            color: var(--text);
+        }
+
+        .badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 0.2em 0.5em;
+            border-radius: 4px;
+            margin-right: 0.35rem;
+        }
+
+        .badge.pi {
+            background: #2a3d5c;
+            color: #8eb8ff;
+        }
+
+        .badge.codex {
+            background: #3d3a2a;
+            color: #e8c86b;
+        }
+
+        .badge.cursor {
+            background: #3a2a4a;
+            color: #c9a0e8;
+        }
+
+        .badge.server {
+            background: #2a3d35;
+            color: #8ed4a8;
+        }
+
+        .phase {
+            margin-bottom: 1.5rem;
+        }
+
+        .phase h3 {
+            margin-top: 0;
+        }
+
+        footer {
+            max-width: var(--max);
+            margin: 0 auto;
+            padding: 1.5rem;
+            border-top: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--accent);
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="inner">
+            <h1>H3Code Agent Server Architecture</h1>
+            <p class="meta">
+                <strong>Status:</strong> Proposed &nbsp;·&nbsp;
+                <strong>Last updated:</strong> May 2026 &nbsp;·&nbsp;
+                <strong>Supersedes (in spirit):</strong> direct Electron IPC → PI subprocess
+            </p>
+            <p class="lead">
+                H3Code is evolving from a PI-specific desktop shell into a layered system:
+                <strong>UI → Server → Provider layer → actual provider</strong>, with the desktop app talking to a local
+                <strong>Agent Server</strong> over <strong>WebSockets</strong>. PI Agent remains the first provider;
+                Codex Server and Cursor follow.
+            </p>
+            <nav class="toc" aria-label="Table of contents">
+                <strong>Contents</strong>
+                <ol>
+                    <li><a href="#summary">Summary</a></li>
+                    <li><a href="#goals">Goals and non-goals</a></li>
+                    <li><a href="#current">Current state</a></li>
+                    <li><a href="#target">Target architecture</a></li>
+                    <li><a href="#layers">Layer responsibilities</a></li>
+                    <li><a href="#websocket">WebSocket protocol (sketch)</a></li>
+                    <li><a href="#providers">Provider roadmap</a></li>
+                    <li><a href="#capabilities">Capability matrix</a></li>
+                    <li><a href="#data">Data ownership</a></li>
+                    <li><a href="#migration">Migration phases</a></li>
+                    <li><a href="#security">Security and operations</a></li>
+                    <li><a href="#related">Related documents</a></li>
+                </ol>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <section id="summary">
+            <h2>1. Summary</h2>
+            <p>
+                H3Code Desktop will treat a local <strong>Agent Server</strong> as the single integration point for
+                agent backends.
+                The Svelte UI connects via WebSocket; the server orchestrates workspaces, connections, platform services
+                (git, worktrees, preferences),
+                and delegates agent behavior to pluggable <strong>providers</strong>.
+            </p>
+            <div class="diagram">┌─────────────────────────────────────────────────────────────────┐
+                │ UI (Svelte / Electron renderer or future web client) │
+                │ · Workspace chrome · Transcript · Composer · Settings │
+                │ · Session read model (projector over domain events) │
+                └───────────────────────────────┬─────────────────────────────────┘
+                │ WebSocket (JSON messages)
+                ▼
+                ┌─────────────────────────────────────────────────────────────────┐
+                │ Agent Server (Node) │
+                │ · Connection manager · Workspace / prefs · Git / worktrees │
+                │ · Provider registry · Auth to local server only │
+                └───────────────────────────────┬─────────────────────────────────┘
+                │ AgentProvider interface
+                ▼
+                ┌─────────────────────────────────────────────────────────────────┐
+                │ Provider layer │
+                │ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+                │ │ PiProvider │ │ CodexProvider│ │ CursorProvider│ … │
+                │ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ │
+                └─────────┼─────────────────┼─────────────────┼──────────────────┘
+                ▼ ▼ ▼
+                pi --mode rpc Codex Server API Cursor API / CLI</div>
+            <div class="callout ok">
+                <strong>Product boundary unchanged</strong>
+                Providers own sessions, messages, tools, models, and runtime behavior.
+                H3Code does not become the source of truth for transcripts.
+            </div>
+        </section>
+
+        <section id="goals">
+            <h2>2. Goals and non-goals</h2>
+            <h3>Goals</h3>
+            <ul>
+                <li>Support multiple agent backends without PI-shaped types leaking into the UI.</li>
+                <li>Run agent integration in a dedicated <strong>Agent Server</strong> process, reachable via WebSocket.
+                </li>
+                <li>Reuse the existing <code>SessionDomainEvent</code> → projector → read-model path in the UI where
+                    possible.</li>
+                <li>Ship <span class="badge pi">PI</span> first (parity with today), then <span
+                        class="badge codex">Codex Server</span>, then <span class="badge cursor">Cursor</span>.</li>
+                <li>Keep platform concerns (SQLite metadata index, git diff, worktrees, repo picker) in the server, not
+                    in each provider.</li>
+                <li>Enable future clients (desktop, local web, automation) against the same server API.</li>
+            </ul>
+            <h3>Non-goals (this architecture pass)</h3>
+            <ul>
+                <li>Cloud sync, accounts, teams, or multi-user server deployment.</li>
+                <li>H3Code-owned transcript or session persistence (beyond metadata indexing for discovery).</li>
+                <li>Forcing Codex or Cursor to expose PI-identical RPC commands.</li>
+                <li>Full-text search or transcript indexing in SQLite.</li>
+            </ul>
+        </section>
+
+        <section id="current">
+            <h2>3. Current state</h2>
+            <p>Today the desktop app uses a flat stack:</p>
+            <div class="diagram">Svelte renderer → preload IPC → Electron main (~1.3k LOC) → pi --mode rpc (JSONL)</div>
+            <ul>
+                <li>IPC channels and <code>window.h3code</code> types are PI-specific (<code>PiSessionState</code>,
+                    <code>pi:connect-repo</code>, etc.).
+                </li>
+                <li><code>@earendil-works/pi-coding-agent</code> RPC types are used directly in the main process.</li>
+                <li><code>src/lib/pi-session/</code> already maps PI RPC events → <code>SessionDomainEvent</code> → UI
+                    read model (keep this pattern; move PI mapping into <code>PiProvider</code>).</li>
+                <li>Git, worktrees, and SQLite preferences live in Electron main alongside RPC.</li>
+            </ul>
+            <p>
+                The refactor extracts the main process’s agent and orchestration logic into a standalone server and
+                replaces IPC with WebSocket for the UI boundary.
+                Electron becomes a host: window management, native dialogs, optional process supervision for the server.
+            </p>
+        </section>
+
+        <section id="target">
+            <h2>4. Target architecture</h2>
+            <h3>4.1 Desktop deployment</h3>
+            <div class="diagram">┌──────────────── Electron ────────────────┐
+                │ Main: spawn Agent Server, native FS │
+                │ Renderer: Svelte UI ──WebSocket──► │──────► localhost:PORT/ws
+                └────────────────────────────────────────┘
+                │
+                ▼
+                ┌─────────────────┐
+                │ Agent Server │
+                └─────────────────┘</div>
+            <p>
+                The server binds to <strong>localhost only</strong> by default. The desktop app starts the server on
+                launch (or connects to an existing instance in dev).
+                Native affordances (directory picker, reveal in Finder, executable picker) may remain as a thin Electron
+                bridge until the server exposes equivalent hooks or the UI handles them locally.
+            </p>
+            <h3>4.2 Package layout (proposed)</h3>
+            <pre>packages/
+  agent-core/          # Shared types: domain events, provider interface, WS message shapes
+  agent-server/        # HTTP + WebSocket server, connection manager, platform services
+  providers/
+    pi/                # PiProvider — JSONL subprocess
+    codex/             # CodexProvider — Codex Server client
+    cursor/            # CursorProvider — TBD transport
+apps/
+  desktop/             # Electron shell + Svelte UI (WS client)
+  web/                 # Marketing site (unchanged unless later uses server)</pre>
+        </section>
+
+        <section id="layers">
+            <h2>5. Layer responsibilities</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Layer</th>
+                        <th>Owns</th>
+                        <th>Must not own</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>UI</strong></td>
+                        <td>
+                            Rendering, routing, composer UX, session read model projection,
+                            capability-gated controls, optimistic UI where appropriate
+                        </td>
+                        <td>
+                            Subprocess spawn, RPC framing, provider protocols, canonical message store
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Agent Server</strong></td>
+                        <td>
+                            WebSocket sessions, connection lifecycle, provider selection per workspace,
+                            preferences / SQLite metadata index, git diff and worktree inventory,
+                            merging indexed sessions with provider-native session lists
+                        </td>
+                        <td>
+                            Provider-specific wire formats; duplicating full transcripts
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Provider layer</strong></td>
+                        <td>
+                            <code>AgentProvider</code> implementations, capability advertisement,
+                            translation to <code>SessionDomainEvent</code>, provider-native session refs
+                        </td>
+                        <td>
+                            Global UI state; cross-provider workspace policy (server decides)
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Actual provider</strong></td>
+                        <td>
+                            PI subprocess, Codex Server process/API, Cursor integration
+                        </td>
+                        <td>
+                            H3Code product rules (documented here and in MVP brief)
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>5.1 AgentProvider interface (conceptual)</h3>
+            <pre>interface AgentProvider {
+  readonly id: "pi" | "codex" | "cursor" | string;
+  readonly capabilities: ProviderCapabilities;
+
+  connect(ctx: ConnectContext): Promise&lt;ProviderConnection&gt;;
+  disconnect(connection: ProviderConnection): Promise&lt;void&gt;;
+
+  // Commands — server validates against capabilities before calling
+  sendMessage(connection, input: MessageInput): Promise&lt;void&gt;;
+  abort(connection): Promise&lt;void&gt;;
+  listSessions?(connection): Promise&lt;SessionSummary[]&gt;;
+  switchSession?(connection, sessionRef: string): Promise&lt;SessionSnapshot&gt;;
+  newSession?(connection, options?: NewSessionOptions): Promise&lt;SessionSnapshot&gt;;
+  getSnapshot?(connection): Promise&lt;SessionSnapshot&gt;;
+  // Model / queue / etc. — optional per capabilities
+
+  subscribe(connection, onEvent: (event: SessionDomainEvent) =&gt; void): () =&gt; void;
+}</pre>
+            <p>
+                The server assigns each live connection an opaque <code>connectionId</code>.
+                The UI never sees PI request IDs, JSONL, or Codex wire details.
+            </p>
+        </section>
+
+        <section id="websocket">
+            <h2>6. WebSocket protocol (sketch)</h2>
+            <p>
+                One WebSocket per UI client. Messages are JSON objects with a <code>type</code> field.
+                Use request/response correlation (<code>id</code>) for commands; use server-push for events.
+            </p>
+            <h3>6.1 Client → server (commands)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>type</th>
+                        <th>Purpose</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>workspace.connect</code></td>
+                        <td>Connect repo/workspace with <code>providerId</code>, optional <code>sessionRef</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>workspace.disconnect</code></td>
+                        <td>Disconnect <code>connectionId</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>session.list</code></td>
+                        <td>List sessions for repo (provider + index merge on server)</td>
+                    </tr>
+                    <tr>
+                        <td><code>session.switch</code></td>
+                        <td>Switch active session</td>
+                    </tr>
+                    <tr>
+                        <td><code>session.create</code></td>
+                        <td>New session</td>
+                    </tr>
+                    <tr>
+                        <td><code>message.send</code></td>
+                        <td>Prompt / steer / follow-up (mode in payload)</td>
+                    </tr>
+                    <tr>
+                        <td><code>run.abort</code></td>
+                        <td>Abort active run</td>
+                    </tr>
+                    <tr>
+                        <td><code>session.snapshot</code></td>
+                        <td>Fetch state + messages (reconnect)</td>
+                    </tr>
+                    <tr>
+                        <td><code>preferences.get</code> / <code>preferences.update</code></td>
+                        <td>Desktop settings and index</td>
+                    </tr>
+                    <tr>
+                        <td><code>provider.ui.respond</code></td>
+                        <td>Reply to provider UI prompt (extension UI, etc.)</td>
+                    </tr>
+                </tbody>
+            </table>
+            <h3>6.2 Server → client (events)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>type</th>
+                        <th>Purpose</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>connection.status</code></td>
+                        <td>connected / starting / error / exited + diagnostics</td>
+                    </tr>
+                    <tr>
+                        <td><code>session.event</code></td>
+                        <td><code>SessionDomainEvent</code> + <code>connectionId</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>provider.ui.request</code></td>
+                        <td>Select / confirm / input / editor prompts</td>
+                    </tr>
+                    <tr>
+                        <td><code>workspace.diff</code></td>
+                        <td>Git patch summary (server-computed)</td>
+                    </tr>
+                    <tr>
+                        <td><code>error</code></td>
+                        <td>Correlated or global errors</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="callout">
+                <strong>Versioning</strong>
+                Include <code>protocolVersion</code> in the first server message after connect.
+                Bump major version when breaking message shapes; support one previous version during transition.
+            </div>
+            <h3>6.3 Example flow</h3>
+            <pre>UI → { type: "workspace.connect", id: "1", providerId: "pi", repoPath: "/path", sessionRef?: "…" }
+UI ← { type: "connection.status", connectionId: "c-abc", state: "starting", … }
+UI ← { type: "connection.status", connectionId: "c-abc", state: "connected", … }
+UI ← { type: "session.event", connectionId: "c-abc", event: { type: "run.started", … } }
+UI → { type: "message.send", id: "2", connectionId: "c-abc", text: "…", mode: "prompt" }
+UI ← { type: "session.event", connectionId: "c-abc", event: { type: "message.streaming", … } }</pre>
+        </section>
+
+        <section id="providers">
+            <h2>7. Provider roadmap</h2>
+
+            <div class="phase">
+                <h3><span class="badge pi">Phase 1 — PI</span></h3>
+                <p><strong>Transport:</strong> subprocess <code>pi --mode rpc</code>, stdin/stdout JSONL (existing
+                    behavior).</p>
+                <ul>
+                    <li>Implement <code>PiProvider</code> by moving logic from <code>electron/main.ts</code>: spawn,
+                        JSONL reader, RPC queue, extension UI.</li>
+                    <li>Map PI RPC → <code>SessionDomainEvent</code> inside the provider (today’s
+                        <code>pi-session/adapter.ts</code>).
+                    </li>
+                    <li>Reach parity with current desktop: connect repo, sessions, prompt/steer/follow-up/abort, models,
+                        slash commands, extension UI.</li>
+                </ul>
+            </div>
+
+            <div class="phase">
+                <h3><span class="badge codex">Phase 2 — Codex Server</span></h3>
+                <p><strong>Transport:</strong> client to Codex Server (protocol per Codex docs; likely HTTP/WebSocket or
+                    similar — implement in <code>CodexProvider</code>).</p>
+                <ul>
+                    <li>Second provider in registry; per-repo or global default <code>providerId: "codex"</code>.</li>
+                    <li>Implement only shared verbs first: connect, send, abort, session list/switch if Codex exposes
+                        them.</li>
+                    <li>Normalize streaming and tool events into <code>SessionDomainEvent</code>; document gaps in
+                        capability flags.</li>
+                    <li>Do not assume PI session file paths or worktree layout unless Codex shares the same cwd model.
+                    </li>
+                </ul>
+            </div>
+
+            <div class="phase">
+                <h3><span class="badge cursor">Phase 3 — Cursor</span></h3>
+                <p><strong>Transport:</strong> TBD (API, CLI, or hybrid). Design <code>CursorProvider</code> after Codex
+                    proves the abstraction.</p>
+                <ul>
+                    <li>Expect weaker parity: sessions may be <code>indexed-only</code> in sidebar with provider-native
+                        thread IDs.</li>
+                    <li>Auth and secrets stay outside H3Code UI copy where possible (env, OS keychain, provider config).
+                    </li>
+                    <li>UI gates features via <code>ProviderCapabilities</code> rather than hard-coded provider checks.
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="capabilities">
+            <h2>8. Capability matrix</h2>
+            <p>UI and server gate behavior on capabilities, not provider name.</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Capability</th>
+                        <th>PI (expected)</th>
+                        <th>Codex Server (initial)</th>
+                        <th>Cursor (initial)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Native session list</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                        <td>Likely limited</td>
+                    </tr>
+                    <tr>
+                        <td>Streaming messages</td>
+                        <td>Yes</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                    </tr>
+                    <tr>
+                        <td>Tool activity events</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                        <td>TBD</td>
+                    </tr>
+                    <tr>
+                        <td>Steer / follow-up</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                        <td>Unlikely</td>
+                    </tr>
+                    <tr>
+                        <td>Abort</td>
+                        <td>Yes</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                    </tr>
+                    <tr>
+                        <td>Model picker</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                        <td>TBD</td>
+                    </tr>
+                    <tr>
+                        <td>Slash commands</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                        <td>Unlikely</td>
+                    </tr>
+                    <tr>
+                        <td>Provider UI prompts</td>
+                        <td>Yes (extension UI)</td>
+                        <td>TBD</td>
+                        <td>TBD</td>
+                    </tr>
+                    <tr>
+                        <td>Compaction / retry banners</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                        <td>Unlikely</td>
+                    </tr>
+                    <tr>
+                        <td>Subprocess cwd = worktree</td>
+                        <td>Yes</td>
+                        <td>TBD</td>
+                        <td>N/A</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="data">
+            <h2>9. Data ownership</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Owner</th>
+                        <th>H3Code Server</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Messages / transcript</td>
+                        <td>Provider</td>
+                        <td>Cache for display only; refresh from provider on reconnect</td>
+                    </tr>
+                    <tr>
+                        <td>Session files / IDs</td>
+                        <td>Provider</td>
+                        <td>Opaque <code>sessionRef</code> in API</td>
+                    </tr>
+                    <tr>
+                        <td>Recent repos, indexed session metadata</td>
+                        <td>H3Code SQLite</td>
+                        <td>Discovery and sidebar; not authoritative for provider-native list</td>
+                    </tr>
+                    <tr>
+                        <td>Git diff / worktrees</td>
+                        <td>Server (platform)</td>
+                        <td>Same for all providers using local repo cwd</td>
+                    </tr>
+                    <tr>
+                        <td>API keys</td>
+                        <td>Provider config</td>
+                        <td>Never stored in H3Code UI state</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="callout danger">
+                <strong>Anti-pattern</strong>
+                Adding a H3Code messages table or session store “for convenience” breaks the product boundary and
+                complicates multi-provider sync.
+            </div>
+        </section>
+
+        <section id="migration">
+            <h2>10. Migration phases</h2>
+            <ol>
+                <li>
+                    <strong>Extract <code>agent-core</code></strong> — <code>SessionDomainEvent</code>, provider types,
+                    WebSocket message unions (no runtime change).
+                </li>
+                <li>
+                    <strong>Stand up Agent Server</strong> — localhost WebSocket, health check, <code>PiProvider</code>
+                    only.
+                </li>
+                <li>
+                    <strong>Switch desktop UI</strong> — replace <code>window.h3code</code> IPC invoke/event listeners
+                    with WS client; keep Electron for window + native dialogs.
+                </li>
+                <li>
+                    <strong>Delete PI logic from Electron main</strong> — main spawns server and optionally opens
+                    devtools bridge.
+                </li>
+                <li>
+                    <strong>Add <code>CodexProvider</code></strong> — provider picker in settings; capability-gated UI.
+                </li>
+                <li>
+                    <strong>Add <code>CursorProvider</code></strong> — after Codex validates the abstraction.
+                </li>
+            </ol>
+            <p>
+                During transition, optional dual path (IPC + WS) is acceptable for one release; avoid long-term
+                duplication.
+            </p>
+        </section>
+
+        <section id="security">
+            <h2>11. Security and operations</h2>
+            <ul>
+                <li>Bind server to <code>127.0.0.1</code> only; reject non-local connections.</li>
+                <li>Use a random per-startup token or Unix domain socket path in user data dir; UI includes token on
+                    WebSocket connect.</li>
+                <li>Do not log message bodies or tool output at info level in production.</li>
+                <li>Validate all client payloads (schema) at the server boundary.</li>
+                <li>Electron remains responsible for secure native prompts; server receives only validated paths from
+                    trusted bridge or user-selected paths relayed by UI.</li>
+            </ul>
+        </section>
+
+        <section id="related">
+            <h2>12. Related documents</h2>
+            <ul>
+                <li><code>docs/h3code-desktop-mvp.md</code> or <code>Docs/h3code-desktop-mvp.md</code> — MVP scope and
+                    PI boundary</li>
+                <li><code>STACK.md</code> — stack overview (update when server lands)</li>
+                <li><code>apps/desktop/src/lib/pi-session/</code> — domain events and projector (UI layer; rename over
+                    time)</li>
+            </ul>
+        </section>
+    </main>
+
+    <footer>
+        <p>
+            H3Code — Agent Server architecture (proposed).
+            When implemented, update <code>STACK.md</code> and mark this document status as Active.
+        </p>
+    </footer>
+</body>
+
+</html>
