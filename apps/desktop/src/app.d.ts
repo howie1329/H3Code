@@ -112,6 +112,7 @@ declare global {
   type RecentRepoPreference = {
     path: string;
     name: string;
+    addedAt: string;
     lastOpenedAt: string;
     lastSessionPath?: string;
     sessionsIndexedAt?: string;
@@ -125,6 +126,7 @@ declare global {
     name?: string;
     created: string;
     modified: string;
+    lastOpenedAt?: string;
     messageCount: number;
     firstMessage: string;
   };

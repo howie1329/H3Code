@@ -260,7 +260,26 @@ async function listSessionsForRepo(repoPath: string, markRecent = false) {
     recordRepoUsage(repoPath);
   }
   recordRepoSessionRows(repoPath, sessions);
-  return sessions;
+  return sortSessionsForRepoByIndexedRecency(repoPath, sessions);
+}
+
+function sortSessionsForRepoByIndexedRecency(repoPath: string, sessions: PiSessionSummary[]) {
+  const indexedOrderByPath = new Map(
+    getPreferences().indexedSessions
+      .filter((session) => session.repoPath === repoPath)
+      .map((session, index) => [session.path, index]),
+  );
+
+  return [...sessions].sort((a, b) => {
+    const aIndex = indexedOrderByPath.get(a.path) ?? Number.MAX_SAFE_INTEGER;
+    const bIndex = indexedOrderByPath.get(b.path) ?? Number.MAX_SAFE_INTEGER;
+
+    if (aIndex !== bIndex) {
+      return aIndex - bIndex;
+    }
+
+    return Date.parse(b.modified) - Date.parse(a.modified);
+  });
 }
 
 async function listAllSessionsForLogicalRepo(repoPath: string): Promise<PiSessionSummary[]> {

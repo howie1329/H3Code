@@ -8,6 +8,12 @@ import {
   getIndexedSessions,
   type IndexedSessionPreference,
 } from "./preferences-indexed-sessions.js";
+import {
+  getRecentRepos as getRecentReposRows,
+  migrateRecentReposSchema,
+  migrateRepoSessionsSchema,
+  type RecentRepoPreference,
+} from "./preferences-schema.js";
 
 export type DesktopSettings = {
   sidebarOpen: boolean;
@@ -16,15 +22,7 @@ export type DesktopSettings = {
   autoConnectOnLaunch: boolean;
 };
 
-export type RecentRepoPreference = {
-  path: string;
-  name: string;
-  lastOpenedAt: string;
-  lastSessionPath?: string;
-  sessionsIndexedAt?: string;
-};
-
-export type { IndexedSessionPreference };
+export type { IndexedSessionPreference, RecentRepoPreference };
 
 export type DesktopPreferences = {
   recentRepos: RecentRepoPreference[];
@@ -86,18 +84,19 @@ export function recordRepoUsage(repoPath: string, lastSessionPath?: string) {
   const lastOpenedAt = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO recent_repos (path, name, last_opened_at, last_session_path)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO recent_repos (path, name, added_at, last_opened_at, last_session_path)
+    VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
       name = excluded.name,
       last_opened_at = excluded.last_opened_at,
       last_session_path = COALESCE(excluded.last_session_path, recent_repos.last_session_path)
-  `).run(repoPath, name, lastOpenedAt, lastSessionPath ?? null);
+  `).run(repoPath, name, lastOpenedAt, lastOpenedAt, lastSessionPath ?? null);
 
   setSetting(db, "lastSelectedRepoPath", repoPath);
 
   if (lastSessionPath) {
     setSetting(db, "lastSelectedSessionPath", lastSessionPath);
+    recordSessionOpened(db, lastSessionPath, lastOpenedAt);
   }
 
   trimRecentRepos(db);
@@ -105,14 +104,14 @@ export function recordRepoUsage(repoPath: string, lastSessionPath?: string) {
 
 function ensureRepoStub(db: DatabaseSync, repoPath: string) {
   const name = basename(repoPath);
-  const lastOpenedAt = new Date().toISOString();
+  const now = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO recent_repos (path, name, last_opened_at, last_session_path, sessions_indexed_at)
-    VALUES (?, ?, ?, NULL, NULL)
+    INSERT INTO recent_repos (path, name, added_at, last_opened_at, last_session_path, sessions_indexed_at)
+    VALUES (?, ?, ?, ?, NULL, NULL)
     ON CONFLICT(path) DO UPDATE SET
       name = excluded.name
-  `).run(repoPath, name, lastOpenedAt);
+  `).run(repoPath, name, now, now);
 }
 
 export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
@@ -146,6 +145,19 @@ export function recordRepoSessionRows(
 
   try {
     ensureRepoStub(db, repoPath);
+    const lastOpenedBySessionPath = new Map(
+      db.prepare("SELECT session_path AS path, last_opened_at AS lastOpenedAt FROM repo_sessions WHERE repo_path = ?")
+        .all(repoPath)
+        .map((row) => [String(row.path), toOptionalString(row.lastOpenedAt)]),
+    );
+    const repoUsage = db.prepare(`
+      SELECT last_opened_at AS lastOpenedAt, last_session_path AS lastSessionPath
+      FROM recent_repos
+      WHERE path = ?
+    `).get(repoPath);
+    const repoLastOpenedAt = toOptionalString(repoUsage?.lastOpenedAt);
+    const repoLastSessionPath = toOptionalString(repoUsage?.lastSessionPath);
+
     db.prepare("DELETE FROM repo_sessions WHERE repo_path = ?").run(repoPath);
 
     const insert = db.prepare(`
@@ -156,14 +168,19 @@ export function recordRepoSessionRows(
         name,
         created_at,
         modified_at,
+        last_opened_at,
         message_count,
         first_message,
         indexed_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const session of sessions) {
+      const lastOpenedAt = lastOpenedBySessionPath.get(session.path) ?? (
+        session.path === repoLastSessionPath ? repoLastOpenedAt : undefined
+      );
+
       insert.run(
         session.path,
         repoPath,
@@ -171,6 +188,7 @@ export function recordRepoSessionRows(
         session.name ?? null,
         session.created,
         session.modified,
+        lastOpenedAt ?? null,
         session.messageCount,
         session.firstMessage,
         now,
@@ -349,6 +367,7 @@ function getDatabase() {
     CREATE TABLE IF NOT EXISTS recent_repos (
       path TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      added_at TEXT NOT NULL,
       last_opened_at TEXT NOT NULL,
       last_session_path TEXT,
       sessions_indexed_at TEXT
@@ -361,6 +380,7 @@ function getDatabase() {
       name TEXT,
       created_at TEXT NOT NULL,
       modified_at TEXT NOT NULL,
+      last_opened_at TEXT,
       message_count INTEGER NOT NULL DEFAULT 0,
       first_message TEXT NOT NULL DEFAULT '',
       indexed_at TEXT NOT NULL,
@@ -383,17 +403,9 @@ function getDatabase() {
   `);
 
   migrateRecentReposSchema(database);
+  migrateRepoSessionsSchema(database);
 
   return database;
-}
-
-function migrateRecentReposSchema(db: DatabaseSync) {
-  const columns = db.prepare("PRAGMA table_info(recent_repos)").all() as Array<{ name: string }>;
-  const hasSessionsIndexedAt = columns.some((column) => column.name === "sessions_indexed_at");
-
-  if (!hasSessionsIndexedAt) {
-    db.exec("ALTER TABLE recent_repos ADD COLUMN sessions_indexed_at TEXT");
-  }
 }
 
 function getDatabasePath() {
@@ -402,23 +414,7 @@ function getDatabasePath() {
 }
 
 function getRecentRepos(db: DatabaseSync): RecentRepoPreference[] {
-  return db.prepare(`
-    SELECT
-      path,
-      name,
-      last_opened_at AS lastOpenedAt,
-      last_session_path AS lastSessionPath,
-      sessions_indexed_at AS sessionsIndexedAt
-    FROM recent_repos
-    ORDER BY last_opened_at DESC
-    LIMIT ?
-  `).all(recentRepoLimit).map((row) => ({
-    path: String(row.path),
-    name: String(row.name),
-    lastOpenedAt: String(row.lastOpenedAt),
-    lastSessionPath: toOptionalString(row.lastSessionPath),
-    sessionsIndexedAt: toOptionalString(row.sessionsIndexedAt),
-  }));
+  return getRecentReposRows(db, recentRepoLimit);
 }
 
 function getDesktopSettings(db: DatabaseSync): DesktopSettings {
@@ -466,10 +462,14 @@ function trimRecentRepos(db: DatabaseSync) {
     DELETE FROM recent_repos
     WHERE path NOT IN (
       SELECT path FROM recent_repos
-      ORDER BY last_opened_at DESC
+      ORDER BY added_at DESC
       LIMIT ?
     )
   `).run(recentRepoLimit);
+}
+
+function recordSessionOpened(db: DatabaseSync, sessionPath: string, openedAt: string) {
+  db.prepare("UPDATE repo_sessions SET last_opened_at = ? WHERE session_path = ?").run(openedAt, sessionPath);
 }
 
 function toOptionalString(value: unknown) {

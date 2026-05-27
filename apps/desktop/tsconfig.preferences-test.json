@@ -11,5 +11,5 @@
     "outDir": "dist-electron",
     "types": ["node"]
   },
-  "include": ["electron/preferences-indexed-sessions.ts", "electron/preferences.test.ts"]
+  "include": ["electron/preferences-schema.ts", "electron/preferences-indexed-sessions.ts", "electron/preferences.test.ts"]
 }

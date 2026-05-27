@@ -1263,15 +1263,20 @@ function createRepo(nextRepoPath: string, updates: Partial<SidebarRepo> = {}): S
 }
 
 function upsertRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: Partial<SidebarRepo> = {}) {
-  const existingRepo = currentRepos.find((repo) => repo.path === nextRepoPath);
-  const nextRepo = existingRepo ? { ...existingRepo, ...updates, name: basename(nextRepoPath), path: nextRepoPath } : createRepo(nextRepoPath, updates);
+  const existingRepoIndex = currentRepos.findIndex((repo) => repo.path === nextRepoPath);
 
-  return [nextRepo, ...currentRepos.filter((repo) => repo.path !== nextRepoPath)];
+  if (existingRepoIndex === -1) {
+    return [...currentRepos, createRepo(nextRepoPath, updates)];
+  }
+
+  return currentRepos.map((repo, index) =>
+    index === existingRepoIndex ? { ...repo, ...updates, name: basename(nextRepoPath), path: nextRepoPath } : repo,
+  );
 }
 
 function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: Partial<SidebarRepo>) {
   if (!currentRepos.some((repo) => repo.path === nextRepoPath)) {
-    return [createRepo(nextRepoPath, updates), ...currentRepos];
+    return [...currentRepos, createRepo(nextRepoPath, updates)];
   }
 
   return currentRepos.map((repo) => (repo.path === nextRepoPath ? { ...repo, ...updates } : repo));
