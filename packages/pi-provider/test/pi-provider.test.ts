@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PiSdkProvider, type PiProviderEvent, type PiRuntimeFactory, type PiRuntimeLike, type PiSessionLike } from "../src/index.js";
+import {
+  PiAgentProvider,
+  PiSdkProvider,
+  mapPiEventToCore,
+  mapPiSnapshotToCore,
+  type PiProviderEvent,
+  type PiRuntimeFactory,
+  type PiRuntimeLike,
+  type PiSessionLike,
+} from "../src/index.js";
 
 test("starts runtime with injected options and emits initial session snapshot", async () => {
   const session = new FakeSession("session-1");
@@ -149,6 +158,93 @@ test("snapshot preserves Pi message objects and session settings", async () => {
   assert.equal(snapshot.thinkingLevel, "medium");
 });
 
+test("maps Pi snapshots and events to agent-core shapes", async () => {
+  const message = { id: "m1", role: "assistant", content: [{ type: "text", text: "hi" }] };
+  const session = new FakeSession("session");
+  session.messages.push(message);
+  session.isStreamingValue = true;
+  session.isCompactingValue = true;
+  session.model = { provider: "test", id: "model" };
+  session.thinkingLevel = "high";
+  session.steering.push("now");
+  session.followUps.push("later");
+  const provider = new PiSdkProvider({ cwd: "/repo", runtimeFactory: fakeFactory(new FakeRuntime(session)) });
+  await provider.start();
+
+  const snapshot = mapPiSnapshotToCore("pi", "/repo", provider.snapshot());
+
+  assert.equal(snapshot.summary.providerId, "pi");
+  assert.equal(snapshot.summary.sessionRef, "/tmp/session.jsonl");
+  assert.equal(snapshot.summary.status, "running");
+  assert.equal(snapshot.cwd, "/repo");
+  assert.deepEqual(snapshot.messages, [message]);
+  assert.deepEqual(snapshot.steering, ["now"]);
+  assert.deepEqual(snapshot.followUp, ["later"]);
+  assert.deepEqual(snapshot.activeTools, ["read"]);
+  assert.deepEqual(snapshot.tools, [{ name: "read" }]);
+  assert.deepEqual(snapshot.model, { provider: "test", id: "model" });
+  assert.equal(snapshot.thinkingLevel, "high");
+
+  const changed = mapPiEventToCore("pi", "/repo", {
+    type: "session.changed",
+    snapshot: provider.snapshot(),
+    occurredAt: 1,
+  });
+  assert.equal(changed.type, "session.changed");
+  assert.equal(changed.snapshot.summary.sessionRef, "/tmp/session.jsonl");
+
+  const queue = mapPiEventToCore("pi", "/repo", {
+    type: "queue.updated",
+    steering: ["a"],
+    followUp: ["b"],
+    occurredAt: 2,
+  });
+  assert.deepEqual(queue, { type: "queue.updated", steering: ["a"], followUp: ["b"], occurredAt: 2 });
+});
+
+test("PiAgentProvider adapts core commands to PiSdkProvider", async () => {
+  const session = new FakeSession("session");
+  const runtime = new FakeRuntime(session);
+  const provider = new PiAgentProvider({ runtimeFactory: fakeFactory(runtime) });
+  const events: string[] = [];
+  const connection = await provider.connect({ repoPath: "/repo" });
+  provider.subscribe(connection, (event) => events.push(event.type));
+
+  await provider.sendMessage(connection, {
+    mode: "prompt",
+    text: "hello",
+    images: ["image"],
+    source: "prompt",
+    expandPromptTemplates: true,
+    streamingBehavior: "followUp",
+  });
+  await provider.sendMessage(connection, { mode: "steer", text: "interrupt" });
+  await provider.sendMessage(connection, { mode: "followUp", text: "later" });
+  await provider.setModel?.(connection, { id: "model" });
+  await provider.setThinkingLevel?.(connection, "medium");
+  session.emit({ type: "agent_start" });
+
+  assert.equal(session.prompts[0]?.text, "hello");
+  assert.deepEqual(session.prompts[0]?.options?.images, ["image"]);
+  assert.equal(session.prompts[0]?.options?.source, "prompt");
+  assert.equal(session.prompts[0]?.options?.expandPromptTemplates, true);
+  assert.equal(session.prompts[0]?.options?.streamingBehavior, "followUp");
+  assert.deepEqual(session.steering, ["interrupt"]);
+  assert.deepEqual(session.followUps, ["later"]);
+  assert.deepEqual(session.model, { id: "model" });
+  assert.equal(session.thinkingLevel, "medium");
+  assert.deepEqual(events, ["run.started"]);
+
+  const next = new FakeSession("next");
+  runtime.nextSession = next;
+  const snapshot = await provider.createSession?.(connection, { parentSession: "parent" });
+  assert.equal(snapshot?.summary.sessionRef, "/tmp/next.jsonl");
+  assert.equal(runtime.parentSession, "parent");
+
+  await provider.disconnect(connection);
+  assert.equal(runtime.disposed, true);
+});
+
 function fakeFactory(runtime: PiRuntimeLike): PiRuntimeFactory {
   return async () => runtime;
 }
@@ -156,6 +252,7 @@ function fakeFactory(runtime: PiRuntimeLike): PiRuntimeFactory {
 class FakeRuntime implements PiRuntimeLike {
   nextSession: FakeSession | undefined;
   disposed = false;
+  parentSession: string | undefined;
   #rebindSession: ((session: PiSessionLike) => Promise<void>) | undefined;
 
   constructor(public session: FakeSession) {}
@@ -168,7 +265,8 @@ class FakeRuntime implements PiRuntimeLike {
     this.#rebindSession = rebindSession;
   }
 
-  async newSession() {
+  async newSession(options?: { parentSession?: string }) {
+    this.parentSession = options?.parentSession;
     if (this.nextSession) {
       this.session = this.nextSession;
       await this.#rebindSession?.(this.session);
@@ -193,10 +291,12 @@ class FakeRuntime implements PiRuntimeLike {
 
 class FakeSession implements PiSessionLike {
   messages: unknown[] = [];
+  prompts: Array<{ text: string; options?: Parameters<PiSessionLike["prompt"]>[1] }> = [];
   steering: string[] = [];
   followUps: string[] = [];
   bindCount = 0;
   isStreamingValue = false;
+  isCompactingValue = false;
   model: unknown;
   thinkingLevel: string | undefined;
   promptImpl: PiSessionLike["prompt"] | undefined;
@@ -211,6 +311,10 @@ class FakeSession implements PiSessionLike {
 
   get isStreaming() {
     return this.isStreamingValue;
+  }
+
+  get isCompacting() {
+    return this.isCompactingValue;
   }
 
   get listenerCount() {
@@ -228,6 +332,7 @@ class FakeSession implements PiSessionLike {
   }
 
   async prompt(text: string, options?: Parameters<PiSessionLike["prompt"]>[1]) {
+    this.prompts.push({ text, options });
     if (this.promptImpl) {
       await this.promptImpl(text, options);
       return;
@@ -245,6 +350,14 @@ class FakeSession implements PiSessionLike {
   }
 
   async abort() {}
+
+  async setModel(model: unknown) {
+    this.model = model;
+  }
+
+  setThinkingLevel(level: string) {
+    this.thinkingLevel = level;
+  }
 
   getSteeringMessages() {
     return this.steering;

@@ -1,10 +1,11 @@
-import type { MessageId, ProviderId, RunRef, SessionRef } from "./ids.js";
+import type { ProviderId, SessionRef } from "./ids.js";
 
 export type ConnectionState = "starting" | "connected" | "disconnected" | "error" | "exited";
 export type SessionStatus = "idle" | "running" | "waiting" | "error" | "archived";
-export type RunStatus = "queued" | "running" | "waiting" | "completed" | "failed" | "aborted";
 export type MessageMode = "prompt" | "steer" | "followUp";
-export type MessageRole = "user" | "assistant" | "system" | "tool";
+export type QueueMode = "all" | "one-at-a-time";
+export type MessageSource = "extension" | "prompt" | "skill" | "interactive" | (string & {});
+export type StreamingBehavior = "steer" | "followUp";
 
 export interface SessionSummary {
   providerId: ProviderId;
@@ -17,31 +18,41 @@ export interface SessionSummary {
   updatedAt?: number;
 }
 
-export interface RunSummary {
-  runRef: RunRef;
-  status: RunStatus;
-  startedAt?: number;
-  completedAt?: number;
-}
-
-export interface TranscriptMessage {
-  id: MessageId;
-  role: MessageRole;
-  content: unknown;
-  createdAt?: number;
-}
-
 export interface SessionSnapshot {
   summary: SessionSummary;
-  messages: TranscriptMessage[];
-  activeRun?: RunSummary;
+  cwd: string;
+  messages: unknown[];
+  streamingMessage?: unknown;
+  isStreaming: boolean;
+  isCompacting: boolean;
+  model?: unknown;
+  thinkingLevel?: string;
+  steeringMode?: QueueMode;
+  followUpMode?: QueueMode;
+  steering: readonly string[];
+  followUp: readonly string[];
+  activeTools: readonly string[];
+  tools: readonly unknown[];
+  stats?: unknown;
+  diagnostics: readonly ProviderDiagnostic[];
+  modelFallbackMessage?: string;
 }
 
 export interface MessageInput {
   text: string;
   mode: MessageMode;
+  images?: unknown[];
+  source?: MessageSource;
+  expandPromptTemplates?: boolean;
+  streamingBehavior?: StreamingBehavior;
 }
 
 export interface NewSessionOptions {
-  title?: string;
+  parentSession?: SessionRef;
+}
+
+export interface ProviderDiagnostic {
+  level?: "info" | "warning" | "error";
+  message?: string;
+  detail?: unknown;
 }

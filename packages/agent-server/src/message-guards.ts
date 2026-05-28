@@ -10,6 +10,8 @@ const commandTypes = new Set([
   "session.snapshot",
   "message.send",
   "run.abort",
+  "provider.model.set",
+  "provider.thinking.set",
   "provider.ui.respond",
 ]);
 

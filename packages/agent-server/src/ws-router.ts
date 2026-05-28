@@ -62,15 +62,31 @@ export class WsRouter {
           await this.connections.abort(message.connectionId, message.runRef);
           return;
 
+        case "provider.model.set":
+          await this.connections.setModel(message.connectionId, message.model);
+          return;
+
+        case "provider.thinking.set":
+          await this.connections.setThinkingLevel(message.connectionId, message.level);
+          return;
+
+        case "provider.ui.respond":
+          await this.connections.respondToUiRequest(message.connectionId, message.response);
+          return;
+
         case "session.switch": {
           const snapshot = await this.connections.switchSession(message.connectionId, message.sessionRef);
           send(socket, { type: "session.snapshot", connectionId: message.connectionId, snapshot });
           return;
         }
 
+        case "session.create": {
+          const snapshot = await this.connections.createSession(message.connectionId, message.options);
+          send(socket, { type: "session.snapshot", connectionId: message.connectionId, snapshot });
+          return;
+        }
+
         case "session.list":
-        case "session.create":
-        case "provider.ui.respond":
           throw new AgentServerError("unsupported_command", `${message.type} is not implemented yet.`, message.id);
 
         default:

@@ -1,37 +1,70 @@
-import type { MessageId, RunRef, ToolCallId } from "./ids.js";
-import type { RunStatus, RunSummary, TranscriptMessage } from "./sessions.js";
+import type { ToolCallId } from "./ids.js";
+import type { ProviderUiRequest } from "./provider-ui.js";
+import type { SessionSnapshot } from "./sessions.js";
 
-export interface ApprovalRequest {
-  id: string;
-  title: string;
-  message?: string;
-  details?: unknown;
-}
+export type MessageStreamPhase = "start" | "update" | "end";
+export type ToolStreamPhase = "start" | "update" | "end";
+export type CompactionPhase = "start" | "end";
+export type RetryPhase = "start" | "end";
 
 export type SessionDomainEvent =
-  | { type: "run.started"; run: RunSummary; occurredAt: number }
-  | { type: "run.updated"; runRef: RunRef; status: RunStatus; occurredAt: number }
+  | { type: "run.started"; occurredAt: number }
+  | { type: "run.ended"; messages?: unknown[]; willRetry?: boolean; occurredAt: number }
+  | { type: "run.failed"; errorMessage: string; occurredAt: number }
+  | { type: "turn.started"; occurredAt: number }
+  | { type: "turn.completed"; message?: unknown; toolResults?: unknown[]; occurredAt: number }
   | {
-      type: "run.completed";
-      runRef: RunRef;
-      status: "completed" | "failed" | "aborted";
-      occurredAt: number;
-    }
-  | { type: "message.added"; message: TranscriptMessage; occurredAt: number }
-  | { type: "message.delta"; messageId: MessageId; delta: unknown; occurredAt: number }
-  | { type: "tool.started"; toolCallId: ToolCallId; name: string; input?: unknown; occurredAt: number }
-  | { type: "tool.updated"; toolCallId: ToolCallId; delta?: unknown; occurredAt: number }
-  | { type: "tool.completed"; toolCallId: ToolCallId; output?: unknown; isError?: boolean; occurredAt: number }
-  | { type: "approval.requested"; approval: ApprovalRequest; occurredAt: number }
-  | {
-      type: "approval.resolved";
-      approvalId: string;
-      decision: "approved" | "rejected";
+      type: "message.streaming";
+      phase: MessageStreamPhase;
+      message?: unknown;
+      deltaType?: string;
+      errorMessage?: string;
       occurredAt: number;
     }
   | {
-      type: "provider.notice";
+      type: "tool.updated";
+      phase: ToolStreamPhase;
+      toolCallId: ToolCallId;
+      toolName: string;
+      args?: unknown;
+      content?: unknown;
+      isError?: boolean;
+      errorText?: string;
+      occurredAt: number;
+    }
+  | { type: "queue.updated"; steering: readonly string[]; followUp: readonly string[]; occurredAt: number }
+  | {
+      type: "compaction.updated";
+      phase: CompactionPhase;
+      reason?: string;
+      aborted?: boolean;
+      willRetry?: boolean;
+      errorMessage?: string;
+      result?: unknown;
+      occurredAt: number;
+    }
+  | {
+      type: "retry.updated";
+      phase: RetryPhase;
+      attempt?: number;
+      maxAttempts?: number;
+      delayMs?: number;
+      success?: boolean;
+      errorMessage?: string;
+      occurredAt: number;
+    }
+  | { type: "session.changed"; snapshot: SessionSnapshot; occurredAt: number }
+  | { type: "session.cancelled"; operation: "new" | "switch" | "fork" | "import"; occurredAt: number }
+  | { type: "extension.error"; message: string; extensionPath?: string; event?: string; occurredAt: number }
+  | { type: "extension.status"; statusKey: string; statusText?: string; occurredAt: number }
+  | { type: "extension.notify"; message: string; notifyType: "info" | "warning" | "error"; occurredAt: number }
+  | { type: "extension.widget"; widgetKey: string; widgetLines?: string[]; title?: string; occurredAt: number }
+  | { type: "extension.ui.request"; request: ProviderUiRequest; occurredAt: number }
+  | { type: "extension.ui.resolved"; requestId: string; occurredAt: number }
+  | {
+      type: "provider.diagnostic";
       level: "info" | "warning" | "error";
       message: string;
+      detail?: unknown;
       occurredAt: number;
     };

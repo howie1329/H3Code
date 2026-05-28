@@ -4,7 +4,8 @@ export interface ProviderCapabilities {
     create: boolean;
     switch: boolean;
     snapshot: boolean;
-    rename: boolean;
+    fork: boolean;
+    import: boolean;
   };
   runs: {
     stream: boolean;
@@ -14,15 +15,12 @@ export interface ProviderCapabilities {
     retry: boolean;
   };
   ui: {
-    modelPicker: boolean;
-    slashCommands: boolean;
-    providerPrompts: boolean;
-    approvals: boolean;
+    model: boolean;
+    thinkingLevel: boolean;
+    extensionUi: boolean;
     compaction: boolean;
   };
   workspace: {
     localCwd: boolean;
-    gitDiff: boolean;
-    worktrees: boolean;
   };
 }

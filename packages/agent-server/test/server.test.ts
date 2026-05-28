@@ -74,9 +74,45 @@ test("connects to noop provider and emits session events on message.send", async
     assert.equal(started.type, "session.event");
     assert.equal(started.event.type, "run.started");
     assert.equal(added.type, "session.event");
-    assert.equal(added.event.type, "message.added");
+    assert.equal(added.event.type, "message.streaming");
     assert.equal(completed.type, "session.event");
-    assert.equal(completed.event.type, "run.completed");
+    assert.equal(completed.event.type, "run.ended");
+
+    socket.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test("routes implemented session and provider commands through connections", async () => {
+  const server = await startAgentServer();
+
+  try {
+    const client = await openReadySocket(server.url);
+    const { socket } = client;
+
+    socket.send(JSON.stringify({ type: "workspace.connect", id: "1", providerId: "noop", repoPath: "/tmp" }));
+    const status = await client.nextMessage();
+
+    assert.equal(status.type, "connection.status");
+    const connectionId = status.connectionId;
+
+    socket.send(JSON.stringify({ type: "session.create", id: "2", connectionId }));
+    const createError = await client.nextMessage();
+    assert.equal(createError.type, "error");
+    assert.equal(createError.code, "unsupported_command");
+
+    socket.send(
+      JSON.stringify({
+        type: "provider.ui.respond",
+        id: "3",
+        connectionId,
+        response: { requestId: "ui-1", kind: "input", value: "ok" },
+      }),
+    );
+    const uiError = await client.nextMessage();
+    assert.equal(uiError.type, "error");
+    assert.equal(uiError.code, "unsupported_command");
 
     socket.close();
   } finally {

@@ -14,7 +14,8 @@ const noopCapabilities: ProviderCapabilities = {
     create: false,
     switch: false,
     snapshot: true,
-    rename: false,
+    fork: false,
+    import: false,
   },
   runs: {
     stream: true,
@@ -24,16 +25,13 @@ const noopCapabilities: ProviderCapabilities = {
     retry: false,
   },
   ui: {
-    modelPicker: false,
-    slashCommands: false,
-    providerPrompts: false,
-    approvals: false,
+    model: false,
+    thinkingLevel: false,
+    extensionUi: false,
     compaction: false,
   },
   workspace: {
     localCwd: true,
-    gitDiff: false,
-    worktrees: false,
   },
 };
 
@@ -62,31 +60,22 @@ export class NoopProvider implements AgentProvider {
 
   async sendMessage(connection: ProviderConnection, input: MessageInput): Promise<void> {
     const now = Date.now();
-    const runRef = `noop-run-${now}`;
-    const messageId = `noop-message-${now}`;
-
-    this.emit(connection, { type: "run.started", run: { runRef, status: "running", startedAt: now }, occurredAt: now });
+    this.emit(connection, { type: "run.started", occurredAt: now });
     this.emit(connection, {
-      type: "message.added",
-      message: {
-        id: messageId,
-        role: "assistant",
-        content: `Noop provider received ${input.mode}: ${input.text}`,
-        createdAt: now,
-      },
+      type: "message.streaming",
+      phase: "end",
+      message: { role: "assistant", content: `Noop provider received ${input.mode}: ${input.text}` },
       occurredAt: now,
     });
     this.emit(connection, {
-      type: "run.completed",
-      runRef,
-      status: "completed",
+      type: "run.ended",
       occurredAt: Date.now(),
     });
   }
 
   async abort(connection: ProviderConnection): Promise<void> {
     this.emit(connection, {
-      type: "provider.notice",
+      type: "provider.diagnostic",
       level: "info",
       message: "Noop provider has no active run to abort.",
       occurredAt: Date.now(),
@@ -101,7 +90,15 @@ export class NoopProvider implements AgentProvider {
         status: "idle",
         title: "Noop session",
       },
+      cwd: (connection as Partial<NoopConnection>).repoPath ?? "",
       messages: [],
+      isStreaming: false,
+      isCompacting: false,
+      steering: [],
+      followUp: [],
+      activeTools: [],
+      tools: [],
+      diagnostics: [],
     };
   }
 

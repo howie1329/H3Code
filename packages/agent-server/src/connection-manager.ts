@@ -5,9 +5,11 @@ import type {
   ConnectContext,
   MessageInput,
   ProviderConnection,
+  ProviderUiResponse,
   RunRef,
   SessionDomainEvent,
   SessionRef,
+  NewSessionOptions,
 } from "@h3code/agent-core";
 import { AgentServerError } from "./errors.js";
 
@@ -54,6 +56,36 @@ export class ConnectionManager {
     await managed.provider.abort(managed.connection, runRef);
   }
 
+  async respondToUiRequest(connectionId: ConnectionId, response: ProviderUiResponse) {
+    const managed = this.require(connectionId);
+
+    if (!managed.provider.respondToUiRequest) {
+      throw new AgentServerError("unsupported_command", "Provider does not support UI responses.");
+    }
+
+    await managed.provider.respondToUiRequest(managed.connection, response);
+  }
+
+  async setModel(connectionId: ConnectionId, model: unknown) {
+    const managed = this.require(connectionId);
+
+    if (!managed.provider.setModel) {
+      throw new AgentServerError("unsupported_command", "Provider does not support model changes.");
+    }
+
+    await managed.provider.setModel(managed.connection, model);
+  }
+
+  async setThinkingLevel(connectionId: ConnectionId, level: string) {
+    const managed = this.require(connectionId);
+
+    if (!managed.provider.setThinkingLevel) {
+      throw new AgentServerError("unsupported_command", "Provider does not support thinking level changes.");
+    }
+
+    await managed.provider.setThinkingLevel(managed.connection, level);
+  }
+
   async getSnapshot(connectionId: ConnectionId) {
     const managed = this.require(connectionId);
 
@@ -72,6 +104,16 @@ export class ConnectionManager {
     }
 
     return managed.provider.switchSession(managed.connection, sessionRef);
+  }
+
+  async createSession(connectionId: ConnectionId, options?: NewSessionOptions) {
+    const managed = this.require(connectionId);
+
+    if (!managed.provider.createSession) {
+      throw new AgentServerError("unsupported_command", "Provider does not support creating sessions.");
+    }
+
+    return managed.provider.createSession(managed.connection, options);
   }
 
   private require(connectionId: ConnectionId) {
