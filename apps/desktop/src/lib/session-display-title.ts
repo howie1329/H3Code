@@ -1,17 +1,26 @@
 const MAX_TITLE_LENGTH = 48;
 
+/** Sentence-case display titles only; avoids mangling acronyms with title-case. */
 export function getSessionDisplayTitle(session: PiSessionSummary): string {
   const name = session.name?.trim();
   if (name) {
-    return name;
+    return capitalizeFirstLetter(name);
   }
 
   const fromFirst = sanitizeFirstMessage(session.firstMessage);
   if (fromFirst) {
-    return fromFirst;
+    return capitalizeFirstLetter(fromFirst);
   }
 
   return "Untitled session";
+}
+
+function capitalizeFirstLetter(value: string): string {
+  if (!value) {
+    return value;
+  }
+
+  return value[0].toUpperCase() + value.slice(1);
 }
 
 export function formatSessionModified(modified: string): string {

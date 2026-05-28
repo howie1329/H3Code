@@ -2,7 +2,9 @@
   import { ModeWatcher } from "mode-watcher";
   import { onMount } from "svelte";
 
+  import AppCommandMenu from "$lib/components/desktop/AppCommandMenu.svelte";
   import AppSidebar from "$lib/components/desktop/AppSidebar.svelte";
+  import { commandMenuController } from "$lib/command-menu-controller.svelte.js";
   import ExtensionUiDialog from "$lib/components/desktop/ExtensionUiDialog.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
@@ -38,6 +40,12 @@
     const isTyping = isEditableTarget(event.target);
 
     if (isTyping) {
+      return;
+    }
+
+    if (key === "k") {
+      event.preventDefault();
+      commandMenuController.open = true;
       return;
     }
 
@@ -77,6 +85,8 @@
 <ModeWatcher />
 
 <ExtensionUiDialog />
+
+<AppCommandMenu bind:open={commandMenuController.open} />
 
 <Sidebar.Provider
   open={desktopState.desktopSettings.sidebarOpen}

@@ -2,21 +2,26 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import {
-    AddCircleIcon,
     ArrowDown01Icon,
     ArrowRight01Icon,
     FolderAddIcon,
     FolderCodeIcon,
+    Moon02Icon,
+    MoreHorizontalIcon,
+    Search01Icon,
     Settings05Icon,
-    WasteIcon,
+    Sun02Icon,
   } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
+  import { mode, toggleMode } from "mode-watcher";
 
-  import { desktopState, type SidebarRepo } from "$lib/desktop-state.svelte";
   import ConfirmDeleteDialog from "$lib/components/desktop/ConfirmDeleteDialog.svelte";
   import VirtualSessionList from "$lib/components/desktop/VirtualSessionList.svelte";
+  import { desktopState, type SidebarRepo } from "$lib/desktop-state.svelte";
+  import { commandMenuController } from "$lib/command-menu-controller.svelte.js";
   import { getSessionDisplayTitle } from "$lib/session-display-title.js";
   import { Button } from "$lib/components/ui/button/index.js";
+  import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
   let repoRemovalOpen = $state(false);
@@ -24,24 +29,27 @@
   let sessionDeletionOpen = $state(false);
   let sessionDeletionTarget = $state<{ repo: SidebarRepo; session: PiSessionSummary } | undefined>();
 
-  function handleRepoRemoveClick(event: MouseEvent, repo: SidebarRepo) {
-    event.preventDefault();
-    event.stopPropagation();
+  function requestRepoRemoval(repo: SidebarRepo) {
     repoRemovalTarget = repo;
     repoRemovalOpen = true;
   }
 
-  function handleSessionDeleteClick(event: MouseEvent, repo: SidebarRepo, session: PiSessionSummary) {
-    event.preventDefault();
-    event.stopPropagation();
+  function requestSessionDelete(repo: SidebarRepo, session: PiSessionSummary) {
     sessionDeletionTarget = { repo, session };
     sessionDeletionOpen = true;
   }
 
-  const menuButtonClass =
-    "h-7 rounded-full px-2.5 text-[11px] leading-snug [&_svg]:size-3 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:justify-center";
+  const rowHorizontalPadding = "px-2";
+  const rowButtonClass = `h-7 w-full rounded-md ${rowHorizontalPadding} text-[11px] leading-snug [&_svg]:size-3`;
+  const repoRowButtonClass = `${rowButtonClass} !pr-8`;
+  const sidebarRowInset = "px-1.5";
+  const menuSubClass =
+    "mx-0 max-h-[min(50svh,18rem)] min-h-0 w-full translate-x-0 gap-1 overflow-y-auto border-0 px-0 py-0 transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none";
+  const rowListGapClass = "gap-1";
+  const contextMenuContentClass = "w-44";
+  const themeToggleLabel = $derived(mode.current === "dark" ? "Switch to light mode" : "Switch to dark mode");
 
-  async function handleNewSessionClick(repoPath: string) {
+  async function startNewSession(repoPath: string) {
     await goto("/workspace");
     await desktopState.handleNewSession(repoPath);
   }
@@ -52,29 +60,46 @@
   }
 </script>
 
-<Sidebar.Sidebar collapsible="icon">
-  <Sidebar.Header class="gap-2 px-2 py-2">
-    <div
-      class="flex h-8 items-center justify-between gap-1 group-data-[collapsible=icon]:h-auto group-data-[collapsible=icon]:justify-center"
-    >
-      <a
-        href="/workspace"
-        class="flex min-w-0 flex-1 items-center gap-2 rounded-full px-1.5 py-1 text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:px-0"
-        aria-label="H3Code workspace"
-      >
-        <img src="/icons/h3code-light.svg" alt="" class="size-6 shrink-0 rounded-md dark:hidden" />
-        <img src="/icons/h3code-dark.svg" alt="" class="hidden size-6 shrink-0 rounded-md dark:block" />
-        <span class="truncate text-xs font-semibold tracking-tight group-data-[collapsible=icon]:hidden">H3Code</span>
-      </a>
-      <Sidebar.Trigger class="shrink-0 group-data-[collapsible=icon]:hidden" />
-    </div>
-  </Sidebar.Header>
-
+<Sidebar.Sidebar collapsible="offcanvas">
   <Sidebar.Content class="min-h-0 flex-1">
-    <Sidebar.Group class="flex min-h-0 flex-1 flex-col">
-      <div
-        class="flex h-7 shrink-0 items-center justify-between gap-1 px-2 group-data-[collapsible=icon]:hidden"
+    <div class="flex h-10 shrink-0 items-center gap-1 border-b border-border/50 px-3">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        aria-label="Command center"
+        title="Command center"
+        onclick={() => {
+          commandMenuController.open = true;
+        }}
       >
+        <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        onclick={toggleMode}
+        aria-label={themeToggleLabel}
+        title={themeToggleLabel}
+      >
+        <span class="relative grid size-3 place-items-center">
+          <HugeiconsIcon
+            icon={Sun02Icon}
+            strokeWidth={2}
+            className="scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90"
+          />
+          <HugeiconsIcon
+            icon={Moon02Icon}
+            strokeWidth={2}
+            className="absolute scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0"
+          />
+        </span>
+      </Button>
+    </div>
+
+    <Sidebar.Group class="flex min-h-0 flex-1 flex-col px-0 py-0 {sidebarRowInset}">
+      <div class="flex h-7 shrink-0 items-center justify-between gap-1 pt-2 {rowHorizontalPadding}">
         <span class="text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/70">
           Repositories
         </span>
@@ -92,18 +117,18 @@
 
       <Sidebar.GroupContent class="flex min-h-0 flex-1 flex-col">
         <nav aria-label="Workspace" class="flex min-h-0 flex-1 flex-col">
-          <Sidebar.Menu aria-label="Repositories" class="flex min-h-0 flex-1 flex-col">
+          <Sidebar.Menu aria-label="Repositories" class="flex min-h-0 flex-1 flex-col {rowListGapClass}">
             {#if desktopState.repos.length === 0}
               <Sidebar.MenuItem>
                 <Sidebar.MenuButton
                   size="sm"
                   tooltipContent="Add a repository"
-                  class="{menuButtonClass} text-muted-foreground"
+                  class="{rowButtonClass} text-muted-foreground"
                   aria-disabled={desktopState.isBusy}
                   onclick={() => !desktopState.isBusy && desktopState.handleSelectRepo()}
                 >
                   <HugeiconsIcon icon={FolderCodeIcon} />
-                  <span class="group-data-[collapsible=icon]:hidden">No repositories yet</span>
+                  <span>No repositories yet</span>
                 </Sidebar.MenuButton>
               </Sidebar.MenuItem>
             {:else}
@@ -112,86 +137,103 @@
                 {@const isRepoActive = repo.path === desktopState.repoPath}
                 {@const repoSessions = repo.sessions ?? []}
                 <Sidebar.MenuItem class={repo.expanded ? "flex min-h-0 flex-col" : undefined}>
-                  <Sidebar.MenuButton
-                    size="sm"
-                    isActive={isRepoActive}
-                    tooltipContent={`${repo.name}${repo.path !== repo.name ? ` · ${repo.path}` : ""}`}
-                    aria-expanded={repo.expanded ? "true" : "false"}
-                    class={menuButtonClass}
-                    aria-disabled={desktopState.isBusy}
-                    onclick={() => !desktopState.isBusy && desktopState.toggleRepo(repo.path)}
-                  >
-                    {#if repo.expanded}
-                      <HugeiconsIcon
-                        icon={ArrowDown01Icon}
-                        class="shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
-                      />
-                    {:else}
-                      <HugeiconsIcon
-                        icon={ArrowRight01Icon}
-                        class="shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
-                      />
-                    {/if}
-                    <HugeiconsIcon icon={FolderCodeIcon} />
-                    <span
-                      class="{isRepoActive
-                        ? 'min-w-0 flex-1 truncate font-medium'
-                        : 'min-w-0 flex-1 truncate'} group-data-[collapsible=icon]:hidden"
-                    >
-                      {repo.name}
-                    </span>
-                    {#if sessionCount > 0 && !repo.expanded}
-                      <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground group-data-[collapsible=icon]:hidden">
-                        {sessionCount}
-                      </span>
-                    {/if}
-                  </Sidebar.MenuButton>
-                  <Sidebar.MenuAction
-                    showOnHover
-                    aria-label={`Remove ${repo.name} from startup`}
-                    title="Remove from startup"
-                    disabled={desktopState.isBusy}
-                    class="text-muted-foreground hover:text-destructive [&_svg]:size-3"
-                    onclick={(event) => handleRepoRemoveClick(event, repo)}
-                  >
-                    <HugeiconsIcon icon={WasteIcon} />
-                  </Sidebar.MenuAction>
+                  <ContextMenu.Root>
+                    <ContextMenu.Trigger class="w-full">
+                      <Sidebar.MenuButton
+                        size="sm"
+                        isActive={isRepoActive}
+                        tooltipContent={`${repo.name}${repo.path !== repo.name ? ` · ${repo.path}` : ""}`}
+                        aria-expanded={repo.expanded ? "true" : "false"}
+                        class={repoRowButtonClass}
+                        aria-disabled={desktopState.isBusy}
+                        onclick={() => !desktopState.isBusy && desktopState.toggleRepo(repo.path)}
+                      >
+                        {#if repo.expanded}
+                          <HugeiconsIcon icon={ArrowDown01Icon} class="shrink-0 text-muted-foreground" />
+                        {:else}
+                          <HugeiconsIcon icon={ArrowRight01Icon} class="shrink-0 text-muted-foreground" />
+                        {/if}
+                        <HugeiconsIcon icon={FolderCodeIcon} />
+                        <span class={isRepoActive ? "min-w-0 flex-1 truncate font-medium" : "min-w-0 flex-1 truncate"}>
+                          {repo.name}
+                        </span>
+                        {#if sessionCount > 0 && !repo.expanded}
+                          <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                            {sessionCount}
+                          </span>
+                        {/if}
+                      </Sidebar.MenuButton>
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Content class={contextMenuContentClass}>
+                      <ContextMenu.Item
+                        disabled={desktopState.isBusy}
+                        onSelect={() => startNewSession(repo.path)}
+                      >
+                        New session
+                      </ContextMenu.Item>
+                      <ContextMenu.Separator />
+                      <ContextMenu.Item
+                        variant="destructive"
+                        disabled={desktopState.isBusy}
+                        onSelect={() => requestRepoRemoval(repo)}
+                      >
+                        Remove from startup
+                      </ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Root>
+
+                  <ContextMenu.Root>
+                    <ContextMenu.Trigger>
+                      <Sidebar.MenuAction
+                        showOnHover
+                        aria-label={`Actions for ${repo.name}`}
+                        title="Repository actions"
+                        disabled={desktopState.isBusy}
+                        class="text-muted-foreground hover:text-sidebar-accent-foreground [&_svg]:size-3"
+                      >
+                        <HugeiconsIcon icon={MoreHorizontalIcon} />
+                      </Sidebar.MenuAction>
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Content class={contextMenuContentClass}>
+                      <ContextMenu.Item
+                        disabled={desktopState.isBusy}
+                        onSelect={() => startNewSession(repo.path)}
+                      >
+                        New session
+                      </ContextMenu.Item>
+                      <ContextMenu.Separator />
+                      <ContextMenu.Item
+                        variant="destructive"
+                        disabled={desktopState.isBusy}
+                        onSelect={() => requestRepoRemoval(repo)}
+                      >
+                        Remove from startup
+                      </ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Root>
 
                   {#if repo.expanded}
-                    <div class="flex min-h-0 flex-col gap-0.5 group-data-[collapsible=icon]:hidden">
-                      <div class="px-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          class="h-7 w-full justify-start gap-2 rounded-full px-2.5 text-[11px] leading-snug text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-3"
-                          disabled={desktopState.isBusy}
-                          onclick={() => handleNewSessionClick(repo.path)}
-                        >
-                          <HugeiconsIcon icon={AddCircleIcon} />
-                          <span>New session</span>
-                        </Button>
-                      </div>
-
+                    <div class="flex min-h-0 flex-col pt-1 {rowListGapClass}">
                       {#if repo.sessionsLoading}
-                        <Sidebar.MenuSub
-                          class="max-h-[min(50svh,18rem)] min-h-0 overflow-y-auto transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
-                        >
+                        <Sidebar.MenuSub class={menuSubClass}>
                           <Sidebar.MenuSubItem>
-                            <div class="flex h-7 items-center gap-2 px-2 text-[11px] leading-snug text-muted-foreground">
-                              <span class="size-1.5 shrink-0 rounded-full bg-muted-foreground/45" aria-hidden="true"></span>
+                            <div
+                              class="flex h-7 w-full items-center gap-2 px-2 text-[11px] leading-snug text-muted-foreground"
+                            >
+                              <span
+                                class="size-1.5 shrink-0 rounded-full bg-muted-foreground/45"
+                                aria-hidden="true"
+                              ></span>
                               <span class="truncate">Loading sessions</span>
                             </div>
                           </Sidebar.MenuSubItem>
                         </Sidebar.MenuSub>
                       {:else if repo.sessionsError}
-                        <Sidebar.MenuSub
-                          class="max-h-[min(50svh,18rem)] min-h-0 overflow-y-auto transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
-                        >
+                        <Sidebar.MenuSub class={menuSubClass}>
                           <Sidebar.MenuSubItem>
                             <button
                               type="button"
-                              class="w-full rounded-md px-2 py-1 text-left text-[11px] leading-snug text-muted-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                              class="flex h-7 w-full items-center rounded-md px-2 text-left text-[11px] leading-snug text-muted-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
                               onclick={() => desktopState.loadRepoSessions(repo.path)}
                             >
                               Could not load sessions. Retry
@@ -199,11 +241,11 @@
                           </Sidebar.MenuSubItem>
                         </Sidebar.MenuSub>
                       {:else if repoSessions.length === 0}
-                        <Sidebar.MenuSub
-                          class="max-h-[min(50svh,18rem)] min-h-0 overflow-y-auto transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
-                        >
+                        <Sidebar.MenuSub class={menuSubClass}>
                           <Sidebar.MenuSubItem>
-                            <div class="px-2 py-1 text-[11px] leading-snug text-muted-foreground">No sessions in this repo</div>
+                            <div class="flex h-7 w-full items-center px-2 text-[11px] leading-snug text-muted-foreground">
+                              No sessions in this repo
+                            </div>
                           </Sidebar.MenuSubItem>
                         </Sidebar.MenuSub>
                       {:else}
@@ -211,7 +253,7 @@
                           {repo}
                           sessions={repoSessions}
                           onSessionClick={handleSessionClick}
-                          onSessionDeleteClick={handleSessionDeleteClick}
+                          onSessionDeleteRequest={requestSessionDelete}
                         />
                       {/if}
                     </div>
@@ -225,19 +267,19 @@
     </Sidebar.Group>
   </Sidebar.Content>
 
-  <Sidebar.Footer class="border-t border-sidebar-border px-2 py-2">
+  <Sidebar.Footer class="border-t border-sidebar-border p-0 {sidebarRowInset} py-1">
     <Sidebar.Menu>
       <Sidebar.MenuItem>
         <Sidebar.MenuButton
           size="sm"
           tooltipContent="Settings"
-          class="{menuButtonClass} text-muted-foreground"
+          class="{rowButtonClass} text-muted-foreground"
           isActive={page.url.pathname === "/settings"}
         >
           {#snippet child({ props })}
             <a {...props} href="/settings">
               <HugeiconsIcon icon={Settings05Icon} />
-              <span class="group-data-[collapsible=icon]:hidden">Settings</span>
+              <span>Settings</span>
             </a>
           {/snippet}
         </Sidebar.MenuButton>

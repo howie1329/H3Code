@@ -1,6 +1,10 @@
 <script lang="ts">
 
-  let { status, class: className = "" }: { status: PiStatus; class?: string } = $props();
+  let {
+    status,
+    class: className = "",
+    showLabel = true,
+  }: { status: PiStatus; class?: string; showLabel?: boolean } = $props();
 
   const label = $derived.by(() => {
     switch (status.state) {
@@ -37,5 +41,7 @@
 
 <div class={`flex shrink-0 items-center gap-2 text-xs ${className}`} role="status" aria-label={label}>
   <span class={`size-1.5 shrink-0 rounded-full ${dotClass}`} aria-hidden="true"></span>
-  <span class="hidden font-medium text-foreground/90 sm:inline">{label.replace(/^Pi /, "")}</span>
+  {#if showLabel}
+    <span class="hidden font-medium text-foreground/90 sm:inline">{label.replace(/^Pi /, "")}</span>
+  {/if}
 </div>
