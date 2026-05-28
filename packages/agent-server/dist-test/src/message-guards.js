@@ -11,6 +11,11 @@ const commandTypes = new Set([
     "provider.model.set",
     "provider.thinking.set",
     "provider.ui.respond",
+    "preferences.get",
+    "preferences.updateDesktopSettings",
+    "preferences.setPiExecutablePath",
+    "preferences.removeRepo",
+    "preferences.clearIndexed",
 ]);
 export function parseClientMessage(data) {
     let value;

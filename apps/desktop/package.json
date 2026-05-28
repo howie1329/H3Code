@@ -13,7 +13,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "svelte-check --tsconfig ./tsconfig.json",
     "test:pi-session": "tsc -p tsconfig.pi-session-test.json && node --test dist-electron/src/lib/pi-session/projector.test.js",
-    "test:preferences": "tsc -p tsconfig.preferences-test.json && node --test dist-electron/electron/preferences.test.js dist-electron/electron/worktree-inventory.test.js"
+    "test:preferences": "npm run test --workspace @h3code/agent-metadata && tsc -p tsconfig.preferences-test.json && node --test dist-electron/electron/worktree-inventory.test.js"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",
@@ -42,6 +42,7 @@
     "wait-on": "^9.0.0"
   },
   "dependencies": {
+    "@h3code/agent-metadata": "*",
     "@earendil-works/pi-coding-agent": "^0.75.4",
     "@lucide/svelte": "^1.16.0",
     "@pierre/diffs": "^1.2.3",

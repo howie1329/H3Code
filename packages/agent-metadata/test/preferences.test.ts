@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { getIndexedSessions } from "./preferences-indexed-sessions.js";
+import { getIndexedSessions } from "../src/preferences-indexed-sessions.js";
 import {
   getRecentRepos,
   migrateRecentReposSchema,
   migrateRepoSessionsSchema,
-} from "./preferences-schema.js";
+} from "../src/preferences-schema.js";
 
 function createPreferencesDatabase() {
   const db = new DatabaseSync(":memory:");

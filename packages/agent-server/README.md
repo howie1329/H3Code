@@ -21,10 +21,15 @@ const server = await startH3CodeAgentServer();
 import { startAgentServer } from "@h3code/agent-server";
 import { NoopProvider } from "@h3code/agent-server/src/noop-provider.js"; // tests only
 
-const server = await startAgentServer({ providers: [new NoopProvider()] });
+const server = await startAgentServer({
+  providers: [new NoopProvider()],
+  dataDir: "/path/to/user-data", // optional; defaults via H3CODE_DATA_DIR or OS app data dir
+});
 ```
 
 `startAgentServer` throws at startup if `providers` is missing or empty. Do not register `NoopProvider` in product startup.
+
+Platform metadata (SQLite index, recent repos, desktop settings) is provided by `@h3code/agent-metadata` and configured via `dataDir` on server startup. Electron uses the same store when configured with `app.getPath("userData")`.
 
 ## WebSocket protocol
 
@@ -32,10 +37,11 @@ const server = await startAgentServer({ providers: [new NoopProvider()] });
 - `workspace.connect` with `providerId: "pi"` delegates to `PiAgentProvider` when using `startH3CodeAgentServer`.
 - Provider events are sent as `session.event`, except `extension.ui.request`, which is uplifted to `provider.ui.request`.
 - Inbound `provider.ui.respond` is routed to the connected provider when supported.
+- Platform commands: `session.list`, `preferences.get`, `preferences.updateDesktopSettings`, `preferences.setPiExecutablePath`, `preferences.removeRepo`, `preferences.clearIndexed`.
 
 ## Boundaries
 
-Provider SDKs are imported only through provider packages (for example `@h3code/pi-provider`). This package does not persist transcripts or own canonical session history.
+Provider SDKs are imported only through provider packages (for example `@h3code/pi-provider`). Session discovery uses `SessionManager` from the PI SDK at the server platform layer. This package does not persist transcripts or own canonical session history.
 
 ## Checks
 

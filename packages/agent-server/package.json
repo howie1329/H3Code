@@ -12,13 +12,15 @@
     }
   },
   "scripts": {
-    "build": "npm run build --workspace @h3code/pi-provider && tsc -p tsconfig.json",
+    "build": "npm run build --workspace @h3code/agent-metadata && npm run build --workspace @h3code/pi-provider && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build --workspace @h3code/agent-core && npm run build --workspace @h3code/pi-provider && tsc -p tsconfig.test.json && node --test dist-test/**/*.test.js"
+    "test": "npm run build --workspace @h3code/agent-core && npm run build --workspace @h3code/agent-metadata && npm run build --workspace @h3code/pi-provider && tsc -p tsconfig.test.json && node --test dist-test/**/*.test.js"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.75.4",
     "@h3code/agent-core": "*",
+    "@h3code/agent-metadata": "*",
     "@h3code/pi-provider": "*",
     "ws": "^8.18.3"
   },

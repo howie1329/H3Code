@@ -1,13 +1,16 @@
 import { createServer, type Server } from "node:http";
 import { WebSocketServer } from "ws";
 import { AGENT_CORE_PROTOCOL_VERSION, type AgentProvider } from "@h3code/agent-core";
+import { configureMetadataStore, resolveMetadataDataDir } from "@h3code/agent-metadata";
 import { ConnectionManager } from "./connection-manager.js";
+import { PlatformService } from "./platform/platform-service.js";
 import { ProviderRegistry } from "./provider-registry.js";
 import { send, WsRouter } from "./ws-router.js";
 
 export interface AgentServerOptions {
   host?: string;
   port?: number;
+  dataDir?: string;
   providers: AgentProvider[];
 }
 
@@ -27,9 +30,12 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
   const port = options.port ?? 0;
   const httpServer = createHttpServer();
   const wsServer = new WebSocketServer({ noServer: true });
+  configureMetadataStore({ dataDir: resolveMetadataDataDir(options.dataDir) });
+
   const registry = new ProviderRegistry();
   const connections = new ConnectionManager();
-  const router = new WsRouter(registry, connections);
+  const platform = new PlatformService(connections);
+  const router = new WsRouter(registry, connections, platform);
 
   for (const provider of options.providers) {
     registry.register(provider);

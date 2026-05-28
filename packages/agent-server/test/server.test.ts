@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import type { ServerToClientMessage } from "@h3code/agent-core";
 import WebSocket from "ws";
@@ -6,8 +9,9 @@ import { NoopProvider } from "../src/noop-provider.js";
 import { startAgentServer } from "../src/index.js";
 import { FakeUiProvider } from "./fake-ui-provider.js";
 
-function startTestServer() {
-  return startAgentServer({ providers: [new NoopProvider()] });
+async function startTestServer(dataDir?: string) {
+  const resolvedDataDir = dataDir ?? (await mkdtemp(path.join(tmpdir(), "h3code-agent-server-")));
+  return startAgentServer({ providers: [new NoopProvider()], dataDir: resolvedDataDir });
 }
 
 test("startAgentServer rejects empty providers", async () => {
@@ -146,6 +150,56 @@ test("returns an error for unknown connection", async () => {
     assert.equal(message.type, "error");
     assert.equal(message.id, "1");
     assert.equal(message.code, "connection_not_found");
+
+    socket.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test("returns preferences snapshot over websocket", async () => {
+  const server = await startTestServer();
+
+  try {
+    const client = await openReadySocket(server.url);
+    const { socket } = client;
+
+    socket.send(JSON.stringify({ type: "preferences.get", id: "prefs-1" }));
+    const message = await client.nextMessage();
+
+    assert.equal(message.type, "preferences.snapshot");
+    assert.equal(message.id, "prefs-1");
+    assert.equal(typeof message.preferences.databasePath, "string");
+    assert.equal(message.preferences.desktopSettings.sidebarOpen, true);
+    assert.equal(message.preferences.piExecutablePath, "pi");
+
+    socket.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test("lists sessions for a repo path", async () => {
+  const repoPath = path.resolve(import.meta.dirname, "../../../..");
+  const server = await startTestServer();
+
+  try {
+    const client = await openReadySocket(server.url);
+    const { socket } = client;
+
+    socket.send(
+      JSON.stringify({
+        type: "session.list",
+        id: "list-1",
+        repoPath,
+        providerId: "pi",
+      }),
+    );
+    const message = await client.nextMessage();
+
+    assert.equal(message.type, "session.list");
+    assert.equal(message.id, "list-1");
+    assert.ok(Array.isArray(message.sessions));
 
     socket.close();
   } finally {

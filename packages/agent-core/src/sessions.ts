@@ -1,4 +1,4 @@
-import type { ProviderId, SessionRef } from "./ids.js";
+import type { ConnectionId, ProviderId, SessionRef } from "./ids.js";
 
 export type ConnectionState = "starting" | "connected" | "disconnected" | "error" | "exited";
 export type SessionStatus = "idle" | "running" | "waiting" | "error" | "archived";
@@ -16,6 +16,9 @@ export interface SessionSummary {
   repoPath?: string;
   createdAt?: number;
   updatedAt?: number;
+  worktreePath?: string;
+  messageCount?: number;
+  liveConnectionId?: ConnectionId;
 }
 
 export interface SessionSnapshot {

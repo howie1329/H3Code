@@ -6,8 +6,21 @@ export class ConnectionManager {
         const connection = await provider.connect(ctx);
         const unsubscribe = provider.subscribe(connection, onEvent);
         const connectionId = `conn-${randomUUID()}`;
-        this.#connections.set(connectionId, { provider, connection, unsubscribe });
+        this.#connections.set(connectionId, { provider, connection, unsubscribe, repoPath: ctx.repoPath });
         return connectionId;
+    }
+    getLiveSessionConnections(repoPath) {
+        const live = new Map();
+        for (const [connectionId, managed] of this.#connections) {
+            if (managed.repoPath !== repoPath) {
+                continue;
+            }
+            const sessionRef = managed.connection.sessionRef;
+            if (sessionRef) {
+                live.set(sessionRef, connectionId);
+            }
+        }
+        return live;
     }
     async disconnect(connectionId) {
         const managed = this.require(connectionId);

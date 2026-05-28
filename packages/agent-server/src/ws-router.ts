@@ -8,12 +8,14 @@ import type { RawData, WebSocket } from "ws";
 import { AgentServerError, errorMessage } from "./errors.js";
 import { parseClientMessage, requireString } from "./message-guards.js";
 import type { ConnectionManager } from "./connection-manager.js";
+import type { PlatformService } from "./platform/platform-service.js";
 import type { ProviderRegistry } from "./provider-registry.js";
 
 export class WsRouter {
   constructor(
     private readonly registry: ProviderRegistry,
     private readonly connections: ConnectionManager,
+    private readonly platform: PlatformService,
   ) {}
 
   async handle(socket: WebSocket, data: RawData) {
@@ -91,8 +93,50 @@ export class WsRouter {
           return;
         }
 
-        case "session.list":
-          throw new AgentServerError("unsupported_command", `${message.type} is not implemented yet.`, message.id);
+        case "session.list": {
+          const repoPath = requireString(message.repoPath, "repoPath");
+          const sessions = await this.platform.listSessions({
+            repoPath,
+            providerId: message.providerId,
+            markRecent: message.markRecent,
+          });
+          send(socket, { type: "session.list", id: message.id, sessions });
+          return;
+        }
+
+        case "preferences.get": {
+          send(socket, {
+            type: "preferences.snapshot",
+            id: message.id,
+            preferences: this.platform.getPreferences(),
+          });
+          return;
+        }
+
+        case "preferences.updateDesktopSettings": {
+          const preferences = this.platform.updateDesktopSettings(message.settings);
+          send(socket, { type: "preferences.snapshot", id: message.id, preferences });
+          return;
+        }
+
+        case "preferences.setPiExecutablePath": {
+          const preferences = this.platform.setPiExecutablePath(message.path);
+          send(socket, { type: "preferences.snapshot", id: message.id, preferences });
+          return;
+        }
+
+        case "preferences.removeRepo": {
+          const repoPath = requireString(message.repoPath, "repoPath");
+          const preferences = this.platform.removeRepo(repoPath);
+          send(socket, { type: "preferences.snapshot", id: message.id, preferences });
+          return;
+        }
+
+        case "preferences.clearIndexed": {
+          const preferences = this.platform.clearIndexed();
+          send(socket, { type: "preferences.snapshot", id: message.id, preferences });
+          return;
+        }
 
         default:
           assertNever(message);
