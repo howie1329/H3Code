@@ -1,7 +1,6 @@
 import { createAgentSessionFromServices, createAgentSessionRuntime, createAgentSessionServices, getAgentDir, SessionManager, } from "@earendil-works/pi-coding-agent";
 export const createRealPiRuntime = async (options) => {
     const agentDir = options.agentDir;
-    let runtimeServices;
     const createRuntime = async ({ cwd, sessionManager, sessionStartEvent }) => {
         const services = await createAgentSessionServices({
             cwd,
@@ -13,10 +12,6 @@ export const createRealPiRuntime = async (options) => {
         if (options.resourceLoader) {
             services.resourceLoader = options.resourceLoader;
         }
-        runtimeServices = {
-            modelRegistry: services.modelRegistry,
-            resourceLoader: services.resourceLoader,
-        };
         const created = await createAgentSessionFromServices({
             services,
             sessionManager,
@@ -33,7 +28,8 @@ export const createRealPiRuntime = async (options) => {
         agentDir,
         sessionManager: createSessionManager(options),
     });
-    return { ...runtime, services: runtimeServices };
+    // Return the AgentSessionRuntime instance — spreading would drop getters like `session`.
+    return runtime;
 };
 export function withRuntimeDefaults(options) {
     return {

@@ -10,7 +10,6 @@ import type { PiRuntimeFactory, PiRuntimeFactoryOptions, PiRuntimeLike } from ".
 
 export const createRealPiRuntime: PiRuntimeFactory = async (options) => {
   const agentDir = options.agentDir;
-  let runtimeServices: PiRuntimeLike["services"];
 
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     const services = await createAgentSessionServices({
@@ -23,11 +22,6 @@ export const createRealPiRuntime: PiRuntimeFactory = async (options) => {
     if (options.resourceLoader) {
       services.resourceLoader = options.resourceLoader;
     }
-
-    runtimeServices = {
-      modelRegistry: services.modelRegistry,
-      resourceLoader: services.resourceLoader,
-    };
 
     const created = await createAgentSessionFromServices({
       services,
@@ -48,7 +42,8 @@ export const createRealPiRuntime: PiRuntimeFactory = async (options) => {
     sessionManager: createSessionManager(options),
   });
 
-  return { ...runtime, services: runtimeServices } as PiRuntimeLike;
+  // Return the AgentSessionRuntime instance — spreading would drop getters like `session`.
+  return runtime as PiRuntimeLike;
 };
 
 export function withRuntimeDefaults(options: PiRuntimeFactoryOptions): PiRuntimeFactoryOptions {
