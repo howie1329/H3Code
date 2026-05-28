@@ -26,6 +26,27 @@ export class ConnectionManager {
         const managed = this.require(connectionId);
         await managed.provider.abort(managed.connection, runRef);
     }
+    async respondToUiRequest(connectionId, response) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.respondToUiRequest) {
+            throw new AgentServerError("unsupported_command", "Provider does not support UI responses.");
+        }
+        await managed.provider.respondToUiRequest(managed.connection, response);
+    }
+    async setModel(connectionId, model) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.setModel) {
+            throw new AgentServerError("unsupported_command", "Provider does not support model changes.");
+        }
+        await managed.provider.setModel(managed.connection, model);
+    }
+    async setThinkingLevel(connectionId, level) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.setThinkingLevel) {
+            throw new AgentServerError("unsupported_command", "Provider does not support thinking level changes.");
+        }
+        await managed.provider.setThinkingLevel(managed.connection, level);
+    }
     async getSnapshot(connectionId) {
         const managed = this.require(connectionId);
         if (!managed.provider.getSnapshot) {
@@ -39,6 +60,13 @@ export class ConnectionManager {
             throw new AgentServerError("unsupported_command", "Provider does not support switching sessions.");
         }
         return managed.provider.switchSession(managed.connection, sessionRef);
+    }
+    async createSession(connectionId, options) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.createSession) {
+            throw new AgentServerError("unsupported_command", "Provider does not support creating sessions.");
+        }
+        return managed.provider.createSession(managed.connection, options);
     }
     require(connectionId) {
         const managed = this.#connections.get(connectionId);

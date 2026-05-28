@@ -1,14 +1,14 @@
 import { createServer, type Server } from "node:http";
 import { WebSocketServer } from "ws";
-import { AGENT_CORE_PROTOCOL_VERSION } from "@h3code/agent-core";
+import { AGENT_CORE_PROTOCOL_VERSION, type AgentProvider } from "@h3code/agent-core";
 import { ConnectionManager } from "./connection-manager.js";
-import { NoopProvider } from "./noop-provider.js";
 import { ProviderRegistry } from "./provider-registry.js";
 import { send, WsRouter } from "./ws-router.js";
 
 export interface AgentServerOptions {
   host?: string;
   port?: number;
+  providers: AgentProvider[];
 }
 
 export interface AgentServerHandle {
@@ -18,7 +18,11 @@ export interface AgentServerHandle {
   close(): Promise<void>;
 }
 
-export async function startAgentServer(options: AgentServerOptions = {}): Promise<AgentServerHandle> {
+export async function startAgentServer(options: AgentServerOptions): Promise<AgentServerHandle> {
+  if (!options.providers?.length) {
+    throw new Error("startAgentServer requires at least one provider in options.providers");
+  }
+
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 0;
   const httpServer = createHttpServer();
@@ -27,7 +31,9 @@ export async function startAgentServer(options: AgentServerOptions = {}): Promis
   const connections = new ConnectionManager();
   const router = new WsRouter(registry, connections);
 
-  registry.register(new NoopProvider());
+  for (const provider of options.providers) {
+    registry.register(provider);
+  }
 
   httpServer.on("upgrade", (request, socket, head) => {
     if (request.url !== "/ws") {

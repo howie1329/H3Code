@@ -1,4 +1,9 @@
-import type { ClientToServerMessage, ConnectionId, ServerToClientMessage } from "@h3code/agent-core";
+import type {
+  ClientToServerMessage,
+  ConnectionId,
+  ServerToClientMessage,
+  SessionDomainEvent,
+} from "@h3code/agent-core";
 import type { RawData, WebSocket } from "ws";
 import { AgentServerError, errorMessage } from "./errors.js";
 import { parseClientMessage, requireString } from "./message-guards.js";
@@ -36,7 +41,7 @@ export class WsRouter {
           const connectionId = await this.connections.connect(
             provider,
             { repoPath, sessionRef: message.sessionRef },
-            (event) => send(socket, { type: "session.event", connectionId, event }),
+            (event) => emitProviderEvent(socket, connectionId, event),
           );
 
           send(socket, { type: "connection.status", connectionId, state: "connected" });
@@ -102,6 +107,15 @@ export function send(socket: WebSocket, message: ServerToClientMessage) {
   if (socket.readyState === socket.OPEN) {
     socket.send(JSON.stringify(message));
   }
+}
+
+function emitProviderEvent(socket: WebSocket, connectionId: ConnectionId, event: SessionDomainEvent) {
+  if (event.type === "extension.ui.request") {
+    send(socket, { type: "provider.ui.request", connectionId, request: event.request });
+    return;
+  }
+
+  send(socket, { type: "session.event", connectionId, event });
 }
 
 function assertNever(value: never): never {

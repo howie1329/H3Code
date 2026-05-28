@@ -2,10 +2,23 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ServerToClientMessage } from "@h3code/agent-core";
 import WebSocket from "ws";
+import { NoopProvider } from "../src/noop-provider.js";
 import { startAgentServer } from "../src/index.js";
+import { FakeUiProvider } from "./fake-ui-provider.js";
+
+function startTestServer() {
+  return startAgentServer({ providers: [new NoopProvider()] });
+}
+
+test("startAgentServer rejects empty providers", async () => {
+  await assert.rejects(
+    () => startAgentServer({ providers: [] }),
+    /requires at least one provider/,
+  );
+});
 
 test("starts a localhost websocket server and sends server.ready", async () => {
-  const server = await startAgentServer();
+  const server = await startTestServer();
 
   try {
     assert.equal(server.host, "127.0.0.1");
@@ -25,7 +38,7 @@ test("starts a localhost websocket server and sends server.ready", async () => {
 });
 
 test("returns an error for malformed json", async () => {
-  const server = await startAgentServer();
+  const server = await startTestServer();
 
   try {
     const client = await openReadySocket(server.url);
@@ -44,7 +57,7 @@ test("returns an error for malformed json", async () => {
 });
 
 test("connects to noop provider and emits session events on message.send", async () => {
-  const server = await startAgentServer();
+  const server = await startTestServer();
 
   try {
     const client = await openReadySocket(server.url);
@@ -85,7 +98,7 @@ test("connects to noop provider and emits session events on message.send", async
 });
 
 test("routes implemented session and provider commands through connections", async () => {
-  const server = await startAgentServer();
+  const server = await startTestServer();
 
   try {
     const client = await openReadySocket(server.url);
@@ -121,7 +134,7 @@ test("routes implemented session and provider commands through connections", asy
 });
 
 test("returns an error for unknown connection", async () => {
-  const server = await startAgentServer();
+  const server = await startTestServer();
 
   try {
     const client = await openReadySocket(server.url);
@@ -133,6 +146,40 @@ test("returns an error for unknown connection", async () => {
     assert.equal(message.type, "error");
     assert.equal(message.id, "1");
     assert.equal(message.code, "connection_not_found");
+
+    socket.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test("uplifts extension.ui.request to provider.ui.request", async () => {
+  const server = await startAgentServer({ providers: [new FakeUiProvider()] });
+
+  try {
+    const client = await openReadySocket(server.url);
+    const { socket } = client;
+
+    socket.send(JSON.stringify({ type: "workspace.connect", id: "1", providerId: "fake-ui", repoPath: "/tmp" }));
+    const status = await client.nextMessage();
+    assert.equal(status.type, "connection.status");
+
+    const connectionId = status.connectionId;
+    socket.send(
+      JSON.stringify({
+        type: "message.send",
+        id: "2",
+        connectionId,
+        text: "trigger ui",
+        mode: "prompt",
+      }),
+    );
+
+    const uiRequest = await client.nextMessage();
+    assert.equal(uiRequest.type, "provider.ui.request");
+    assert.equal(uiRequest.connectionId, connectionId);
+    assert.equal(uiRequest.request.id, "ui-test-1");
+    assert.equal(uiRequest.request.kind, "input");
 
     socket.close();
   } finally {

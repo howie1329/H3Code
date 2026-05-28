@@ -2,25 +2,40 @@
 
 `@h3code/agent-server` is the local Agent Server for H3Code. It exposes a localhost HTTP/WebSocket boundary that uses `@h3code/agent-core` protocol types.
 
-The current implementation is a server skeleton: HTTP health, WebSocket handshake, message parsing, command routing, connection management, provider registry, and a temporary noop provider for verification.
+The server provides HTTP health, WebSocket handshake, message parsing, command routing, connection management, and an injectable provider registry.
 
-## Current Role
+## Starting the server
 
-- Start a local Node.js server bound to `127.0.0.1`.
-- Accept WebSocket clients at `/ws`.
-- Send `server.ready` with provider descriptors.
-- Route basic workspace/session/run commands through a provider registry.
-- Verify the protocol with a noop provider before extracting PI from Electron.
+**Product startup** registers the SDK-backed PI provider via `@h3code/pi-provider` (not the legacy Electron `pi --mode rpc` path):
 
-## Future Role
+```ts
+import { startH3CodeAgentServer } from "@h3code/agent-server";
 
-- Host `PiProvider`, extracted from the current Electron main process PI RPC logic.
-- Own platform services that should not live in providers: metadata index, git diff, worktree inventory, and provider selection.
-- Let the desktop UI replace PI-specific preload IPC with the H3Code WebSocket protocol.
+const server = await startH3CodeAgentServer();
+// server.ready.providers includes { id: "pi", ... }
+```
+
+**Generic startup** requires an explicit non-empty provider list (used by tests and future multi-provider setups):
+
+```ts
+import { startAgentServer } from "@h3code/agent-server";
+import { NoopProvider } from "@h3code/agent-server/src/noop-provider.js"; // tests only
+
+const server = await startAgentServer({ providers: [new NoopProvider()] });
+```
+
+`startAgentServer` throws at startup if `providers` is missing or empty. Do not register `NoopProvider` in product startup.
+
+## WebSocket protocol
+
+- Clients connect at `/ws` and receive `server.ready` with registered provider descriptors.
+- `workspace.connect` with `providerId: "pi"` delegates to `PiAgentProvider` when using `startH3CodeAgentServer`.
+- Provider events are sent as `session.event`, except `extension.ui.request`, which is uplifted to `provider.ui.request`.
+- Inbound `provider.ui.respond` is routed to the connected provider when supported.
 
 ## Boundaries
 
-This package should not import provider SDKs directly except through provider implementations. It should not persist transcripts or become the source of truth for sessions.
+Provider SDKs are imported only through provider packages (for example `@h3code/pi-provider`). This package does not persist transcripts or own canonical session history.
 
 ## Checks
 

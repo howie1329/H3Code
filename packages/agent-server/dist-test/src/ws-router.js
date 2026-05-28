@@ -26,7 +26,7 @@ export class WsRouter {
                         throw new AgentServerError("provider_not_found", `Unknown provider: ${message.providerId}`, message.id);
                     }
                     const repoPath = requireString(message.repoPath, "repoPath");
-                    const connectionId = await this.connections.connect(provider, { repoPath, sessionRef: message.sessionRef }, (event) => send(socket, { type: "session.event", connectionId, event }));
+                    const connectionId = await this.connections.connect(provider, { repoPath, sessionRef: message.sessionRef }, (event) => emitProviderEvent(socket, connectionId, event));
                     send(socket, { type: "connection.status", connectionId, state: "connected" });
                     return;
                 }
@@ -45,14 +45,26 @@ export class WsRouter {
                 case "run.abort":
                     await this.connections.abort(message.connectionId, message.runRef);
                     return;
+                case "provider.model.set":
+                    await this.connections.setModel(message.connectionId, message.model);
+                    return;
+                case "provider.thinking.set":
+                    await this.connections.setThinkingLevel(message.connectionId, message.level);
+                    return;
+                case "provider.ui.respond":
+                    await this.connections.respondToUiRequest(message.connectionId, message.response);
+                    return;
                 case "session.switch": {
                     const snapshot = await this.connections.switchSession(message.connectionId, message.sessionRef);
                     send(socket, { type: "session.snapshot", connectionId: message.connectionId, snapshot });
                     return;
                 }
+                case "session.create": {
+                    const snapshot = await this.connections.createSession(message.connectionId, message.options);
+                    send(socket, { type: "session.snapshot", connectionId: message.connectionId, snapshot });
+                    return;
+                }
                 case "session.list":
-                case "session.create":
-                case "provider.ui.respond":
                     throw new AgentServerError("unsupported_command", `${message.type} is not implemented yet.`, message.id);
                 default:
                     assertNever(message);
@@ -67,6 +79,13 @@ export function send(socket, message) {
     if (socket.readyState === socket.OPEN) {
         socket.send(JSON.stringify(message));
     }
+}
+function emitProviderEvent(socket, connectionId, event) {
+    if (event.type === "extension.ui.request") {
+        send(socket, { type: "provider.ui.request", connectionId, request: event.request });
+        return;
+    }
+    send(socket, { type: "session.event", connectionId, event });
 }
 function assertNever(value) {
     throw new AgentServerError("unknown_command", `Unhandled command: ${JSON.stringify(value)}`);

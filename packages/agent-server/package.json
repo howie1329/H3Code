@@ -12,13 +12,14 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build --workspace @h3code/pi-provider && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build --workspace @h3code/agent-core && tsc -p tsconfig.test.json && node --test dist-test/**/*.test.js"
+    "test": "npm run build --workspace @h3code/agent-core && npm run build --workspace @h3code/pi-provider && tsc -p tsconfig.test.json && node --test dist-test/**/*.test.js"
   },
   "dependencies": {
     "@h3code/agent-core": "*",
+    "@h3code/pi-provider": "*",
     "ws": "^8.18.3"
   },
   "devDependencies": {
