@@ -7,14 +7,13 @@
   "scripts": {
     "dev": "concurrently -k -n renderer,electron -c cyan,magenta \"vite dev --host 127.0.0.1 --port 5173\" \"npm run dev:electron\"",
     "dev:electron": "npm run build:electron && wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
-    "dev:ws": "cross-env VITE_H3CODE_AGENT_TRANSPORT=ws H3CODE_AGENT_TRANSPORT=ws npm run dev",
     "build": "npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "svelte-check --tsconfig ./tsconfig.json",
     "test:pi-session": "tsc -p tsconfig.pi-session-test.json && node --test dist-electron/src/lib/pi-session/projector.test.js",
-    "test:preferences": "npm run test --workspace @h3code/agent-metadata && tsc -p tsconfig.preferences-test.json && node --test dist-electron/electron/worktree-inventory.test.js",
+    "test:preferences": "npm run test --workspace @h3code/agent-metadata",
     "test:agent-lib": "tsc -p tsconfig.agent-lib-test.json && node --test dist-agent-lib-test/agent-adapters.test.js"
   },
   "devDependencies": {
@@ -47,7 +46,6 @@
     "@h3code/agent-core": "*",
     "@h3code/agent-metadata": "*",
     "@h3code/agent-server": "*",
-    "@earendil-works/pi-coding-agent": "^0.75.4",
     "@lucide/svelte": "^1.16.0",
     "@pierre/diffs": "^1.2.3",
     "@shikijs/langs": "^4.1.0",

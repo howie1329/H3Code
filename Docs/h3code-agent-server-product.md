@@ -48,27 +48,31 @@ Current desktop runtime:
 
 ```txt
 Svelte renderer
-  -> preload IPC bridge
-    -> Electron main process
-      -> pi --mode rpc subprocess
+  -> AgentClient (WebSocket)
+    -> @h3code/agent-server
+      -> PiAgentProvider (@h3code/pi-provider)
 ```
 
 Implemented foundation:
 
 - `@h3code/agent-core` defines shared H3Code contracts for protocol messages, sessions, runs, capabilities, provider UI prompts, workspace diff summaries, and `AgentProvider`.
-- `@h3code/agent-server` provides a local Node.js and `ws` server skeleton with WebSocket handshake, command routing, connection management, provider registry, and a temporary noop provider.
-- The desktop app still uses its existing PI IPC path until the PI provider extraction and UI WebSocket migration are complete.
+- `@h3code/agent-server` provides a local Node.js and `ws` server with WebSocket handshake, command routing, connection management, provider registry, and platform services.
+- `@h3code/pi-provider` implements `PiAgentProvider` using the in-process PI SDK.
+- The desktop renderer uses WebSocket only; Electron main supervises the server and native shell affordances.
 
 ## Migration Phases
 
-1. Finish the Agent Server skeleton with stable local startup, shutdown, routing, and verification.
-2. Extract PI subprocess and JSONL RPC handling from Electron main into `PiProvider`.
-3. Move platform services that belong in the server: session metadata merge, git diff, worktree inventory, and preferences where appropriate.
-4. Switch the desktop renderer from PI-specific preload IPC to the H3Code WebSocket protocol.
+Completed for PI:
+
+1. Agent Server skeleton with local startup, shutdown, routing, and verification.
+2. PI provider via `@h3code/pi-provider` (in-process SDK, not Electron subprocess RPC).
+3. Platform services in the server: session metadata merge, git diff, preferences.
+4. Desktop renderer on the H3Code WebSocket protocol (legacy PI IPC path removed).
+
+Remaining:
+
 5. Add Codex App Server as a second provider behind the same `AgentProvider` interface.
 6. Add Cursor after PI and Codex validate the abstraction.
-
-During transition, a short-lived dual path is acceptable. Long-term duplicate IPC and WebSocket agent paths should be avoided.
 
 ## Provider Strategy
 
@@ -91,4 +95,4 @@ Cursor should be mapped through its supported SDK or API surface. Any weaker fea
 - `@h3code/agent-core` remains provider-neutral and dependency-light.
 - `@h3code/agent-server` starts locally, accepts `/ws`, and routes commands through providers.
 - `PiProvider` reaches parity with the current Electron PI path before Codex work begins.
-- The desktop UI can eventually switch to WebSocket without learning provider-native protocols.
+- The desktop UI uses WebSocket without learning provider-native protocols.

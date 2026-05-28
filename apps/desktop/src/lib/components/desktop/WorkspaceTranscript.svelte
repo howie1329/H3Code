@@ -248,13 +248,13 @@
                 <EmptyMedia variant="icon">
                   <HugeiconsIcon icon={TerminalIcon} data-icon />
                 </EmptyMedia>
-                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pi is offline</p>
-                <EmptyTitle>Connect Pi to continue.</EmptyTitle>
-                <EmptyDescription>Start the local Pi RPC process for this repository.</EmptyDescription>
+                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Agent offline</p>
+                <EmptyTitle>Connect to continue.</EmptyTitle>
+                <EmptyDescription>Connect to the local Agent Server for this repository.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 <Button onclick={() => desktopState.repoPath && desktopState.connectRepo(desktopState.repoPath)} disabled={desktopState.isBusy}>
-                  Connect Pi
+                  Connect
                 </Button>
               </EmptyContent>
             </Empty>

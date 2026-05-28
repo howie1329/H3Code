@@ -21,7 +21,6 @@ import type { ProviderCapabilities } from "@h3code/agent-core";
 
 import { getDesktopAgentApi } from "$lib/desktop-agent-api.js";
 import { getDesktopShellApi } from "$lib/desktop-shell-api.js";
-import { getAgentTransport } from "$lib/agent-transport.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
 
 export type WorkspaceInspector = "diff" | "context";
@@ -70,20 +69,11 @@ type AgentSessionEvent = SessionDomainEvent & {
 
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
-  agentTransport = typeof window === "undefined" ? ("ipc" as const) : getAgentTransport();
   providerCapabilities = $state<ProviderCapabilities | null>(null);
-  supportsSlashCommands = $derived(
-    this.agentTransport === "ipc" || this.providerCapabilities?.ui.commands === true,
-  );
-  supportsModelPicker = $derived(
-    this.agentTransport === "ipc" || this.providerCapabilities?.ui.modelsList === true,
-  );
-  supportsQueueSettings = $derived(
-    this.agentTransport === "ipc" || this.providerCapabilities?.ui.queueSettings === true,
-  );
-  supportsCompactionSettings = $derived(
-    this.agentTransport === "ipc" || this.providerCapabilities?.ui.compaction === true,
-  );
+  supportsSlashCommands = $derived(this.providerCapabilities?.ui.commands === true);
+  supportsModelPicker = $derived(this.providerCapabilities?.ui.modelsList === true);
+  supportsQueueSettings = $derived(this.providerCapabilities?.ui.queueSettings === true);
+  supportsCompactionSettings = $derived(this.providerCapabilities?.ui.compaction === true);
   promptValue = $state("");
   activeAgentId = $state<string | undefined>();
   repoPath = $state<string | undefined>();
@@ -99,9 +89,6 @@ class DesktopState {
   sessionDiffLoading = $state(false);
   sessionDiffError = $state<string | undefined>();
   sessionDiffPanelOpen = $state(false);
-  worktrees = $state<PiWorktreeSummary[]>([]);
-  worktreesLoading = $state(false);
-  worktreesError = $state<string | undefined>();
   slashCommands = $state<PiSlashCommand[]>([]);
   slashCommandsLoading = $state(false);
   slashCommandsError = $state<string | undefined>();
@@ -123,7 +110,6 @@ class DesktopState {
   errorMessage = $state<string | undefined>();
   preferencesLoaded = $state(false);
   preferencesDatabasePath = $state<string | undefined>();
-  piExecutablePath = $state("pi");
   extensionUiRequest = $state<PiExtensionUiRequest | undefined>();
   desktopSettings = $state<DesktopSettings>(defaultDesktopSettings);
 
@@ -178,45 +164,25 @@ class DesktopState {
   }
 
   initializeListeners() {
-    if (this.agentTransport === "ws") {
-      const agentApi = getDesktopAgentApi();
+    const agentApi = getDesktopAgentApi();
 
-      agentApi.setEventListeners({
-        onSessionEvent: (event) => {
-          this.handleSessionEvent(event);
-        },
-        onPiStatus: (status) => {
-          this.applyPiStatus(status);
-        },
-        onExtensionUiRequest: (request) => {
-          this.applyExtensionUiRequest(request);
-        },
-        onWorkspaceDiff: (diff) => {
-          this.applyWorkspaceDiff(diff);
-        },
-      });
-
-      return () => {
-        agentApi.setEventListeners({});
-      };
-    }
-
-    const removeSessionEventListener = window.h3code?.onSessionEvent((event) => {
-      this.handleSessionEvent(event);
-    });
-
-    const removeStatusListener = window.h3code?.onPiStatus((status) => {
-      this.applyPiStatus(status);
-    });
-
-    const removeExtensionUiListener = window.h3code?.onExtensionUiRequest((request) => {
-      this.applyExtensionUiRequest(request);
+    agentApi.setEventListeners({
+      onSessionEvent: (event) => {
+        this.handleSessionEvent(event);
+      },
+      onPiStatus: (status) => {
+        this.applyPiStatus(status);
+      },
+      onExtensionUiRequest: (request) => {
+        this.applyExtensionUiRequest(request);
+      },
+      onWorkspaceDiff: (diff) => {
+        this.applyWorkspaceDiff(diff);
+      },
     });
 
     return () => {
-      removeSessionEventListener?.();
-      removeStatusListener?.();
-      removeExtensionUiListener?.();
+      agentApi.setEventListeners({});
     };
   }
 
@@ -276,7 +242,6 @@ class DesktopState {
       const preferences = await this.getAgentApi().getPreferences();
       this.preferencesLoaded = true;
       this.preferencesDatabasePath = preferences.databasePath;
-      this.piExecutablePath = preferences.piExecutablePath;
       this.desktopSettings = preferences.desktopSettings;
 
       const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
@@ -307,7 +272,6 @@ class DesktopState {
         }
       }
 
-      await this.refreshWorktrees();
     } catch (error) {
       this.preferencesLoaded = true;
       this.errorMessage = getErrorMessage(error);
@@ -532,7 +496,6 @@ class DesktopState {
         this.resetTransientTranscript();
       }
 
-      await this.refreshWorktrees();
     });
   }
 
@@ -567,7 +530,6 @@ class DesktopState {
         this.resetTransientTranscript();
       }
 
-      await this.refreshWorktrees();
     });
   }
 
@@ -698,11 +660,7 @@ class DesktopState {
     this.sessionStatsError = undefined;
 
     try {
-      if (this.agentTransport === "ipc") {
-        this.sessionStats = await this.getShellApi().getSessionStats(this.sessionDiffCwd());
-      } else {
-        this.sessionStats = await this.getAgentApi().getSessionStatsFromSnapshot();
-      }
+      this.sessionStats = await this.getAgentApi().getSessionStatsFromSnapshot();
     } catch (error) {
       this.sessionStatsError = getErrorMessage(error);
     } finally {
@@ -720,10 +678,7 @@ class DesktopState {
     this.sessionDiffError = undefined;
 
     try {
-      this.sessionDiff =
-        this.agentTransport === "ws"
-          ? await this.getAgentApi().getSessionDiff()
-          : await this.getShellApi().getSessionDiff(this.sessionDiffCwd());
+      this.sessionDiff = await this.getAgentApi().getSessionDiff();
 
       if (!this.hasSessionDiff) {
         this.sessionDiffPanelOpen = false;
@@ -1017,56 +972,18 @@ class DesktopState {
     void this.persistDesktopSettings({ autoConnectOnLaunch: enabled });
   }
 
-  async pickPiExecutable() {
-    const selected = await this.getShellApi().pickExecutable();
-    return selected?.path;
-  }
-
   async revealPreferencesDatabase() {
     return this.getShellApi().revealPreferencesDatabase();
   }
 
-  async revealWorktree() {
-    return this.getShellApi().revealWorktree(this.sessionDiffCwd());
-  }
+  async revealFolder() {
+    const targetPath = this.sessionDiffCwd();
 
-  async refreshWorktrees() {
-    if (!window.h3code) {
-      return;
+    if (!targetPath) {
+      throw new Error("No folder is available to reveal.");
     }
 
-    this.worktreesLoading = true;
-    this.worktreesError = undefined;
-
-    try {
-      this.worktrees = await this.getShellApi().listWorktrees();
-    } catch (error) {
-      this.worktreesError = getErrorMessage(error);
-    } finally {
-      this.worktreesLoading = false;
-    }
-  }
-
-  async revealWorktreePath(worktreePath: string) {
-    return this.getShellApi().revealWorktreePath(worktreePath);
-  }
-
-  async removeStaleWorktree(sessionPath: string) {
-    const result = await this.getShellApi().removeStaleWorktree(sessionPath);
-    this.worktrees = result.worktrees;
-    return result.removed;
-  }
-
-  async archiveSessionWorktree(sessionPath: string) {
-    const result = await this.getShellApi().archiveSessionWorktree(sessionPath);
-    this.worktrees = result.worktrees;
-    this.applyPreferencesSnapshot(result.preferences);
-  }
-
-  async pruneStaleWorktrees() {
-    const result = await this.getShellApi().pruneStaleWorktrees();
-    this.worktrees = result.worktrees;
-    return result.removed;
+    return this.getShellApi().revealPath(targetPath);
   }
 
   async clearAllIndexedData() {
@@ -1081,12 +998,10 @@ class DesktopState {
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
-    await this.refreshWorktrees();
   }
 
   applyPreferencesSnapshot(preferences: DesktopPreferences) {
     this.preferencesDatabasePath = preferences.databasePath;
-    this.piExecutablePath = preferences.piExecutablePath;
     this.desktopSettings = preferences.desktopSettings;
 
     const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
@@ -1307,11 +1222,6 @@ class DesktopState {
   async respondToExtensionUi(response: PiExtensionUiResponse) {
     await this.getAgentApi().respondToExtensionUi(response);
     this.clearExtensionUiRequest();
-  }
-
-  async setPiExecutablePath(executablePath: string) {
-    const result = await this.getAgentApi().setPiExecutablePath(executablePath);
-    this.piExecutablePath = result.piExecutablePath;
   }
 
   resetTransientTranscript() {

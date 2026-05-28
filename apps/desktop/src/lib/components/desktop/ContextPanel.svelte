@@ -111,9 +111,9 @@
         </span>
         <Badge variant="outline">{desktopState.repoPath ? "Selected" : "Empty"}</Badge>
       </div>
-      {#if desktopState.worktreePath}
-        <Button variant="outline" size="sm" class="h-7 w-fit px-2 text-xs" onclick={() => desktopState.revealWorktree()}>
-          Reveal worktree
+      {#if desktopState.repoPath}
+        <Button variant="outline" size="sm" class="h-7 w-fit px-2 text-xs" onclick={() => desktopState.revealFolder()}>
+          Reveal folder
         </Button>
       {/if}
     </section>

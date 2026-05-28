@@ -14,11 +14,10 @@ import {
   workspaceDiffToPiSessionDiff,
   wrapSessionEvent,
 } from "$lib/agent-adapters.js";
-import { getAgentTransport, usesLegacyAgentTransport } from "$lib/agent-transport.js";
 import { normalizeModel } from "./pi-model.js";
 
 export type DesktopAgentApi = {
-  readonly transport: "ipc" | "ws";
+  readonly transport: "ws";
   setEventListeners: (listeners: {
     onSessionEvent?: (event: SessionDomainEvent & { agentId?: string }) => void;
     onPiStatus?: (status: PiStatus) => void;
@@ -27,7 +26,6 @@ export type DesktopAgentApi = {
   }) => void;
   getPreferences: () => Promise<DesktopPreferences>;
   updateDesktopSettings: (settings: Partial<DesktopSettings>) => Promise<DesktopSettings>;
-  setPiExecutablePath: (executablePath: string) => Promise<{ piExecutablePath: string }>;
   removeIndexedRepo: (repoPath: string) => Promise<DesktopPreferences>;
   clearAllIndexedData: () => Promise<DesktopPreferences>;
   listRepoSessions: (repoPath: string, markRecent?: boolean) => Promise<PiSessionSummary[]>;
@@ -65,135 +63,6 @@ export type DesktopAgentApi = {
   getSessionDiff: () => Promise<PiSessionDiff>;
   getProviderCapabilities: () => ProviderCapabilities | undefined;
 };
-
-class IpcDesktopAgentApi implements DesktopAgentApi {
-  readonly transport = "ipc" as const;
-
-  setEventListeners(_listeners: {
-    onSessionEvent?: (event: SessionDomainEvent & { agentId?: string }) => void;
-    onPiStatus?: (status: PiStatus) => void;
-    onExtensionUiRequest?: (request: PiExtensionUiRequest) => void;
-    onWorkspaceDiff?: (diff: PiSessionDiff) => void;
-  }) {
-    // IPC events are delivered via window.h3code in desktop-state.
-  }
-
-  private requireApi() {
-    if (!window.h3code) {
-      throw new Error("Desktop API is unavailable.");
-    }
-
-    return window.h3code;
-  }
-
-  async getPreferences() {
-    return this.requireApi().getPreferences();
-  }
-
-  async updateDesktopSettings(settings: Partial<DesktopSettings>) {
-    return this.requireApi().updateDesktopSettings(settings);
-  }
-
-  async setPiExecutablePath(executablePath: string) {
-    return this.requireApi().setPiExecutablePath(executablePath);
-  }
-
-  async removeIndexedRepo(repoPath: string) {
-    return this.requireApi().removeIndexedRepo(repoPath);
-  }
-
-  async clearAllIndexedData() {
-    return this.requireApi().clearAllIndexedData();
-  }
-
-  async listRepoSessions(repoPath: string, markRecent?: boolean) {
-    return this.requireApi().listRepoSessions(repoPath, markRecent);
-  }
-
-  async listSessions() {
-    return this.requireApi().listSessions();
-  }
-
-  async connectRepo(repoPath: string, selectedSessionPath?: string) {
-    return this.requireApi().connectRepo(repoPath, selectedSessionPath);
-  }
-
-  async switchSession(sessionPath: string) {
-    return this.requireApi().switchSession(sessionPath);
-  }
-
-  async newSession(parentSession?: string) {
-    return this.requireApi().newSession(parentSession);
-  }
-
-  async getSessionSnapshot() {
-    return this.requireApi().getSessionSnapshot();
-  }
-
-  async sendPrompt(message: string, streamingBehavior?: "steer" | "followUp") {
-    return this.requireApi().sendPrompt(message, streamingBehavior);
-  }
-
-  async sendSteer(message: string) {
-    return this.requireApi().sendSteer(message);
-  }
-
-  async sendFollowUp(message: string) {
-    return this.requireApi().sendFollowUp(message);
-  }
-
-  async abort() {
-    return this.requireApi().abort();
-  }
-
-  async respondToExtensionUi(response: PiExtensionUiResponse) {
-    return this.requireApi().respondToExtensionUi(response);
-  }
-
-  async getCommands() {
-    return this.requireApi().getCommands();
-  }
-
-  async getAvailableModels() {
-    return this.requireApi().getAvailableModels();
-  }
-
-  async setModel(provider: string, modelId: string) {
-    return this.requireApi().setModel(provider, modelId);
-  }
-
-  async setThinkingLevel(level: PiThinkingLevel) {
-    return this.requireApi().setThinkingLevel(level);
-  }
-
-  async setSteeringMode(mode: PiQueueMode) {
-    return this.requireApi().setSteeringMode(mode);
-  }
-
-  async setFollowUpMode(mode: PiQueueMode) {
-    return this.requireApi().setFollowUpMode(mode);
-  }
-
-  async setAutoCompaction(enabled: boolean) {
-    return this.requireApi().setAutoCompaction(enabled);
-  }
-
-  async getSessionStatsFromSnapshot() {
-    return this.requireApi().getSessionStats();
-  }
-
-  async deleteSession(repoPath: string, sessionPath: string) {
-    return this.requireApi().deletePiSession(repoPath, sessionPath);
-  }
-
-  async getSessionDiff(worktreePath?: string) {
-    return this.requireApi().getSessionDiff(worktreePath);
-  }
-
-  getProviderCapabilities(): ProviderCapabilities | undefined {
-    return undefined;
-  }
-}
 
 class WsDesktopAgentApi implements DesktopAgentApi {
   readonly transport = "ws" as const;
@@ -267,11 +136,6 @@ class WsDesktopAgentApi implements DesktopAgentApi {
   async updateDesktopSettings(settings: Partial<DesktopSettings>) {
     const preferences = await this.client.updateDesktopSettings(settings);
     return preferences.desktopSettings;
-  }
-
-  async setPiExecutablePath(executablePath: string) {
-    const preferences = await this.client.setPiExecutablePath(executablePath);
-    return { piExecutablePath: preferences.piExecutablePath };
   }
 
   async removeIndexedRepo(repoPath: string) {
@@ -377,8 +241,10 @@ class WsDesktopAgentApi implements DesktopAgentApi {
     };
   }
 
-  async sendPrompt(message: string) {
-    await this.client.sendMessage(this.requireConnectionId(), message, "prompt");
+  async sendPrompt(message: string, streamingBehavior?: "steer" | "followUp") {
+    const mode =
+      streamingBehavior === "steer" ? "steer" : streamingBehavior === "followUp" ? "followUp" : "prompt";
+    await this.client.sendMessage(this.requireConnectionId(), message, mode);
   }
 
   async sendSteer(message: string) {
@@ -455,10 +321,6 @@ class WsDesktopAgentApi implements DesktopAgentApi {
 let agentApi: DesktopAgentApi | undefined;
 
 export function getDesktopAgentApi(): DesktopAgentApi {
-  if (!agentApi) {
-    agentApi = usesLegacyAgentTransport(getAgentTransport()) ? new IpcDesktopAgentApi() : new WsDesktopAgentApi();
-  }
-
+  agentApi ??= new WsDesktopAgentApi();
   return agentApi;
 }
-

@@ -4,10 +4,6 @@ import { type AgentServerHandle, startH3CodeAgentServer } from "@h3code/agent-se
 
 let serverHandle: AgentServerHandle | undefined;
 
-export function getAgentTransportFromEnv(): "ipc" | "ws" {
-  return process.env.H3CODE_AGENT_TRANSPORT === "ws" ? "ws" : "ipc";
-}
-
 export async function startAgentServerProcess(): Promise<AgentServerHandle> {
   if (serverHandle) {
     return serverHandle;

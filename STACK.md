@@ -33,38 +33,28 @@ The web app (`apps/web`) is a marketing site, not the agent runtime.
 
 ## Current Desktop Architecture
 
-Today the desktop app still uses the original PI path:
+The desktop app uses the local Agent Server over WebSocket:
 
 ```txt
 Svelte renderer
-  -> preload IPC bridge
-    -> Electron main process
-      -> pi --mode rpc subprocess
+  -> AgentClient (WebSocket)
+    -> @h3code/agent-server (localhost)
+      -> PiAgentProvider (@h3code/pi-provider, in-process PI SDK)
 ```
 
-PI communicates over stdin/stdout JSONL RPC. H3Code stores **session-list metadata** (recent repos, indexed session summaries, UI toggles) in local SQLite (`h3code.sqlite` under Electron user data), not transcripts or messages.
+Electron main supervises the Agent Server, native dialogs, and shell affordances (folder picker, reveal in Finder). H3Code stores **session-list metadata** (recent repos, indexed session summaries, UI toggles) in local SQLite (`h3code.sqlite` under Electron user data), not transcripts or messages.
 
-## Target Agent Server Architecture
-
-The target architecture moves agent orchestration behind a local server:
-
-```txt
-Svelte renderer
-  -> local Agent Server WebSocket
-    -> AgentProvider interface
-      -> PiProvider / CodexProvider / CursorProvider
-        -> actual provider runtime
-```
-
-`@h3code/agent-core` owns the H3Code protocol and provider contracts. `@h3code/agent-server` owns the local Node/WebSocket server, connection manager, provider registry, and platform services. Provider packages will translate provider-native protocols into H3Code domain events.
+`@h3code/agent-core` owns the H3Code protocol and provider contracts. `@h3code/agent-server` owns the local Node/WebSocket server, connection manager, provider registry, and platform services.
 
 ## Key Desktop Files
 
 | Path | Role |
 | --- | --- |
-| `apps/desktop/electron/main.ts` | Current Electron window, PI subprocess lifecycle, JSONL RPC framing, IPC handlers |
-| `apps/desktop/electron/preferences.ts` | SQLite metadata index and desktop settings |
-| `apps/desktop/electron/preload.ts` | Current renderer-facing desktop API |
+| `apps/desktop/electron/main.ts` | Electron window, Agent Server lifecycle, native shell IPC |
+| `apps/desktop/electron/preferences.ts` | Metadata store bootstrap (`@h3code/agent-metadata`) |
+| `apps/desktop/electron/preload.ts` | Minimal renderer bridge (server URL, repo picker, reveal) |
+| `apps/desktop/src/lib/agent-client.ts` | WebSocket client for Agent Server protocol |
+| `apps/desktop/src/lib/desktop-agent-api.ts` | Renderer agent API over WebSocket |
 | `apps/desktop/src/lib/desktop-state.svelte.ts` | Central renderer state (repos, sessions, messages, status, activity) |
 | `apps/desktop/src/lib/components/desktop/` | Shell, sidebar, transcript, composer, context panel |
 | `apps/desktop/src/routes/` | SvelteKit routes (workspace, settings, root redirect) |
@@ -77,13 +67,12 @@ Svelte renderer
 | `packages/agent-server/src/server.ts` | Local HTTP/WebSocket server entrypoint |
 | `packages/agent-server/src/ws-router.ts` | WebSocket command routing |
 | `packages/agent-server/src/connection-manager.ts` | Connection ID to provider connection lifecycle |
-| `packages/agent-server/src/noop-provider.ts` | Temporary provider used for server verification |
 | `packages/agent-server/src/platform/` | Platform session delete, git diff, preferences |
-| `packages/pi-provider/src/` | In-process PI SDK provider (`PiAgentProvider`) for WS mode |
+| `packages/pi-provider/src/` | In-process PI SDK provider (`PiAgentProvider`) |
 
-### WS transport (`VITE_H3CODE_AGENT_TRANSPORT=ws`)
+### Agent Server protocol (v1)
 
-Desktop renderer talks to `@h3code/agent-server` over WebSocket (`apps/desktop/src/lib/agent-client.ts`). Provider metadata and platform inventory use additive protocol v1 messages:
+Desktop renderer talks to `@h3code/agent-server` over WebSocket (`apps/desktop/src/lib/agent-client.ts`). Provider metadata and platform inventory use protocol v1 messages:
 
 - **Provider:** `provider.commands.list`, `provider.models.list`, `provider.queue.set`, `provider.compaction.set`
 - **Platform:** `session.delete`, `workspace.diff` (on-demand reply + server push after `run.ended` / tool updates, ~300ms debounce)
@@ -98,8 +87,7 @@ Desktop renderer talks to `@h3code/agent-server` over WebSocket (`apps/desktop/s
 | Language | TypeScript 5.9 |
 | Build | Vite 7, Turborepo |
 | Styling | Tailwind CSS v4, shadcn-svelte, Bits UI, Hugeicons |
-| Current agent integration | PI Agent RPC (`pi --mode rpc`); `@earendil-works/pi-coding-agent` in desktop deps |
-| Target server integration | Node.js HTTP + `ws`, using `@h3code/agent-core` contracts |
+| Agent integration | Local Agent Server (Node.js HTTP + `ws`) + `@h3code/pi-provider` (PI SDK) |
 | Transcript UI | Vercel AI SDK (`ai`), Streamdown, Shiki |
 | Verification | `svelte-check`, TypeScript package checks, Node tests for `@h3code/agent-server` |
 
@@ -126,14 +114,13 @@ npm run test --workspace @h3code/agent-server
 ## Environment And External Tools
 
 - `VITE_DEV_SERVER_URL` — desktop dev only; Electron loads the Vite dev server URL.
-- `pi` on `PATH` — default for `pi --mode rpc`; override in desktop Settings (stored in SQLite `app_settings`).
-- Model/API credentials — configured in the provider, not in H3Code `.env` files.
+- Model/API credentials — configured in PI Agent, not in H3Code `.env` files.
 
 ## Further Reading
 
 - [README.md](README.md) — product direction and current status
 - [docs/h3code-agent-server-product.md](docs/h3code-agent-server-product.md) — Agent Server product brief
-- [docs/agent-server-architecture.html.html](docs/agent-server-architecture.html.html) — visual/reference architecture proposal
+- [docs/agent-server-architecture.html.html](docs/agent-server-architecture.html.html) — Agent Server architecture reference
 - [docs/h3code-desktop-mvp.md](docs/h3code-desktop-mvp.md) — current PI desktop MVP brief
 - [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) — UI tokens, layout, and per-app paths
 - [docs/SvelteKitShadcn.md](docs/SvelteKitShadcn.md) — shadcn-svelte usage in this repo

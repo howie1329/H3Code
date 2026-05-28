@@ -118,8 +118,7 @@ Before marking work complete:
 ## Environment
 
 - `VITE_DEV_SERVER_URL`: set by the desktop dev script; Electron main loads the Vite dev URL when present (`apps/desktop/electron/main.ts`).
-- **PI CLI:** MVP expects `pi` on `PATH` for `pi --mode rpc` (configurable path is planned; not an env var yet).
-- **Agent transport:** `VITE_H3CODE_AGENT_TRANSPORT=ws` (or preload `getAgentTransport()`) uses the local agent-server WebSocket; IPC remains the default. WS mode uses in-process `@h3code/pi-provider` plus platform `session.delete` / `workspace.diff` (see `STACK.md`).
+- **Agent transport:** Desktop uses the local Agent Server WebSocket (`@h3code/agent-server`) with in-process `@h3code/pi-provider`. Electron main supervises the server and exposes native shell IPC only (see `STACK.md`).
 - Model/API keys are owned by **PI Agent**, not H3Code environment variables.
 
 Never commit API keys, tokens, private keys, or local `.env` values. Keep secrets in environment variables or the project-approved secret store.
@@ -129,7 +128,7 @@ Never commit API keys, tokens, private keys, or local `.env` values. Keep secret
 - SvelteKit 2 + Svelte 5 + TypeScript 5.9
 - Electron 39 (desktop)
 - Tailwind CSS v4, shadcn-svelte / Bits UI, Hugeicons
-- PI Agent RPC (JSONL over stdin/stdout); no app-owned DB in MVP
+- Local Agent Server WebSocket + PI SDK provider (`@h3code/pi-provider`); SQLite metadata index only
 - Verification: `svelte-check` + Turbo; no automated unit/e2e suite yet
 
 See `STACK.md` for architecture and key file paths.

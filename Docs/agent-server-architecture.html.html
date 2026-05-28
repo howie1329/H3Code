@@ -275,7 +275,7 @@
         <div class="inner">
             <h1>H3Code Agent Server Architecture</h1>
             <p class="meta">
-                <strong>Status:</strong> Proposed &nbsp;·&nbsp;
+                <strong>Status:</strong> Active (PI via WS) &nbsp;·&nbsp;
                 <strong>Last updated:</strong> May 2026 &nbsp;·&nbsp;
                 <strong>Supersedes (in spirit):</strong> direct Electron IPC → PI subprocess
             </p>
@@ -829,8 +829,7 @@ UI ← { type: "session.event", connectionId: "c-abc", event: { type: "message.s
 
     <footer>
         <p>
-            H3Code — Agent Server architecture (proposed).
-            When implemented, update <code>STACK.md</code> and mark this document status as Active.
+            H3Code — Agent Server architecture. Desktop uses WebSocket by default; legacy PI IPC in Electron main has been removed.
         </p>
     </footer>
 </body>

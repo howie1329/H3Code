@@ -75,35 +75,6 @@ declare global {
     changedFiles: number;
   };
 
-  type PiWorktreeSummary = {
-    sessionPath: string;
-    repoPath: string;
-    repoName: string;
-    worktreePath: string;
-    sessionId?: string;
-    sessionName?: string;
-    status: "running" | "idle" | "stopped" | "stale";
-    exists: boolean;
-    appOwned: boolean;
-    dirtyState: "clean" | "dirty" | "unknown";
-    sessionFileExists: boolean;
-    activeAgentId?: string;
-    removable: boolean;
-    pruneable: boolean;
-    archivable: boolean;
-    sessionFileInWorktree: boolean;
-  };
-
-  type PiWorktreeCleanupResult = {
-    worktrees: PiWorktreeSummary[];
-    removed: number;
-  };
-
-  type PiWorktreeArchiveResult = {
-    worktrees: PiWorktreeSummary[];
-    preferences: DesktopPreferences;
-  };
-
   type PiSlashCommand = {
     name: string;
     description?: string;
@@ -212,75 +183,16 @@ declare global {
     piExecutablePath: string;
   };
 
-  type AgentTransport = "ipc" | "ws";
-
   interface Window {
     h3code?: {
       platform: NodeJS.Platform;
       getAgentServerUrl: () => Promise<string | undefined>;
-      getAgentTransport: () => AgentTransport;
-      shell?: {
-        deletePiSession: (repoPath: string, sessionPath: string) => Promise<PiSessionSummary[]>;
-        getSessionStats: (worktreePath?: string) => Promise<PiSessionStats | null>;
-        getSessionDiff: (worktreePath?: string) => Promise<PiSessionDiff>;
-        revealWorktree: (worktreePath?: string) => Promise<string>;
-        listWorktrees: () => Promise<PiWorktreeSummary[]>;
-        revealWorktreePath: (worktreePath: string) => Promise<string>;
-        removeStaleWorktree: (sessionPath: string) => Promise<PiWorktreeCleanupResult>;
-        archiveSessionWorktree: (sessionPath: string) => Promise<PiWorktreeArchiveResult>;
-        pruneStaleWorktrees: () => Promise<PiWorktreeCleanupResult>;
-        revealPreferencesDatabase: () => Promise<string>;
-      };
       getAppVersion: () => Promise<string>;
-      pickExecutable: () => Promise<{ path: string } | null>;
       selectRepo: () => Promise<{ path: string } | null>;
-      connectRepo: (repoPath: string, selectedSessionPath?: string) => Promise<PiConnectRepoResult>;
-      listSessions: () => Promise<PiSessionSummary[]>;
-      listRepoSessions: (repoPath: string, markRecent?: boolean) => Promise<PiSessionSummary[]>;
-      deletePiSession: (repoPath: string, sessionPath: string) => Promise<PiSessionSummary[]>;
-      switchSession: (sessionPath: string) => Promise<{ state: PiSessionState; messages: unknown[]; agentId?: string; repoPath?: string; worktreePath?: string }>;
-      newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[]; agentId?: string; repoPath?: string; worktreePath?: string }>;
-      getSessionSnapshot: () => Promise<{ state: PiSessionState; messages: unknown[] }>;
-      getSessionState: () => Promise<PiSessionState>;
-      getSessionStats: (worktreePath?: string) => Promise<PiSessionStats | null>;
-      getSessionDiff: (worktreePath?: string) => Promise<PiSessionDiff>;
-      revealWorktree: (worktreePath?: string) => Promise<string>;
-      listWorktrees: () => Promise<PiWorktreeSummary[]>;
-      revealWorktreePath: (worktreePath: string) => Promise<string>;
-      removeStaleWorktree: (sessionPath: string) => Promise<PiWorktreeCleanupResult>;
-      archiveSessionWorktree: (sessionPath: string) => Promise<PiWorktreeArchiveResult>;
-      pruneStaleWorktrees: () => Promise<PiWorktreeCleanupResult>;
-      getCommands: () => Promise<PiSlashCommand[]>;
-      getAvailableModels: () => Promise<PiModel[]>;
-      setModel: (provider: string, modelId: string) => Promise<PiModel>;
-      setThinkingLevel: (level: PiThinkingLevel) => Promise<void>;
-      setSteeringMode: (mode: PiQueueMode) => Promise<PiSessionState>;
-      setFollowUpMode: (mode: PiQueueMode) => Promise<PiSessionState>;
-      setAutoCompaction: (enabled: boolean) => Promise<PiSessionState>;
-      sendPrompt: (message: string, streamingBehavior?: "steer" | "followUp") => Promise<void>;
-      sendSteer: (message: string) => Promise<void>;
-      sendFollowUp: (message: string) => Promise<void>;
-      abort: () => Promise<void>;
-      respondToExtensionUi: (response: PiExtensionUiResponse) => Promise<void>;
-      getPreferences: () => Promise<DesktopPreferences>;
-      removeIndexedRepo: (repoPath: string) => Promise<DesktopPreferences>;
-      updateDesktopSettings: (settings: Partial<DesktopSettings>) => Promise<DesktopSettings>;
-      setPiExecutablePath: (executablePath: string) => Promise<{ piExecutablePath: string }>;
-      clearAllIndexedData: () => Promise<DesktopPreferences>;
+      revealPath: (targetPath: string) => Promise<string>;
       revealPreferencesDatabase: () => Promise<string>;
-      onSessionEvent: (listener: (event: import("$lib/pi-session/domain-events.js").SessionDomainEvent & { agentId?: string }) => void) => () => void;
-      onPiStatus: (listener: (status: PiStatus) => void) => () => void;
-      onExtensionUiRequest: (listener: (request: PiExtensionUiRequest) => void) => () => void;
     };
   }
-}
-
-interface ImportMetaEnv {
-  readonly VITE_H3CODE_AGENT_TRANSPORT?: AgentTransport;
-}
-
-interface ImportMeta {
-  readonly env: ImportMetaEnv;
 }
 
 export {};

@@ -16,7 +16,6 @@
     { id: "workspace", label: "Workspace", href: "/settings#workspace" },
     { id: "agent", label: "Agent", href: "/settings#agent" },
     { id: "data", label: "Data", href: "/settings#data" },
-    { id: "worktrees", label: "Worktrees", href: "/settings#worktrees" },
     { id: "about", label: "About", href: "/settings#about" },
   ] as const;
 
