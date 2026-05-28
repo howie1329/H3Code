@@ -40,9 +40,15 @@ export interface PiRuntimeFactoryOptions {
 
 export type PiRuntimeFactory = (options: PiRuntimeFactoryOptions) => Promise<PiRuntimeLike>;
 
+export interface PiRuntimeServices {
+  modelRegistry?: import("@earendil-works/pi-coding-agent").ModelRegistry;
+  resourceLoader?: import("@earendil-works/pi-coding-agent").ResourceLoader;
+}
+
 export interface PiRuntimeLike {
   readonly cwd: string;
   readonly session: PiSessionLike;
+  readonly services?: PiRuntimeServices;
   readonly diagnostics?: readonly AgentSessionRuntimeDiagnostic[];
   readonly modelFallbackMessage?: string | undefined;
   setRebindSession?(rebindSession?: (session: PiSessionLike) => Promise<void>): void;
@@ -73,6 +79,10 @@ export interface PiSessionLike {
   abort(): Promise<void>;
   setModel?(model: unknown): Promise<void>;
   setThinkingLevel?(level: string): void;
+  setSteeringMode?(mode: PiProviderQueueMode): void;
+  setFollowUpMode?(mode: PiProviderQueueMode): void;
+  setAutoCompactionEnabled?(enabled: boolean): void;
+  getAutoCompactionEnabled?(): boolean;
   getSessionStats?(): unknown;
   getActiveToolNames?(): string[];
   getAllTools?(): unknown[];
@@ -111,6 +121,7 @@ export interface PiProviderSnapshot {
   thinkingLevel?: string;
   steeringMode?: PiProviderQueueMode;
   followUpMode?: PiProviderQueueMode;
+  autoCompactionEnabled?: boolean;
   steering: readonly string[];
   followUp: readonly string[];
   activeTools: readonly string[];

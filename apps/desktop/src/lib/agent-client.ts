@@ -3,7 +3,11 @@ import type {
   ConnectionId,
   ConnectionState,
   DesktopSettings,
+  ProviderCapabilities,
+  ProviderCommand,
   ProviderId,
+  ProviderModel,
+  ProviderQueueMode,
   ProviderUiRequest,
   ProviderUiResponse,
   PreferencesSnapshot,
@@ -13,6 +17,7 @@ import type {
   SessionRef,
   SessionSnapshot,
   SessionSummary,
+  WorkspaceDiffSummary,
 } from "@h3code/agent-core";
 
 type PendingRequest = {
@@ -24,6 +29,7 @@ export type AgentClientListeners = {
   onSessionEvent?: (connectionId: ConnectionId, event: SessionDomainEvent) => void;
   onConnectionStatus?: (connectionId: ConnectionId, state: ConnectionState, message?: string) => void;
   onProviderUiRequest?: (connectionId: ConnectionId, request: ProviderUiRequest) => void;
+  onWorkspaceDiff?: (connectionId: ConnectionId, diff: WorkspaceDiffSummary) => void;
   onError?: (error: Error) => void;
 };
 
@@ -39,6 +45,7 @@ export class AgentClient {
   private listeners: AgentClientListeners = {};
   private connectPromise: Promise<void> | undefined;
   private serverUrl: string | undefined;
+  private readonly providerCapabilities = new Map<ProviderId, ProviderCapabilities>();
 
   constructor(private readonly resolveServerUrl: () => Promise<string>) {}
 
@@ -191,6 +198,125 @@ export class AgentClient {
     });
   }
 
+  getProviderCapabilities(providerId: ProviderId): ProviderCapabilities | undefined {
+    return this.providerCapabilities.get(providerId);
+  }
+
+  async listCommands(connectionId: ConnectionId): Promise<ProviderCommand[]> {
+    const response = await this.request({
+      type: "provider.commands.list",
+      id: this.createRequestId(),
+      connectionId,
+    });
+
+    if (response.type !== "provider.commands.list") {
+      throw new Error(`Unexpected response for provider.commands.list: ${response.type}`);
+    }
+
+    return response.commands;
+  }
+
+  async listModels(connectionId: ConnectionId): Promise<ProviderModel[]> {
+    const response = await this.request({
+      type: "provider.models.list",
+      id: this.createRequestId(),
+      connectionId,
+    });
+
+    if (response.type !== "provider.models.list") {
+      throw new Error(`Unexpected response for provider.models.list: ${response.type}`);
+    }
+
+    return response.models;
+  }
+
+  async setSteeringMode(connectionId: ConnectionId, mode: ProviderQueueMode): Promise<SessionSnapshot> {
+    const response = await this.request({
+      type: "provider.queue.set",
+      id: this.createRequestId(),
+      connectionId,
+      steeringMode: mode,
+    });
+
+    if (response.type !== "provider.queue.set") {
+      throw new Error(`Unexpected response for provider.queue.set: ${response.type}`);
+    }
+
+    if (!response.snapshot) {
+      throw new Error("provider.queue.set response did not include a snapshot.");
+    }
+
+    return response.snapshot;
+  }
+
+  async setFollowUpMode(connectionId: ConnectionId, mode: ProviderQueueMode): Promise<SessionSnapshot> {
+    const response = await this.request({
+      type: "provider.queue.set",
+      id: this.createRequestId(),
+      connectionId,
+      followUpMode: mode,
+    });
+
+    if (response.type !== "provider.queue.set") {
+      throw new Error(`Unexpected response for provider.queue.set: ${response.type}`);
+    }
+
+    if (!response.snapshot) {
+      throw new Error("provider.queue.set response did not include a snapshot.");
+    }
+
+    return response.snapshot;
+  }
+
+  async setAutoCompaction(connectionId: ConnectionId, enabled: boolean): Promise<SessionSnapshot> {
+    const response = await this.request({
+      type: "provider.compaction.set",
+      id: this.createRequestId(),
+      connectionId,
+      enabled,
+    });
+
+    if (response.type !== "provider.compaction.set") {
+      throw new Error(`Unexpected response for provider.compaction.set: ${response.type}`);
+    }
+
+    if (!response.snapshot) {
+      throw new Error("provider.compaction.set response did not include a snapshot.");
+    }
+
+    return response.snapshot;
+  }
+
+  async deleteSession(repoPath: string, sessionRef: SessionRef, connectionId?: ConnectionId): Promise<SessionSummary[]> {
+    const response = await this.request({
+      type: "session.delete",
+      id: this.createRequestId(),
+      repoPath,
+      sessionRef,
+      connectionId,
+    });
+
+    if (response.type !== "session.delete") {
+      throw new Error(`Unexpected response for session.delete: ${response.type}`);
+    }
+
+    return response.sessions;
+  }
+
+  async getWorkspaceDiff(connectionId: ConnectionId): Promise<WorkspaceDiffSummary> {
+    const response = await this.request({
+      type: "workspace.diff",
+      id: this.createRequestId(),
+      connectionId,
+    });
+
+    if (response.type !== "workspace.diff") {
+      throw new Error(`Unexpected response for workspace.diff: ${response.type}`);
+    }
+
+    return response.diff;
+  }
+
   async getPreferences(): Promise<PreferencesSnapshot> {
     const response = await this.request({ type: "preferences.get", id: this.createRequestId() });
 
@@ -330,6 +456,14 @@ export class AgentClient {
 
     switch (message.type) {
       case "server.ready":
+        for (const provider of message.providers) {
+          this.providerCapabilities.set(provider.id, provider.capabilities);
+        }
+
+        return;
+
+      case "workspace.diff":
+        this.listeners.onWorkspaceDiff?.(message.connectionId, message.diff);
         return;
 
       case "connection.status":

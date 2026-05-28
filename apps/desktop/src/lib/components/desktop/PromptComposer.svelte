@@ -48,13 +48,13 @@
   const showAbort = $derived(isRunning);
   const showSessionControls = $derived(desktopState.canUseSession);
   const showSlashHint = $derived(
-    desktopState.usesLegacyAgentControls &&
+    desktopState.supportsSlashCommands &&
       desktopState.canUseSession &&
       desktopState.slashCommands.length > 0 &&
       !desktopState.slashCommandsLoading,
   );
   const selectorsDisabled = $derived(!desktopState.canChangeSessionSettings || !desktopState.canUseSession);
-  const modelSelectorDisabled = $derived(selectorsDisabled || !desktopState.usesLegacyAgentControls);
+  const modelSelectorDisabled = $derived(selectorsDisabled || !desktopState.supportsModelPicker);
   const currentModel = $derived(desktopState.sessionState?.model);
   const flatModels = $derived(desktopState.availableModels);
   const currentThinkingLevel = $derived(normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel));
@@ -145,7 +145,7 @@
   });
 
   $effect(() => {
-    if (desktopState.canUseSession && desktopState.usesLegacyAgentControls) {
+    if (desktopState.canUseSession && desktopState.supportsModelPicker) {
       void desktopState.ensureAvailableModels();
     }
   });
@@ -535,7 +535,7 @@
         {#snippet trailing()}
           {#if showSessionControls}
             <div class="flex shrink-0 items-center gap-0.5 rounded-md bg-transparent" role="group" aria-label="Prompt settings">
-              {#if desktopState.usesLegacyAgentControls}
+              {#if desktopState.supportsModelPicker}
                 <ModelSelector
                   open={activeMenu === "model"}
                   disabled={modelSelectorDisabled}

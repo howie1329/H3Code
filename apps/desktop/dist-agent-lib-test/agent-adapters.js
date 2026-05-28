@@ -27,7 +27,7 @@ export function snapshotToPiSessionState(snapshot) {
         sessionFile: snapshot.summary.sessionRef,
         sessionId: sessionRefToId(snapshot.summary.sessionRef),
         sessionName: snapshot.summary.title,
-        autoCompactionEnabled: true,
+        autoCompactionEnabled: snapshot.autoCompactionEnabled ?? true,
         messageCount: snapshot.messages.length,
         pendingMessageCount: snapshot.steering.length + snapshot.followUp.length,
     };
@@ -144,5 +144,29 @@ function toRecord(value) {
 }
 function numberOrZero(value) {
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+export function providerCommandToPiSlashCommand(command) {
+    return {
+        name: command.name,
+        description: command.description,
+        source: command.source,
+        location: command.location,
+        path: command.path,
+        sourceInfo: command.sourceInfo,
+    };
+}
+export function providerModelToPiModel(model) {
+    return {
+        provider: model.provider,
+        id: model.modelId ?? model.id,
+        name: model.name,
+        reasoning: model.reasoning,
+    };
+}
+export function workspaceDiffToPiSessionDiff(diff) {
+    return {
+        patch: diff.patch ?? "",
+        changedFiles: diff.changedFiles ?? diff.files.length,
+    };
 }
 //# sourceMappingURL=agent-adapters.js.map

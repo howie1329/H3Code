@@ -81,6 +81,56 @@ export class ConnectionManager {
         }
         return managed.provider.createSession(managed.connection, options);
     }
+    async listCommands(connectionId) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.listCommands) {
+            throw new AgentServerError("unsupported_command", "Provider does not support command listing.");
+        }
+        return managed.provider.listCommands(managed.connection);
+    }
+    async listModels(connectionId) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.listModels) {
+            throw new AgentServerError("unsupported_command", "Provider does not support model listing.");
+        }
+        return managed.provider.listModels(managed.connection);
+    }
+    async setSteeringMode(connectionId, mode) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.setSteeringMode) {
+            throw new AgentServerError("unsupported_command", "Provider does not support steering mode changes.");
+        }
+        await managed.provider.setSteeringMode(managed.connection, mode);
+    }
+    async setFollowUpMode(connectionId, mode) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.setFollowUpMode) {
+            throw new AgentServerError("unsupported_command", "Provider does not support follow-up mode changes.");
+        }
+        await managed.provider.setFollowUpMode(managed.connection, mode);
+    }
+    async setAutoCompaction(connectionId, enabled) {
+        const managed = this.require(connectionId);
+        if (!managed.provider.setAutoCompaction) {
+            throw new AgentServerError("unsupported_command", "Provider does not support compaction settings.");
+        }
+        await managed.provider.setAutoCompaction(managed.connection, enabled);
+    }
+    getRepoPath(connectionId) {
+        return this.require(connectionId).repoPath;
+    }
+    findConnectionIdForSession(sessionRef) {
+        for (const [connectionId, managed] of this.#connections) {
+            if (managed.connection.sessionRef === sessionRef) {
+                return connectionId;
+            }
+        }
+        return undefined;
+    }
+    async disconnectForRepo(repoPath) {
+        const targets = [...this.#connections.entries()].filter(([, managed]) => managed.repoPath === repoPath);
+        await Promise.all(targets.map(([connectionId]) => this.disconnect(connectionId)));
+    }
     require(connectionId) {
         const managed = this.#connections.get(connectionId);
         if (!managed) {

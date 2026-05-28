@@ -1,13 +1,17 @@
+import type { ProviderCapabilities } from "@h3code/agent-core";
 import type { SessionDomainEvent } from "$lib/pi-session/domain-events.js";
 
 import { AgentClient, type AgentClientListeners } from "$lib/agent-client.js";
 import {
   connectionStatusToPiStatus,
   piExtensionUiResponseToProvider,
+  providerCommandToPiSlashCommand,
+  providerModelToPiModel,
   providerUiToPiRequest,
   sessionSummaryToPiSessionSummary,
   snapshotToPiSessionState,
   snapshotToPiSessionStats,
+  workspaceDiffToPiSessionDiff,
   wrapSessionEvent,
 } from "$lib/agent-adapters.js";
 import { getAgentTransport, usesLegacyAgentTransport } from "$lib/agent-transport.js";
@@ -19,6 +23,7 @@ export type DesktopAgentApi = {
     onSessionEvent?: (event: SessionDomainEvent & { agentId?: string }) => void;
     onPiStatus?: (status: PiStatus) => void;
     onExtensionUiRequest?: (request: PiExtensionUiRequest) => void;
+    onWorkspaceDiff?: (diff: PiSessionDiff) => void;
   }) => void;
   getPreferences: () => Promise<DesktopPreferences>;
   updateDesktopSettings: (settings: Partial<DesktopSettings>) => Promise<DesktopSettings>;
@@ -56,6 +61,9 @@ export type DesktopAgentApi = {
   setFollowUpMode: (mode: PiQueueMode) => Promise<PiSessionState>;
   setAutoCompaction: (enabled: boolean) => Promise<PiSessionState>;
   getSessionStatsFromSnapshot: () => Promise<PiSessionStats | null>;
+  deleteSession: (repoPath: string, sessionPath: string) => Promise<PiSessionSummary[]>;
+  getSessionDiff: () => Promise<PiSessionDiff>;
+  getProviderCapabilities: () => ProviderCapabilities | undefined;
 };
 
 class IpcDesktopAgentApi implements DesktopAgentApi {
@@ -65,6 +73,7 @@ class IpcDesktopAgentApi implements DesktopAgentApi {
     onSessionEvent?: (event: SessionDomainEvent & { agentId?: string }) => void;
     onPiStatus?: (status: PiStatus) => void;
     onExtensionUiRequest?: (request: PiExtensionUiRequest) => void;
+    onWorkspaceDiff?: (diff: PiSessionDiff) => void;
   }) {
     // IPC events are delivered via window.h3code in desktop-state.
   }
@@ -172,6 +181,18 @@ class IpcDesktopAgentApi implements DesktopAgentApi {
   async getSessionStatsFromSnapshot() {
     return this.requireApi().getSessionStats();
   }
+
+  async deleteSession(repoPath: string, sessionPath: string) {
+    return this.requireApi().deletePiSession(repoPath, sessionPath);
+  }
+
+  async getSessionDiff(worktreePath?: string) {
+    return this.requireApi().getSessionDiff(worktreePath);
+  }
+
+  getProviderCapabilities(): ProviderCapabilities | undefined {
+    return undefined;
+  }
 }
 
 class WsDesktopAgentApi implements DesktopAgentApi {
@@ -183,6 +204,7 @@ class WsDesktopAgentApi implements DesktopAgentApi {
     onSessionEvent?: (event: SessionDomainEvent & { agentId?: string }) => void;
     onPiStatus?: (status: PiStatus) => void;
     onExtensionUiRequest?: (request: PiExtensionUiRequest) => void;
+    onWorkspaceDiff?: (diff: PiSessionDiff) => void;
   } = {};
 
   constructor() {
@@ -215,6 +237,9 @@ class WsDesktopAgentApi implements DesktopAgentApi {
           );
         }
       },
+      onWorkspaceDiff: (_connectionId, diff) => {
+        this.eventListeners.onWorkspaceDiff?.(workspaceDiffToPiSessionDiff(diff));
+      },
     });
   }
 
@@ -222,6 +247,7 @@ class WsDesktopAgentApi implements DesktopAgentApi {
     onSessionEvent?: (event: SessionDomainEvent & { agentId?: string }) => void;
     onPiStatus?: (status: PiStatus) => void;
     onExtensionUiRequest?: (request: PiExtensionUiRequest) => void;
+    onWorkspaceDiff?: (diff: PiSessionDiff) => void;
   }) {
     this.eventListeners = listeners;
   }
@@ -372,11 +398,13 @@ class WsDesktopAgentApi implements DesktopAgentApi {
   }
 
   async getCommands(): Promise<PiSlashCommand[]> {
-    throw new Error("Slash commands require legacy IPC transport in v1.");
+    const commands = await this.client.listCommands(this.requireConnectionId());
+    return commands.map(providerCommandToPiSlashCommand);
   }
 
   async getAvailableModels(): Promise<PiModel[]> {
-    throw new Error("Model listing requires legacy IPC transport in v1.");
+    const models = await this.client.listModels(this.requireConnectionId());
+    return models.map(providerModelToPiModel);
   }
 
   async setModel(provider: string, modelId: string): Promise<PiModel> {
@@ -389,21 +417,38 @@ class WsDesktopAgentApi implements DesktopAgentApi {
     await this.client.setThinkingLevel(this.requireConnectionId(), level);
   }
 
-  async setSteeringMode(_mode: PiQueueMode): Promise<PiSessionState> {
-    throw new Error("Queue settings require legacy IPC transport in v1.");
+  async setSteeringMode(mode: PiQueueMode): Promise<PiSessionState> {
+    const snapshot = await this.client.setSteeringMode(this.requireConnectionId(), mode);
+    return snapshotToPiSessionState(snapshot);
   }
 
-  async setFollowUpMode(_mode: PiQueueMode): Promise<PiSessionState> {
-    throw new Error("Queue settings require legacy IPC transport in v1.");
+  async setFollowUpMode(mode: PiQueueMode): Promise<PiSessionState> {
+    const snapshot = await this.client.setFollowUpMode(this.requireConnectionId(), mode);
+    return snapshotToPiSessionState(snapshot);
   }
 
-  async setAutoCompaction(_enabled: boolean): Promise<PiSessionState> {
-    throw new Error("Compaction settings require legacy IPC transport in v1.");
+  async setAutoCompaction(enabled: boolean): Promise<PiSessionState> {
+    const snapshot = await this.client.setAutoCompaction(this.requireConnectionId(), enabled);
+    return snapshotToPiSessionState(snapshot);
   }
 
   async getSessionStatsFromSnapshot() {
     const snapshot = await this.client.requestSnapshot(this.requireConnectionId());
     return snapshotToPiSessionStats(snapshot);
+  }
+
+  async deleteSession(repoPath: string, sessionPath: string) {
+    const sessions = await this.client.deleteSession(repoPath, sessionPath, this.connectionId);
+    return sessions.map(sessionSummaryToPiSessionSummary);
+  }
+
+  async getSessionDiff() {
+    const diff = await this.client.getWorkspaceDiff(this.requireConnectionId());
+    return workspaceDiffToPiSessionDiff(diff);
+  }
+
+  getProviderCapabilities(): ProviderCapabilities | undefined {
+    return this.client.getProviderCapabilities("pi");
   }
 }
 

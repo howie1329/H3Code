@@ -3,6 +3,7 @@ export * from "./events.js";
 export * from "./metadata.js";
 export * from "./ids.js";
 export * from "./protocol.js";
+export * from "./provider-metadata.js";
 export * from "./provider-ui.js";
 export * from "./providers.js";
 export * from "./sessions.js";

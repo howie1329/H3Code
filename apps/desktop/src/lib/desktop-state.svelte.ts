@@ -17,9 +17,11 @@ import {
   statusStripLines as selectStatusStripLines,
   transcriptMessages as selectTranscriptMessages,
 } from "$lib/pi-session/selectors.js";
+import type { ProviderCapabilities } from "@h3code/agent-core";
+
 import { getDesktopAgentApi } from "$lib/desktop-agent-api.js";
 import { getDesktopShellApi } from "$lib/desktop-shell-api.js";
-import { getAgentTransport, usesLegacyAgentControls } from "$lib/agent-transport.js";
+import { getAgentTransport } from "$lib/agent-transport.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
 
 export type WorkspaceInspector = "diff" | "context";
@@ -69,7 +71,19 @@ type AgentSessionEvent = SessionDomainEvent & {
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
   agentTransport = typeof window === "undefined" ? ("ipc" as const) : getAgentTransport();
-  usesLegacyAgentControls = $derived(usesLegacyAgentControls(this.agentTransport));
+  providerCapabilities = $state<ProviderCapabilities | null>(null);
+  supportsSlashCommands = $derived(
+    this.agentTransport === "ipc" || this.providerCapabilities?.ui.commands === true,
+  );
+  supportsModelPicker = $derived(
+    this.agentTransport === "ipc" || this.providerCapabilities?.ui.modelsList === true,
+  );
+  supportsQueueSettings = $derived(
+    this.agentTransport === "ipc" || this.providerCapabilities?.ui.queueSettings === true,
+  );
+  supportsCompactionSettings = $derived(
+    this.agentTransport === "ipc" || this.providerCapabilities?.ui.compaction === true,
+  );
   promptValue = $state("");
   activeAgentId = $state<string | undefined>();
   repoPath = $state<string | undefined>();
@@ -176,6 +190,9 @@ class DesktopState {
         },
         onExtensionUiRequest: (request) => {
           this.applyExtensionUiRequest(request);
+        },
+        onWorkspaceDiff: (diff) => {
+          this.applyWorkspaceDiff(diff);
         },
       });
 
@@ -359,6 +376,7 @@ class DesktopState {
   async connectRepoInternal(nextRepoPath: string, selectedSessionPath?: string) {
     this.errorMessage = undefined;
     const result = await this.getAgentApi().connectRepo(nextRepoPath, selectedSessionPath);
+    this.syncProviderCapabilities();
 
     this.repoPath = result.repoPath;
     this.activeAgentId = result.agentId;
@@ -527,7 +545,7 @@ class DesktopState {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
       const deletingActiveSession = sessionPath === this.selectedSessionPath || sessionPath === this.sessionState?.sessionFile;
-      const sessions = await this.getShellApi().deletePiSession(repoPath, sessionPath);
+      const sessions = await this.getAgentApi().deleteSession(repoPath, sessionPath);
       this.repos = upsertRepo(this.repos, repoPath, {
         sessions,
         sessionsLoaded: true,
@@ -680,7 +698,7 @@ class DesktopState {
     this.sessionStatsError = undefined;
 
     try {
-      if (this.usesLegacyAgentControls) {
+      if (this.agentTransport === "ipc") {
         this.sessionStats = await this.getShellApi().getSessionStats(this.sessionDiffCwd());
       } else {
         this.sessionStats = await this.getAgentApi().getSessionStatsFromSnapshot();
@@ -702,7 +720,10 @@ class DesktopState {
     this.sessionDiffError = undefined;
 
     try {
-      this.sessionDiff = await this.getShellApi().getSessionDiff(this.sessionDiffCwd());
+      this.sessionDiff =
+        this.agentTransport === "ws"
+          ? await this.getAgentApi().getSessionDiff()
+          : await this.getShellApi().getSessionDiff(this.sessionDiffCwd());
 
       if (!this.hasSessionDiff) {
         this.sessionDiffPanelOpen = false;
@@ -776,8 +797,24 @@ class DesktopState {
     }
   }
 
+  applyWorkspaceDiff(diff: PiSessionDiff) {
+    this.sessionDiff = diff;
+    this.sessionDiffLoading = false;
+    this.sessionDiffError = undefined;
+
+    if (!this.hasSessionDiff) {
+      this.sessionDiffPanelOpen = false;
+    } else if (this.desktopSettings.preferDiffPanel) {
+      this.sessionDiffPanelOpen = true;
+    }
+  }
+
+  syncProviderCapabilities() {
+    this.providerCapabilities = this.getAgentApi().getProviderCapabilities() ?? null;
+  }
+
   async ensureSlashCommands(refresh = false) {
-    if (!this.usesLegacyAgentControls) {
+    if (!this.supportsSlashCommands) {
       this.slashCommands = [];
       this.slashCommandsLoaded = true;
       this.slashCommandsError = undefined;
@@ -831,7 +868,7 @@ class DesktopState {
   }
 
   async ensureAvailableModels(refresh = false) {
-    if (!this.usesLegacyAgentControls) {
+    if (!this.supportsModelPicker) {
       this.availableModels = [];
       this.modelsLoaded = true;
       this.modelsError = undefined;
@@ -1066,7 +1103,7 @@ class DesktopState {
   }
 
   async setSteeringMode(mode: PiQueueMode) {
-    if (!this.canChangeSessionSettings || !this.usesLegacyAgentControls) {
+    if (!this.canChangeSessionSettings || !this.supportsQueueSettings) {
       return;
     }
 
@@ -1078,7 +1115,7 @@ class DesktopState {
   }
 
   async setFollowUpMode(mode: PiQueueMode) {
-    if (!this.canChangeSessionSettings || !this.usesLegacyAgentControls) {
+    if (!this.canChangeSessionSettings || !this.supportsQueueSettings) {
       return;
     }
 
@@ -1090,7 +1127,7 @@ class DesktopState {
   }
 
   async setAutoCompaction(enabled: boolean) {
-    if (!this.canChangeSessionSettings || !this.usesLegacyAgentControls) {
+    if (!this.canChangeSessionSettings || !this.supportsCompactionSettings) {
       return;
     }
 

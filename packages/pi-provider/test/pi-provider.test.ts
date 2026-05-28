@@ -245,6 +245,48 @@ test("PiAgentProvider adapts core commands to PiSdkProvider", async () => {
   assert.equal(runtime.disposed, true);
 });
 
+test("lists commands and models from session and runtime services", async () => {
+  const session = new FakeSession("session");
+  session.extensionRunner = {
+    getRegisteredCommands: () => [{ invocationName: "help", description: "Help" }],
+  };
+  session.promptTemplates = [{ name: "review", description: "Review code" }];
+  const runtime = new FakeRuntime(session);
+  runtime.services = {
+    modelRegistry: {
+      getAvailable: () => [{ id: "gpt-4", provider: "openai", name: "GPT-4", reasoning: false }],
+    } as never,
+    resourceLoader: {
+      getSkills: () => ({ skills: [{ name: "commit", description: "Commit skill" }] }),
+    } as never,
+  };
+  const provider = new PiSdkProvider({ cwd: "/repo", runtimeFactory: fakeFactory(runtime) });
+  await provider.start();
+
+  const commands = provider.listCommands();
+  assert.ok(commands.some((command) => command.name === "help"));
+  assert.ok(commands.some((command) => command.name === "review"));
+  assert.ok(commands.some((command) => command.name === "skill:commit"));
+
+  const models = provider.listModels();
+  assert.equal(models[0]?.provider, "openai");
+});
+
+test("queue and compaction setters update the active session", async () => {
+  const session = new FakeSession("session");
+  const provider = new PiSdkProvider({ cwd: "/repo", runtimeFactory: fakeFactory(new FakeRuntime(session)) });
+  await provider.start();
+
+  provider.setSteeringMode("all");
+  provider.setFollowUpMode("all");
+  provider.setAutoCompactionEnabled(false);
+
+  assert.equal(session.steeringMode, "all");
+  assert.equal(session.followUpMode, "all");
+  assert.equal(session.autoCompactionEnabled, false);
+  assert.equal(provider.getAutoCompactionEnabled(), false);
+});
+
 function fakeFactory(runtime: PiRuntimeLike): PiRuntimeFactory {
   return async () => runtime;
 }
@@ -253,6 +295,7 @@ class FakeRuntime implements PiRuntimeLike {
   nextSession: FakeSession | undefined;
   disposed = false;
   parentSession: string | undefined;
+  services: import("../src/types.js").PiRuntimeServices | undefined;
   #rebindSession: ((session: PiSessionLike) => Promise<void>) | undefined;
 
   constructor(public session: FakeSession) {}
@@ -299,6 +342,13 @@ class FakeSession implements PiSessionLike {
   isCompactingValue = false;
   model: unknown;
   thinkingLevel: string | undefined;
+  steeringMode: import("../src/types.js").PiProviderQueueMode | undefined;
+  followUpMode: import("../src/types.js").PiProviderQueueMode | undefined;
+  autoCompactionEnabled = true;
+  extensionRunner:
+    | { getRegisteredCommands: () => Array<{ invocationName: string; description?: string }> }
+    | undefined;
+  promptTemplates: Array<{ name: string; description?: string }> | undefined;
   promptImpl: PiSessionLike["prompt"] | undefined;
   bindExtensionsImpl: ((bindings: unknown) => Promise<void>) | undefined;
   readonly #listeners = new Set<(event: unknown) => void>();
@@ -357,6 +407,18 @@ class FakeSession implements PiSessionLike {
 
   setThinkingLevel(level: string) {
     this.thinkingLevel = level;
+  }
+
+  setSteeringMode(mode: import("../src/types.js").PiProviderQueueMode) {
+    this.steeringMode = mode;
+  }
+
+  setFollowUpMode(mode: import("../src/types.js").PiProviderQueueMode) {
+    this.followUpMode = mode;
+  }
+
+  setAutoCompactionEnabled(enabled: boolean) {
+    this.autoCompactionEnabled = enabled;
   }
 
   getSteeringMessages() {

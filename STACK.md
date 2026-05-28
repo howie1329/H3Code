@@ -78,6 +78,16 @@ Svelte renderer
 | `packages/agent-server/src/ws-router.ts` | WebSocket command routing |
 | `packages/agent-server/src/connection-manager.ts` | Connection ID to provider connection lifecycle |
 | `packages/agent-server/src/noop-provider.ts` | Temporary provider used for server verification |
+| `packages/agent-server/src/platform/` | Platform session delete, git diff, preferences |
+| `packages/pi-provider/src/` | In-process PI SDK provider (`PiAgentProvider`) for WS mode |
+
+### WS transport (`VITE_H3CODE_AGENT_TRANSPORT=ws`)
+
+Desktop renderer talks to `@h3code/agent-server` over WebSocket (`apps/desktop/src/lib/agent-client.ts`). Provider metadata and platform inventory use additive protocol v1 messages:
+
+- **Provider:** `provider.commands.list`, `provider.models.list`, `provider.queue.set`, `provider.compaction.set`
+- **Platform:** `session.delete`, `workspace.diff` (on-demand reply + server push after `run.ended` / tool updates, ~300ms debounce)
+- **Capabilities:** `server.ready.providers[].capabilities.ui` gates slash commands, model picker, queue modes, and compaction in the renderer (see `desktop-state.svelte.ts` `supports*` flags)
 
 ## Frameworks And Libraries
 

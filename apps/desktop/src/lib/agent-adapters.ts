@@ -1,10 +1,13 @@
 import type {
   ConnectionId,
   ConnectionState,
+  ProviderCommand,
+  ProviderModel,
   ProviderUiRequest,
   ProviderUiResponse,
   SessionSnapshot,
   SessionSummary,
+  WorkspaceDiffSummary,
 } from "@h3code/agent-core";
 
 import { normalizeModel, normalizeThinkingLevel } from "./pi-model.js";
@@ -40,7 +43,7 @@ export function snapshotToPiSessionState(snapshot: SessionSnapshot): PiSessionSt
     sessionFile: snapshot.summary.sessionRef,
     sessionId: sessionRefToId(snapshot.summary.sessionRef),
     sessionName: snapshot.summary.title,
-    autoCompactionEnabled: true,
+    autoCompactionEnabled: snapshot.autoCompactionEnabled ?? true,
     messageCount: snapshot.messages.length,
     pendingMessageCount: snapshot.steering.length + snapshot.followUp.length,
   };
@@ -182,4 +185,31 @@ function toRecord(value: unknown): Record<string, unknown> {
 
 function numberOrZero(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+export function providerCommandToPiSlashCommand(command: ProviderCommand): PiSlashCommand {
+  return {
+    name: command.name,
+    description: command.description,
+    source: command.source,
+    location: command.location,
+    path: command.path,
+    sourceInfo: command.sourceInfo,
+  };
+}
+
+export function providerModelToPiModel(model: ProviderModel): PiModel {
+  return {
+    provider: model.provider,
+    id: model.modelId ?? model.id,
+    name: model.name,
+    reasoning: model.reasoning,
+  };
+}
+
+export function workspaceDiffToPiSessionDiff(diff: WorkspaceDiffSummary): PiSessionDiff {
+  return {
+    patch: diff.patch ?? "",
+    changedFiles: diff.changedFiles ?? diff.files.length,
+  };
 }

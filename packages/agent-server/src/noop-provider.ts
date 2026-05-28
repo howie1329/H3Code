@@ -29,6 +29,9 @@ const noopCapabilities: ProviderCapabilities = {
     thinkingLevel: false,
     extensionUi: false,
     compaction: false,
+    commands: false,
+    modelsList: false,
+    queueSettings: false,
   },
   workspace: {
     localCwd: true,

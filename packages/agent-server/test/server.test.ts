@@ -7,6 +7,7 @@ import type { ServerToClientMessage } from "@h3code/agent-core";
 import WebSocket from "ws";
 import { NoopProvider } from "../src/noop-provider.js";
 import { startAgentServer } from "../src/index.js";
+import { FakeMetadataProvider } from "./fake-metadata-provider.js";
 import { FakeUiProvider } from "./fake-ui-provider.js";
 
 async function startTestServer(dataDir?: string) {
@@ -200,6 +201,48 @@ test("lists sessions for a repo path", async () => {
     assert.equal(message.type, "session.list");
     assert.equal(message.id, "list-1");
     assert.ok(Array.isArray(message.sessions));
+
+    socket.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test("routes provider metadata commands over websocket", async () => {
+  const server = await startAgentServer({ providers: [new FakeMetadataProvider()] });
+
+  try {
+    const client = await openReadySocket(server.url);
+    const { socket } = client;
+
+    socket.send(JSON.stringify({ type: "workspace.connect", id: "1", providerId: "fake-metadata", repoPath: "/tmp" }));
+    const status = await client.nextMessage();
+    assert.equal(status.type, "connection.status");
+    const connectionId = status.connectionId;
+
+    socket.send(JSON.stringify({ type: "provider.commands.list", id: "cmds", connectionId }));
+    const commandsMessage = await client.nextMessage();
+    assert.equal(commandsMessage.type, "provider.commands.list");
+    assert.equal(commandsMessage.id, "cmds");
+    assert.equal(commandsMessage.commands[0]?.name, "help");
+
+    socket.send(JSON.stringify({ type: "provider.models.list", id: "models", connectionId }));
+    const modelsMessage = await client.nextMessage();
+    assert.equal(modelsMessage.type, "provider.models.list");
+    assert.equal(modelsMessage.models[0]?.provider, "openai");
+
+    socket.send(
+      JSON.stringify({
+        type: "provider.queue.set",
+        id: "queue",
+        connectionId,
+        steeringMode: "all",
+        followUpMode: "all",
+      }),
+    );
+    const queueMessage = await client.nextMessage();
+    assert.equal(queueMessage.type, "provider.queue.set");
+    assert.equal(queueMessage.snapshot?.steeringMode, "all");
 
     socket.close();
   } finally {

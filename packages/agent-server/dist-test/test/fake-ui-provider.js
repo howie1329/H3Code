@@ -8,7 +8,15 @@ const uiCapabilities = {
         import: false,
     },
     runs: { stream: false, abort: false, steer: false, followUp: false, retry: false },
-    ui: { model: false, thinkingLevel: false, extensionUi: true, compaction: false },
+    ui: {
+        model: false,
+        thinkingLevel: false,
+        extensionUi: true,
+        compaction: false,
+        commands: false,
+        modelsList: false,
+        queueSettings: false,
+    },
     workspace: { localCwd: true },
 };
 export class FakeUiProvider {

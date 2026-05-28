@@ -32,6 +32,7 @@ export interface SessionSnapshot {
   thinkingLevel?: string;
   steeringMode?: QueueMode;
   followUpMode?: QueueMode;
+  autoCompactionEnabled?: boolean;
   steering: readonly string[];
   followUp: readonly string[];
   activeTools: readonly string[];

@@ -36,13 +36,11 @@
 
   const piExecutableDirty = $derived(piExecutableDraft.trim() !== desktopState.piExecutablePath);
   const sessionConnected = $derived(desktopState.piStatus.state === "connected");
-  const agentControlsDisabled = $derived(
-    !desktopState.canChangeSessionSettings || !desktopState.usesLegacyAgentControls,
+  const queueControlsDisabled = $derived(
+    !desktopState.canChangeSessionSettings || !desktopState.supportsQueueSettings,
   );
-  const legacyTransportNote = $derived(
-    desktopState.agentTransport === "ws"
-      ? "Model, queue, and slash-command controls require legacy IPC transport until the agent-server protocol adds provider metadata APIs."
-      : undefined,
+  const compactionControlsDisabled = $derived(
+    !desktopState.canChangeSessionSettings || !desktopState.supportsCompactionSettings,
   );
   const activeModelLabel = $derived(
     desktopState.sessionState?.model
@@ -320,11 +318,6 @@
       title="Agent"
       description="PI Agent RPC runtime. Model and thinking level are changed from the workspace composer."
     >
-      {#if legacyTransportNote}
-        <p class="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-          {legacyTransportNote}
-        </p>
-      {/if}
       <div class="space-y-2 rounded-lg border border-border/50 p-3">
         <Label for="pi-executable" class="text-xs font-medium">PI executable</Label>
         <p class="text-[11px] text-muted-foreground">
@@ -389,7 +382,7 @@
                 variant={desktopState.sessionState?.steeringMode === queueMode ? "default" : "outline"}
                 size="sm"
                 class="h-8 text-[11px]"
-                disabled={agentControlsDisabled}
+                disabled={queueControlsDisabled}
                 onclick={() => desktopState.setSteeringMode(queueMode as PiQueueMode)}
               >
                 {queueMode === "one-at-a-time" ? "One" : "All"}
@@ -410,7 +403,7 @@
                 variant={desktopState.sessionState?.followUpMode === queueMode ? "default" : "outline"}
                 size="sm"
                 class="h-8 text-[11px]"
-                disabled={agentControlsDisabled}
+                disabled={queueControlsDisabled}
                 onclick={() => desktopState.setFollowUpMode(queueMode as PiQueueMode)}
               >
                 {queueMode === "one-at-a-time" ? "One" : "All"}
@@ -429,7 +422,7 @@
           <Switch
             id="auto-compaction"
             checked={desktopState.sessionState?.autoCompactionEnabled ?? false}
-            disabled={agentControlsDisabled}
+            disabled={compactionControlsDisabled}
             onCheckedChange={(checked) => desktopState.setAutoCompaction(checked)}
           />
         {/snippet}

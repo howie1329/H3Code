@@ -2,6 +2,7 @@ import type { ProviderCapabilities } from "./capabilities.js";
 import type { SessionDomainEvent } from "./events.js";
 import type { ProviderId, RunRef, SessionRef } from "./ids.js";
 import type { ProviderUiResponse } from "./provider-ui.js";
+import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "./provider-metadata.js";
 import type { MessageInput, NewSessionOptions, SessionSnapshot, SessionSummary } from "./sessions.js";
 
 export interface ProviderDescriptor {
@@ -31,6 +32,11 @@ export interface AgentProvider {
   abort(connection: ProviderConnection, runRef?: RunRef): Promise<void>;
   setModel?(connection: ProviderConnection, model: unknown): Promise<void>;
   setThinkingLevel?(connection: ProviderConnection, level: string): Promise<void>;
+  listCommands?(connection: ProviderConnection): Promise<ProviderCommand[]>;
+  listModels?(connection: ProviderConnection): Promise<ProviderModel[]>;
+  setSteeringMode?(connection: ProviderConnection, mode: ProviderQueueMode): Promise<void>;
+  setFollowUpMode?(connection: ProviderConnection, mode: ProviderQueueMode): Promise<void>;
+  setAutoCompaction?(connection: ProviderConnection, enabled: boolean): Promise<void>;
   respondToUiRequest?(connection: ProviderConnection, response: ProviderUiResponse): Promise<void>;
 
   listSessions?(connection: ProviderConnection): Promise<SessionSummary[]>;

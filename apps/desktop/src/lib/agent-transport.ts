@@ -20,7 +20,7 @@ export function usesLegacyAgentTransport(transport = getAgentTransport()): boole
   return transport === "ipc";
 }
 
-/** IPC-only PI controls (slash commands, model picker, queue modes) until protocol extends WS. */
+/** @deprecated Use desktop-state capability flags (`supportsSlashCommands`, etc.) instead. */
 export function usesLegacyAgentControls(transport = getAgentTransport()): boolean {
   return usesLegacyAgentTransport(transport);
 }

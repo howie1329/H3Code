@@ -9,4 +9,7 @@ export interface WorkspaceDiffSummary {
   files: WorkspaceDiffFile[];
   summary?: string;
   updatedAt: number;
+  /** Unified patch text for desktop diff panel rendering. */
+  patch?: string;
+  changedFiles?: number;
 }

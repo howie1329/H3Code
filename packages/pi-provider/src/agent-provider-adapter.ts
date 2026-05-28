@@ -41,6 +41,9 @@ const piCapabilities: ProviderCapabilities = {
     thinkingLevel: true,
     extensionUi: true,
     compaction: true,
+    commands: true,
+    modelsList: true,
+    queueSettings: true,
   },
   workspace: {
     localCwd: true,
@@ -124,6 +127,26 @@ export class PiAgentProvider implements AgentProvider {
 
   async setThinkingLevel(connection: ProviderConnection, level: string): Promise<void> {
     getPiConnection(connection).provider.setThinkingLevel(level);
+  }
+
+  async listCommands(connection: ProviderConnection) {
+    return getPiConnection(connection).provider.listCommands();
+  }
+
+  async listModels(connection: ProviderConnection) {
+    return getPiConnection(connection).provider.listModels();
+  }
+
+  async setSteeringMode(connection: ProviderConnection, mode: import("@h3code/agent-core").ProviderQueueMode) {
+    getPiConnection(connection).provider.setSteeringMode(mode);
+  }
+
+  async setFollowUpMode(connection: ProviderConnection, mode: import("@h3code/agent-core").ProviderQueueMode) {
+    getPiConnection(connection).provider.setFollowUpMode(mode);
+  }
+
+  async setAutoCompaction(connection: ProviderConnection, enabled: boolean) {
+    getPiConnection(connection).provider.setAutoCompactionEnabled(enabled);
   }
 
   async respondToUiRequest(connection: ProviderConnection, response: ProviderUiResponse): Promise<void> {
@@ -211,6 +234,7 @@ function mapSnapshot(providerId: ProviderId, repoPath: string, snapshot: PiProvi
     thinkingLevel: snapshot.thinkingLevel,
     steeringMode: snapshot.steeringMode,
     followUpMode: snapshot.followUpMode,
+    autoCompactionEnabled: snapshot.autoCompactionEnabled,
     steering: snapshot.steering,
     followUp: snapshot.followUp,
     activeTools: snapshot.activeTools,

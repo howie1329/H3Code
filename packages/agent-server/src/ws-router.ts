@@ -11,7 +11,11 @@ import type { ConnectionManager } from "./connection-manager.js";
 import type { PlatformService } from "./platform/platform-service.js";
 import type { ProviderRegistry } from "./provider-registry.js";
 
+const diffRefreshEvents = new Set(["run.ended", "tool.updated", "turn.completed"]);
+
 export class WsRouter {
+  readonly #diffTimers = new Map<ConnectionId, ReturnType<typeof setTimeout>>();
+
   constructor(
     private readonly registry: ProviderRegistry,
     private readonly connections: ConnectionManager,
@@ -40,10 +44,12 @@ export class WsRouter {
           }
 
           const repoPath = requireString(message.repoPath, "repoPath");
-          const connectionId = await this.connections.connect(
+          let connectionId!: ConnectionId;
+
+          connectionId = await this.connections.connect(
             provider,
             { repoPath, sessionRef: message.sessionRef },
-            (event) => emitProviderEvent(socket, connectionId, event),
+            (event) => this.emitSessionEvent(socket, connectionId, event),
           );
 
           send(socket, { type: "connection.status", connectionId, state: "connected" });
@@ -51,6 +57,7 @@ export class WsRouter {
         }
 
         case "workspace.disconnect":
+          this.clearDiffTimer(message.connectionId);
           await this.connections.disconnect(message.connectionId);
           send(socket, { type: "connection.status", connectionId: message.connectionId, state: "disconnected" });
           return;
@@ -81,6 +88,39 @@ export class WsRouter {
           await this.connections.respondToUiRequest(message.connectionId, message.response);
           return;
 
+        case "provider.commands.list": {
+          const commands = await this.connections.listCommands(message.connectionId);
+          send(socket, { type: "provider.commands.list", id: message.id, commands });
+          return;
+        }
+
+        case "provider.models.list": {
+          const models = await this.connections.listModels(message.connectionId);
+          send(socket, { type: "provider.models.list", id: message.id, models });
+          return;
+        }
+
+        case "provider.queue.set": {
+          if (message.steeringMode) {
+            await this.connections.setSteeringMode(message.connectionId, message.steeringMode);
+          }
+
+          if (message.followUpMode) {
+            await this.connections.setFollowUpMode(message.connectionId, message.followUpMode);
+          }
+
+          const snapshot = await this.connections.getSnapshot(message.connectionId);
+          send(socket, { type: "provider.queue.set", id: message.id, snapshot });
+          return;
+        }
+
+        case "provider.compaction.set": {
+          await this.connections.setAutoCompaction(message.connectionId, message.enabled);
+          const snapshot = await this.connections.getSnapshot(message.connectionId);
+          send(socket, { type: "provider.compaction.set", id: message.id, snapshot });
+          return;
+        }
+
         case "session.switch": {
           const snapshot = await this.connections.switchSession(message.connectionId, message.sessionRef);
           send(socket, { type: "session.snapshot", connectionId: message.connectionId, snapshot });
@@ -90,6 +130,24 @@ export class WsRouter {
         case "session.create": {
           const snapshot = await this.connections.createSession(message.connectionId, message.options);
           send(socket, { type: "session.snapshot", connectionId: message.connectionId, snapshot });
+          return;
+        }
+
+        case "session.delete": {
+          const repoPath = requireString(message.repoPath, "repoPath");
+          const sessionRef = requireString(message.sessionRef, "sessionRef");
+          const sessions = await this.platform.deleteSession({
+            repoPath,
+            sessionRef,
+            connectionId: message.connectionId,
+          });
+          send(socket, { type: "session.delete", id: message.id, sessions });
+          return;
+        }
+
+        case "workspace.diff": {
+          const diff = await this.platform.getWorkspaceDiff(message.connectionId);
+          send(socket, { type: "workspace.diff", id: message.id, connectionId: message.connectionId, diff });
           return;
         }
 
@@ -127,7 +185,7 @@ export class WsRouter {
 
         case "preferences.removeRepo": {
           const repoPath = requireString(message.repoPath, "repoPath");
-          const preferences = this.platform.removeRepo(repoPath);
+          const preferences = await this.platform.removeRepo(repoPath);
           send(socket, { type: "preferences.snapshot", id: message.id, preferences });
           return;
         }
@@ -145,21 +203,59 @@ export class WsRouter {
       send(socket, errorMessage(error, message.id));
     }
   }
+
+  private emitSessionEvent(socket: WebSocket, connectionId: ConnectionId, event: SessionDomainEvent) {
+    if (event.type === "extension.ui.request") {
+      send(socket, { type: "provider.ui.request", connectionId, request: event.request });
+      return;
+    }
+
+    send(socket, { type: "session.event", connectionId, event });
+
+    if (diffRefreshEvents.has(event.type)) {
+      this.scheduleDiffPush(socket, connectionId);
+    }
+  }
+
+  private scheduleDiffPush(socket: WebSocket, connectionId: ConnectionId) {
+    const existing = this.#diffTimers.get(connectionId);
+
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    this.#diffTimers.set(
+      connectionId,
+      setTimeout(() => {
+        this.#diffTimers.delete(connectionId);
+        void this.pushDiff(socket, connectionId);
+      }, 300),
+    );
+  }
+
+  private clearDiffTimer(connectionId: ConnectionId) {
+    const existing = this.#diffTimers.get(connectionId);
+
+    if (existing) {
+      clearTimeout(existing);
+      this.#diffTimers.delete(connectionId);
+    }
+  }
+
+  private async pushDiff(socket: WebSocket, connectionId: ConnectionId) {
+    try {
+      const diff = await this.platform.getWorkspaceDiff(connectionId);
+      send(socket, { type: "workspace.diff", connectionId, diff });
+    } catch {
+      // Diff refresh is best-effort for push updates.
+    }
+  }
 }
 
 export function send(socket: WebSocket, message: ServerToClientMessage) {
   if (socket.readyState === socket.OPEN) {
     socket.send(JSON.stringify(message));
   }
-}
-
-function emitProviderEvent(socket: WebSocket, connectionId: ConnectionId, event: SessionDomainEvent) {
-  if (event.type === "extension.ui.request") {
-    send(socket, { type: "provider.ui.request", connectionId, request: event.request });
-    return;
-  }
-
-  send(socket, { type: "session.event", connectionId, event });
 }
 
 function assertNever(value: never): never {

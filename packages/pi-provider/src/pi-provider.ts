@@ -1,3 +1,5 @@
+import { listPiCommands } from "./pi-commands.js";
+import { listPiModels } from "./pi-models.js";
 import { mapPiSessionEvent } from "./event-mapper.js";
 import { PiExtensionUiBridge } from "./extension-ui.js";
 import { createRealPiRuntime, withRuntimeDefaults } from "./runtime.js";
@@ -23,6 +25,7 @@ export class PiSdkProvider {
   readonly #uiBridge = new PiExtensionUiBridge((event) => this.emit(event));
   readonly #options: PiProviderOptions;
   #runtime: PiRuntimeLike | undefined;
+  #services: import("./types.js").PiRuntimeServices | undefined;
   #unsubscribe: (() => void) | undefined;
 
   constructor(options: PiProviderOptions) {
@@ -59,6 +62,7 @@ export class PiSdkProvider {
     );
 
     this.#runtime = runtime;
+    this.#services = runtime.services;
     runtime.setRebindSession?.((session) => this.bindSession(session));
     await this.bindSession(runtime.session);
     this.emitRuntimeDiagnostics(runtime);
@@ -93,6 +97,7 @@ export class PiSdkProvider {
       thinkingLevel: session.thinkingLevel,
       steeringMode: asQueueMode(session.steeringMode),
       followUpMode: asQueueMode(session.followUpMode),
+      autoCompactionEnabled: this.getAutoCompactionEnabled(),
       steering: session.getSteeringMessages?.() ?? [],
       followUp: session.getFollowUpMessages?.() ?? [],
       activeTools: session.getActiveToolNames?.() ?? [],
@@ -185,6 +190,56 @@ export class PiSdkProvider {
     }
 
     setThinkingLevel.call(this.session, level);
+  }
+
+  listCommands() {
+    return listPiCommands(this.session, this.#services?.resourceLoader);
+  }
+
+  listModels() {
+    const modelRegistry = this.#services?.modelRegistry;
+
+    if (!modelRegistry) {
+      throw new Error("PI model registry is unavailable.");
+    }
+
+    return listPiModels(modelRegistry);
+  }
+
+  setSteeringMode(mode: PiProviderQueueMode) {
+    const session = this.session as PiSessionLike & { setSteeringMode?: (value: PiProviderQueueMode) => void };
+
+    if (!session.setSteeringMode) {
+      throw new Error("The active PI session does not support steering mode changes.");
+    }
+
+    session.setSteeringMode(mode);
+  }
+
+  setFollowUpMode(mode: PiProviderQueueMode) {
+    const session = this.session as PiSessionLike & { setFollowUpMode?: (value: PiProviderQueueMode) => void };
+
+    if (!session.setFollowUpMode) {
+      throw new Error("The active PI session does not support follow-up mode changes.");
+    }
+
+    session.setFollowUpMode(mode);
+  }
+
+  setAutoCompactionEnabled(enabled: boolean) {
+    const session = this.session as PiSessionLike & { setAutoCompactionEnabled?: (value: boolean) => void };
+
+    if (!session.setAutoCompactionEnabled) {
+      throw new Error("The active PI session does not support auto-compaction changes.");
+    }
+
+    session.setAutoCompactionEnabled(enabled);
+  }
+
+  getAutoCompactionEnabled() {
+    const session = this.session as PiSessionLike & { autoCompactionEnabled?: boolean };
+
+    return session.autoCompactionEnabled === true;
   }
 
   respondToUiRequest(response: PiProviderUiResponse) {

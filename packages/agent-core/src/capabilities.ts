@@ -19,6 +19,9 @@ export interface ProviderCapabilities {
     thinkingLevel: boolean;
     extensionUi: boolean;
     compaction: boolean;
+    commands: boolean;
+    modelsList: boolean;
+    queueSettings: boolean;
   };
   workspace: {
     localCwd: boolean;
