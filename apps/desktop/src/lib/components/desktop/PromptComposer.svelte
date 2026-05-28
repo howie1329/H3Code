@@ -48,9 +48,13 @@
   const showAbort = $derived(isRunning);
   const showSessionControls = $derived(desktopState.canUseSession);
   const showSlashHint = $derived(
-    desktopState.canUseSession && desktopState.slashCommands.length > 0 && !desktopState.slashCommandsLoading
+    desktopState.usesLegacyAgentControls &&
+      desktopState.canUseSession &&
+      desktopState.slashCommands.length > 0 &&
+      !desktopState.slashCommandsLoading,
   );
   const selectorsDisabled = $derived(!desktopState.canChangeSessionSettings || !desktopState.canUseSession);
+  const modelSelectorDisabled = $derived(selectorsDisabled || !desktopState.usesLegacyAgentControls);
   const currentModel = $derived(desktopState.sessionState?.model);
   const flatModels = $derived(desktopState.availableModels);
   const currentThinkingLevel = $derived(normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel));
@@ -141,7 +145,7 @@
   });
 
   $effect(() => {
-    if (desktopState.canUseSession) {
+    if (desktopState.canUseSession && desktopState.usesLegacyAgentControls) {
       void desktopState.ensureAvailableModels();
     }
   });
@@ -531,13 +535,15 @@
         {#snippet trailing()}
           {#if showSessionControls}
             <div class="flex shrink-0 items-center gap-0.5 rounded-md bg-transparent" role="group" aria-label="Prompt settings">
-              <ModelSelector
-                open={activeMenu === "model"}
-                disabled={selectorsDisabled}
-                variant="inline"
-                bind:anchor={modelAnchor}
-                onToggle={toggleModelMenu}
-              />
+              {#if desktopState.usesLegacyAgentControls}
+                <ModelSelector
+                  open={activeMenu === "model"}
+                  disabled={modelSelectorDisabled}
+                  variant="inline"
+                  bind:anchor={modelAnchor}
+                  onToggle={toggleModelMenu}
+                />
+              {/if}
               <ThinkingLevelSelector
                 open={activeMenu === "thinking"}
                 disabled={selectorsDisabled}

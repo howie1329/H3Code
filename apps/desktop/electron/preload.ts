@@ -4,27 +4,44 @@ type PiSessionEventListener = (event: unknown) => void;
 type PiStatusListener = (status: unknown) => void;
 type PiExtensionUiRequestListener = (request: unknown) => void;
 
-contextBridge.exposeInMainWorld("h3code", {
-  platform: process.platform,
-  getAppVersion: () => ipcRenderer.invoke("app:get-version"),
-  pickExecutable: () => ipcRenderer.invoke("dialog:pick-executable"),
-  selectRepo: () => ipcRenderer.invoke("repo:select"),
-  connectRepo: (repoPath: string, selectedSessionPath?: string) => ipcRenderer.invoke("pi:connect-repo", repoPath, selectedSessionPath),
-  listSessions: () => ipcRenderer.invoke("pi:list-sessions"),
-  listRepoSessions: (repoPath: string, markRecent?: boolean) => ipcRenderer.invoke("pi:list-repo-sessions", repoPath, markRecent),
-  deletePiSession: (repoPath: string, sessionPath: string) => ipcRenderer.invoke("pi:delete-session", repoPath, sessionPath),
-  switchSession: (sessionPath: string) => ipcRenderer.invoke("pi:switch-session", sessionPath),
-  newSession: (parentSession?: string) => ipcRenderer.invoke("pi:new-session", parentSession),
-  getSessionSnapshot: () => ipcRenderer.invoke("pi:get-session-snapshot"),
-  getSessionState: () => ipcRenderer.invoke("pi:get-session-state"),
-  getSessionStats: () => ipcRenderer.invoke("pi:get-session-stats"),
-  getSessionDiff: () => ipcRenderer.invoke("pi:get-session-diff"),
-  revealWorktree: () => ipcRenderer.invoke("pi:reveal-worktree"),
+const shellApi = {
+  deletePiSession: (repoPath: string, sessionPath: string) =>
+    ipcRenderer.invoke("pi:delete-session", repoPath, sessionPath),
+  getSessionStats: (worktreePath?: string) => ipcRenderer.invoke("pi:get-session-stats", worktreePath),
+  getSessionDiff: (worktreePath?: string) => ipcRenderer.invoke("pi:get-session-diff", worktreePath),
+  revealWorktree: (worktreePath?: string) => ipcRenderer.invoke("pi:reveal-worktree", worktreePath),
   listWorktrees: () => ipcRenderer.invoke("worktrees:list"),
   revealWorktreePath: (worktreePath: string) => ipcRenderer.invoke("worktrees:reveal", worktreePath),
   removeStaleWorktree: (sessionPath: string) => ipcRenderer.invoke("worktrees:remove-stale", sessionPath),
   archiveSessionWorktree: (sessionPath: string) => ipcRenderer.invoke("worktrees:archive-session-worktree", sessionPath),
   pruneStaleWorktrees: () => ipcRenderer.invoke("worktrees:prune-stale"),
+  revealPreferencesDatabase: () => ipcRenderer.invoke("preferences:reveal-database"),
+};
+
+contextBridge.exposeInMainWorld("h3code", {
+  platform: process.platform,
+  getAppVersion: () => ipcRenderer.invoke("app:get-version"),
+  getAgentServerUrl: () => ipcRenderer.invoke("agent-server:get-url"),
+  getAgentTransport: () => (process.env.H3CODE_AGENT_TRANSPORT === "ws" ? "ws" : "ipc"),
+  shell: shellApi,
+  pickExecutable: () => ipcRenderer.invoke("dialog:pick-executable"),
+  selectRepo: () => ipcRenderer.invoke("repo:select"),
+  connectRepo: (repoPath: string, selectedSessionPath?: string) => ipcRenderer.invoke("pi:connect-repo", repoPath, selectedSessionPath),
+  listSessions: () => ipcRenderer.invoke("pi:list-sessions"),
+  listRepoSessions: (repoPath: string, markRecent?: boolean) => ipcRenderer.invoke("pi:list-repo-sessions", repoPath, markRecent),
+  deletePiSession: shellApi.deletePiSession,
+  switchSession: (sessionPath: string) => ipcRenderer.invoke("pi:switch-session", sessionPath),
+  newSession: (parentSession?: string) => ipcRenderer.invoke("pi:new-session", parentSession),
+  getSessionSnapshot: () => ipcRenderer.invoke("pi:get-session-snapshot"),
+  getSessionState: () => ipcRenderer.invoke("pi:get-session-state"),
+  getSessionStats: shellApi.getSessionStats,
+  getSessionDiff: shellApi.getSessionDiff,
+  revealWorktree: shellApi.revealWorktree,
+  listWorktrees: shellApi.listWorktrees,
+  revealWorktreePath: shellApi.revealWorktreePath,
+  removeStaleWorktree: shellApi.removeStaleWorktree,
+  archiveSessionWorktree: shellApi.archiveSessionWorktree,
+  pruneStaleWorktrees: shellApi.pruneStaleWorktrees,
   getCommands: () => ipcRenderer.invoke("pi:get-commands"),
   getAvailableModels: () => ipcRenderer.invoke("pi:get-available-models"),
   setModel: (provider: string, modelId: string) => ipcRenderer.invoke("pi:set-model", provider, modelId),
@@ -42,7 +59,7 @@ contextBridge.exposeInMainWorld("h3code", {
   updateDesktopSettings: (settings: unknown) => ipcRenderer.invoke("preferences:update-desktop-settings", settings),
   setPiExecutablePath: (executablePath: string) => ipcRenderer.invoke("preferences:set-pi-executable-path", executablePath),
   clearAllIndexedData: () => ipcRenderer.invoke("preferences:clear-all-indexed"),
-  revealPreferencesDatabase: () => ipcRenderer.invoke("preferences:reveal-database"),
+  revealPreferencesDatabase: shellApi.revealPreferencesDatabase,
   onSessionEvent: (listener: PiSessionEventListener) => {
     const handler = (_event: Electron.IpcRendererEvent, sessionEvent: unknown) => listener(sessionEvent);
     ipcRenderer.on("pi:session-event", handler);

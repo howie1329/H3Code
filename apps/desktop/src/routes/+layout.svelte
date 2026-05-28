@@ -4,6 +4,7 @@
 
   import AppSidebar from "$lib/components/desktop/AppSidebar.svelte";
   import ExtensionUiDialog from "$lib/components/desktop/ExtensionUiDialog.svelte";
+  import { getAgentTransport } from "$lib/agent-transport.js";
   import { desktopState } from "$lib/desktop-state.svelte";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import "../app.css";
@@ -11,6 +12,9 @@
   let { children } = $props();
 
   onMount(() => {
+    const transport = getAgentTransport();
+    console.info(`[h3code] agent transport: ${transport}`);
+
     const cleanup = desktopState.initializeListeners();
     void desktopState.initializePreferences();
 

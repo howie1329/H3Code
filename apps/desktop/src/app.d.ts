@@ -212,9 +212,25 @@ declare global {
     piExecutablePath: string;
   };
 
+  type AgentTransport = "ipc" | "ws";
+
   interface Window {
     h3code?: {
       platform: NodeJS.Platform;
+      getAgentServerUrl: () => Promise<string | undefined>;
+      getAgentTransport: () => AgentTransport;
+      shell?: {
+        deletePiSession: (repoPath: string, sessionPath: string) => Promise<PiSessionSummary[]>;
+        getSessionStats: (worktreePath?: string) => Promise<PiSessionStats | null>;
+        getSessionDiff: (worktreePath?: string) => Promise<PiSessionDiff>;
+        revealWorktree: (worktreePath?: string) => Promise<string>;
+        listWorktrees: () => Promise<PiWorktreeSummary[]>;
+        revealWorktreePath: (worktreePath: string) => Promise<string>;
+        removeStaleWorktree: (sessionPath: string) => Promise<PiWorktreeCleanupResult>;
+        archiveSessionWorktree: (sessionPath: string) => Promise<PiWorktreeArchiveResult>;
+        pruneStaleWorktrees: () => Promise<PiWorktreeCleanupResult>;
+        revealPreferencesDatabase: () => Promise<string>;
+      };
       getAppVersion: () => Promise<string>;
       pickExecutable: () => Promise<{ path: string } | null>;
       selectRepo: () => Promise<{ path: string } | null>;
@@ -226,9 +242,9 @@ declare global {
       newSession: (parentSession?: string) => Promise<{ state: PiSessionState; messages: unknown[]; agentId?: string; repoPath?: string; worktreePath?: string }>;
       getSessionSnapshot: () => Promise<{ state: PiSessionState; messages: unknown[] }>;
       getSessionState: () => Promise<PiSessionState>;
-      getSessionStats: () => Promise<PiSessionStats | null>;
-      getSessionDiff: () => Promise<PiSessionDiff>;
-      revealWorktree: () => Promise<string>;
+      getSessionStats: (worktreePath?: string) => Promise<PiSessionStats | null>;
+      getSessionDiff: (worktreePath?: string) => Promise<PiSessionDiff>;
+      revealWorktree: (worktreePath?: string) => Promise<string>;
       listWorktrees: () => Promise<PiWorktreeSummary[]>;
       revealWorktreePath: (worktreePath: string) => Promise<string>;
       removeStaleWorktree: (sessionPath: string) => Promise<PiWorktreeCleanupResult>;
@@ -257,6 +273,14 @@ declare global {
       onExtensionUiRequest: (listener: (request: PiExtensionUiRequest) => void) => () => void;
     };
   }
+}
+
+interface ImportMetaEnv {
+  readonly VITE_H3CODE_AGENT_TRANSPORT?: AgentTransport;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
 }
 
 export {};

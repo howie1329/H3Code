@@ -13,6 +13,12 @@ import {
   type RpcSessionState,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
+import {
+  getAgentServerUrl,
+  getAgentTransportFromEnv,
+  startAgentServerProcess,
+  stopAgentServerProcess,
+} from "./agent-server-lifecycle.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import { createSessionEventEnvelope, piRpcToDomainEvents } from "../src/lib/pi-session/adapter.js";
 import type { SessionDomainEvent, SessionEventEnvelope } from "../src/lib/pi-session/domain-events.js";
@@ -477,28 +483,28 @@ async function listPiSessions() {
   return listSessionsForRepo(agent.repoPath, true);
 }
 
-async function getSessionDiff(): Promise<SessionDiff> {
-  const agent = getActiveAgent();
+async function getSessionDiff(worktreePath?: string): Promise<SessionDiff> {
+  const cwd = worktreePath ?? getActiveAgent()?.worktreePath;
 
-  if (!agent) {
+  if (!cwd) {
     return { patch: "", changedFiles: 0 };
   }
 
-  await assertDirectory(agent.worktreePath);
+  await assertDirectory(cwd);
 
-  const repoCheck = await runGit(["rev-parse", "--is-inside-work-tree"], agent.worktreePath);
+  const repoCheck = await runGit(["rev-parse", "--is-inside-work-tree"], cwd);
 
   if (repoCheck.status !== 0 || repoCheck.stdout.trim() !== "true") {
     return { patch: "", changedFiles: 0 };
   }
 
-  const trackedDiff = await runGit(["diff", "HEAD", "--no-ext-diff", "--no-color", "--binary"], agent.worktreePath);
-  const untrackedFiles = await getUntrackedFiles(agent.worktreePath);
+  const trackedDiff = await runGit(["diff", "HEAD", "--no-ext-diff", "--no-color", "--binary"], cwd);
+  const untrackedFiles = await getUntrackedFiles(cwd);
   const patches = trackedDiff.stdout ? [trackedDiff.stdout] : [];
   let patchBytes = trackedDiff.stdout.length;
 
   for (const file of untrackedFiles) {
-    const fileDiff = await getUntrackedFileDiff(agent.worktreePath, file);
+    const fileDiff = await getUntrackedFileDiff(cwd, file);
 
     if (fileDiff) {
       patches.push(fileDiff);
@@ -1028,8 +1034,16 @@ async function getStateAndMessages(agent = requireActiveAgent()): Promise<Sessio
   };
 }
 
-async function getSessionStats() {
-  const response = await sendCommand<Extract<RpcResponse, { command: "get_session_stats"; success: true }>>(requireActiveAgent(), { type: "get_session_stats" });
+async function getSessionStats(_worktreePath?: string) {
+  const agent = getActiveAgent();
+
+  if (!agent) {
+    return null;
+  }
+
+  const response = await sendCommand<Extract<RpcResponse, { command: "get_session_stats"; success: true }>>(agent, {
+    type: "get_session_stats",
+  });
   return response.data;
 }
 
@@ -1213,13 +1227,15 @@ ipcMain.handle("pi:connect-repo", async (_event, repoPath: string, selectedSessi
 ipcMain.handle("pi:list-sessions", listPiSessions);
 ipcMain.handle("pi:list-repo-sessions", async (_event, repoPath: string, markRecent?: boolean) => listSessionsForRepo(repoPath, markRecent));
 ipcMain.handle("pi:delete-session", async (_event, repoPath: string, sessionPath: string) => deletePiSession(repoPath, sessionPath));
-ipcMain.handle("pi:get-session-stats", getSessionStats);
-ipcMain.handle("pi:get-session-diff", getSessionDiff);
-ipcMain.handle("pi:reveal-worktree", () => {
-  const agent = requireActiveAgent();
-  shell.showItemInFolder(agent.worktreePath);
-  return agent.worktreePath;
+ipcMain.handle("pi:get-session-stats", (_event, worktreePath?: string) => getSessionStats(worktreePath));
+ipcMain.handle("pi:get-session-diff", (_event, worktreePath?: string) => getSessionDiff(worktreePath));
+ipcMain.handle("pi:reveal-worktree", (_event, worktreePath?: string) => {
+  const targetPath = worktreePath ?? requireActiveAgent().worktreePath;
+  shell.showItemInFolder(targetPath);
+  return targetPath;
 });
+ipcMain.handle("agent-server:get-url", () => getAgentServerUrl());
+ipcMain.handle("agent-server:get-transport", () => getAgentTransportFromEnv());
 ipcMain.handle("worktrees:list", () => listWorktrees());
 ipcMain.handle("worktrees:reveal", async (_event, worktreePath: string) => {
   const indexed = getAllSessionWorktrees().some((worktree) => worktree.worktreePath === worktreePath);
@@ -1334,7 +1350,9 @@ ipcMain.handle("preferences:reveal-database", () => {
   return databasePath;
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await startAgentServerProcess();
+
   nativeTheme.on("updated", () => {
     mainWindow?.setBackgroundColor(getWindowBackgroundColor());
   });
@@ -1350,6 +1368,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   void stopAllPiAgents();
+  void stopAgentServerProcess();
   closePreferencesDatabase();
 });
 
