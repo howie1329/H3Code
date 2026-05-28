@@ -336,7 +336,7 @@
                 │ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ │
                 └─────────┼─────────────────┼─────────────────┼──────────────────┘
                 ▼ ▼ ▼
-                pi --mode rpc Codex Server API Cursor API / CLI</div>
+                PI SDK runtime Codex Server API Cursor API / CLI</div>
             <div class="callout ok">
                 <strong>Product boundary unchanged</strong>
                 Providers own sessions, messages, tools, models, and runtime behavior.
@@ -370,21 +370,25 @@
 
         <section id="current">
             <h2>3. Current state</h2>
-            <p>Today the desktop app uses a flat stack:</p>
-            <div class="diagram">Svelte renderer → preload IPC → Electron main (~1.3k LOC) → pi --mode rpc (JSONL)</div>
+            <p>Today the desktop app uses the Agent Server path by default:</p>
+            <div class="diagram">Svelte renderer → AgentClient (WebSocket) → @h3code/agent-server → PiAgentProvider → in-process PI SDK</div>
             <ul>
-                <li>IPC channels and <code>window.h3code</code> types are PI-specific (<code>PiSessionState</code>,
-                    <code>pi:connect-repo</code>, etc.).
+                <li>Electron main supervises the local server and keeps only thin native shell IPC for app version,
+                    repo selection, reveal-in-Finder, and preferences database reveal.
                 </li>
-                <li><code>@earendil-works/pi-coding-agent</code> RPC types are used directly in the main process.</li>
-                <li><code>src/lib/pi-session/</code> already maps PI RPC events → <code>SessionDomainEvent</code> → UI
-                    read model (keep this pattern; move PI mapping into <code>PiProvider</code>).</li>
-                <li>Git, worktrees, and SQLite preferences live in Electron main alongside RPC.</li>
+                <li><code>@h3code/agent-server</code> owns WebSocket routing, connection lifecycle, provider registry,
+                    platform services, and the SQLite-backed metadata/preferences boundary.</li>
+                <li><code>@h3code/pi-provider</code> implements the current PI provider through the in-process PI SDK,
+                    maps PI events into <code>SessionDomainEvent</code>, and handles extension UI bridging.</li>
+                <li><code>@h3code/agent-core</code> defines the provider-neutral protocol, capability flags, provider
+                    interface, session summaries, snapshots, and workspace diff types.</li>
+                <li>The renderer uses the WebSocket client, but parts of the desktop API and UI state are still
+                    PI-shaped (<code>PiSessionState</code>, <code>PiStatus</code>, <code>PiSlashCommand</code>).</li>
             </ul>
             <p>
-                The refactor extracts the main process’s agent and orchestration logic into a standalone server and
-                replaces IPC with WebSocket for the UI boundary.
-                Electron becomes a host: window management, native dialogs, optional process supervision for the server.
+                The major IPC-to-WebSocket migration is complete. The next architecture work is hardening the local
+                server boundary, making session discovery provider-aware, and removing remaining PI-shaped renderer
+                abstractions before adding Codex and Cursor providers.
             </p>
         </section>
 
@@ -406,14 +410,14 @@
                 Native affordances (directory picker, reveal in Finder, executable picker) may remain as a thin Electron
                 bridge until the server exposes equivalent hooks or the UI handles them locally.
             </p>
-            <h3>4.2 Package layout (proposed)</h3>
+            <h3>4.2 Package layout</h3>
             <pre>packages/
   agent-core/          # Shared types: domain events, provider interface, WS message shapes
   agent-server/        # HTTP + WebSocket server, connection manager, platform services
-  providers/
-    pi/                # PiProvider — JSONL subprocess
-    codex/             # CodexProvider — Codex Server client
-    cursor/            # CursorProvider — TBD transport
+  agent-metadata/      # SQLite metadata index, recent repos, desktop settings
+  pi-provider/         # PiProvider — in-process PI SDK runtime
+  codex-provider/      # Future CodexProvider — Codex Server client
+  cursor-provider/     # Future CursorProvider — TBD transport
 apps/
   desktop/             # Electron shell + Svelte UI (WS client)
   web/                 # Marketing site (unchanged unless later uses server)</pre>
@@ -605,16 +609,14 @@ UI ← { type: "session.event", connectionId: "c-abc", event: { type: "message.s
 
             <div class="phase">
                 <h3><span class="badge pi">Phase 1 — PI</span></h3>
-                <p><strong>Transport:</strong> subprocess <code>pi --mode rpc</code>, stdin/stdout JSONL (existing
-                    behavior).</p>
+                <p><strong>Transport:</strong> in-process PI SDK runtime via <code>@h3code/pi-provider</code>.</p>
                 <ul>
-                    <li>Implement <code>PiProvider</code> by moving logic from <code>electron/main.ts</code>: spawn,
-                        JSONL reader, RPC queue, extension UI.</li>
-                    <li>Map PI RPC → <code>SessionDomainEvent</code> inside the provider (today’s
-                        <code>pi-session/adapter.ts</code>).
+                    <li><code>PiAgentProvider</code> is registered by product startup and adapts PI SDK sessions to the
+                        shared <code>AgentProvider</code> interface.</li>
+                    <li>Map PI SDK events → <code>SessionDomainEvent</code> inside the provider.
                     </li>
-                    <li>Reach parity with current desktop: connect repo, sessions, prompt/steer/follow-up/abort, models,
-                        slash commands, extension UI.</li>
+                    <li>Current parity covers connect repo, sessions, prompt/steer/follow-up/abort, models,
+                        slash commands, queue settings, compaction, extension UI, and workspace diff updates.</li>
                 </ul>
             </div>
 
@@ -774,20 +776,20 @@ UI ← { type: "session.event", connectionId: "c-abc", event: { type: "message.s
             <h2>10. Migration phases</h2>
             <ol>
                 <li>
-                    <strong>Extract <code>agent-core</code></strong> — <code>SessionDomainEvent</code>, provider types,
-                    WebSocket message unions (no runtime change).
+                    <strong>Extract <code>agent-core</code></strong> — complete for the current protocol:
+                    <code>SessionDomainEvent</code>, provider types, capability flags, and WebSocket message unions.
                 </li>
                 <li>
-                    <strong>Stand up Agent Server</strong> — localhost WebSocket, health check, <code>PiProvider</code>
-                    only.
+                    <strong>Stand up Agent Server</strong> — complete for PI: localhost WebSocket, health check,
+                    provider registry, connection manager, platform services, and <code>PiAgentProvider</code>.
                 </li>
                 <li>
-                    <strong>Switch desktop UI</strong> — replace <code>window.h3code</code> IPC invoke/event listeners
-                    with WS client; keep Electron for window + native dialogs.
+                    <strong>Switch desktop UI</strong> — complete for agent commands/events: renderer uses
+                    <code>AgentClient</code> over WebSocket; Electron remains for window + native dialogs.
                 </li>
                 <li>
-                    <strong>Delete PI logic from Electron main</strong> — main spawns server and optionally opens
-                    devtools bridge.
+                    <strong>Delete PI logic from Electron main</strong> — complete: main supervises the server and
+                    exposes only native shell affordances.
                 </li>
                 <li>
                     <strong>Add <code>CodexProvider</code></strong> — provider picker in settings; capability-gated UI.

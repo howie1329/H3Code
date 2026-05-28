@@ -16,8 +16,8 @@ It is intentionally small and type-focused. It does not run providers, open sock
 
 - WebSocket server implementation.
 - Electron IPC or native dialogs.
-- PI JSONL RPC mapping.
-- Codex App Server client code.
+- PI SDK event mapping.
+- Codex Server client code.
 - Cursor SDK client code.
 - SQLite preferences or metadata indexing.
 - Transcript persistence.

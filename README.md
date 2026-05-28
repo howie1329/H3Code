@@ -1,6 +1,6 @@
 # H3Code
 
-H3Code is a local desktop workbench for coding agents. Today it is an Electron and SvelteKit desktop UI around PI Agent in RPC mode. The architecture is evolving toward a local Agent Server that gives the UI one H3Code-owned protocol for multiple providers.
+H3Code is a local desktop workbench for coding agents. Today it is an Electron and SvelteKit desktop UI that talks to a local Agent Server over WebSocket. PI Agent is the current working provider; the Agent Server gives the UI one H3Code-owned protocol that can grow to support multiple providers.
 
 PI remains the current working provider and the source of truth for sessions, messages, tool execution, model behavior, queueing, compaction, and retry. H3Code owns the local experience around that runtime: repo selection, process lifecycle, connection diagnostics, UI state, rendering, metadata indexing, and preferences.
 
@@ -18,12 +18,12 @@ Current desktop path:
 
 ```txt
 Svelte renderer
-  -> preload IPC bridge
-    -> Electron main process
-      -> pi --mode rpc subprocess
+  -> AgentClient (WebSocket)
+    -> @h3code/agent-server (localhost)
+      -> PiAgentProvider (@h3code/pi-provider, in-process PI SDK)
 ```
 
-Target direction:
+Provider direction:
 
 ```txt
 Svelte renderer
@@ -33,12 +33,14 @@ Svelte renderer
         -> actual provider runtime
 ```
 
-The first server packages now exist:
+The server packages now exist:
 
 - `@h3code/agent-core` defines provider-neutral H3Code protocol and provider contracts.
-- `@h3code/agent-server` provides a local Node/WebSocket server skeleton with a temporary noop provider.
+- `@h3code/agent-server` provides the local Node/WebSocket server, routing, connection management, provider registry, and platform services.
+- `@h3code/pi-provider` implements the current PI provider with the in-process PI SDK.
+- `@h3code/agent-metadata` stores recent repos, indexed session metadata, desktop settings, and related local metadata.
 
-The desktop app still uses the existing PI IPC path until PI provider extraction and UI WebSocket migration are complete.
+Electron main now supervises the local server and native shell affordances. The legacy PI IPC path has been removed.
 
 ## Product Boundary
 
@@ -60,22 +62,23 @@ H3Code should not persist transcripts or become the source of truth for provider
 
 ## Current Desktop Status
 
-The desktop app currently implements the core PI RPC loop:
+The desktop app currently implements the core PI provider loop through the Agent Server:
 
 - Select a local repo with the native directory picker.
-- Launch `pi --mode rpc` with that repo as the subprocess working directory.
+- Start the local Agent Server and connect the renderer over WebSocket.
+- Create an in-process PI SDK provider session for the selected repo.
 - List PI sessions for repos.
 - Switch sessions and create new PI-owned sessions.
 - Load PI state, messages, and session stats.
-- Send prompts, steer, and follow-up messages through PI RPC.
+- Send prompts, steer, and follow-up messages through the H3Code WebSocket protocol.
 - Abort active runs.
 - Render transcript messages, streaming assistant output, tool blocks, runtime diagnostics, extension UI, and recent tool activity.
 
 Still planned:
 
-- Extract PI subprocess/RPC handling into `PiProvider`.
-- Switch desktop UI commands/events from preload IPC to local Agent Server WebSocket.
-- Add Codex App Server and Cursor providers behind the same H3Code protocol.
+- Harden the local WebSocket boundary with startup auth and fuller payload validation.
+- Continue removing PI-shaped renderer types above the provider-neutral protocol.
+- Add Codex Server and Cursor providers behind the same H3Code protocol.
 
 ## Repository Shape
 
@@ -85,7 +88,9 @@ apps/
   web/           # SvelteKit marketing site
 packages/
   agent-core/    # H3Code protocol, domain events, provider contracts
-  agent-server/  # Local Node/WebSocket server skeleton
+  agent-server/  # Local Node/WebSocket server
+  agent-metadata/# Local metadata and desktop preferences
+  pi-provider/   # In-process PI SDK provider
 docs/
   h3code-agent-server-product.md
   agent-server-architecture.html.html
@@ -102,8 +107,8 @@ docs/
 - Tailwind CSS
 - shadcn-svelte / Bits UI
 - Node.js + `ws` for the local Agent Server
-- PI Agent RPC over stdin/stdout JSONL for the current provider path
-- SQLite metadata index and desktop settings (`apps/desktop/electron/preferences.ts`)
+- In-process PI SDK provider for the current provider path
+- SQLite metadata index and desktop settings (`@h3code/agent-metadata`)
 
 ## Local Development
 

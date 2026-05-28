@@ -2,20 +2,21 @@
 
 `@h3code/pi-provider` is the SDK-backed PI provider package for H3Code.
 
-It is intentionally independent from `@h3code/agent-core` for v1. The package proves the PI SDK runtime path first, then a later milestone can adapt or rewrite the shared Agent Core contracts with real provider behavior in hand.
+It owns the PI SDK runtime path and includes the `PiAgentProvider` adapter used by `@h3code/agent-server` through the shared `@h3code/agent-core` provider contract.
 
 ## Owns
 
 - PI SDK runtime creation with `createAgentSessionRuntime()`.
 - Persistent PI session targets through `SessionManager`.
 - Prompt, steer, follow-up, abort, session switching, and new-session flows.
-- PI SDK event mapping into provisional H3Code-friendly provider events.
+- PI SDK event mapping into H3Code session domain events.
+- Agent Core compatibility through `PiAgentProvider`.
 - Extension UI request/response bridging.
 
 ## Does Not Own
 
 - Agent Server WebSocket routing.
-- Agent Core compatibility wrappers.
+- Provider-neutral WebSocket protocol definitions.
 - Desktop IPC.
 - Worktree creation or cleanup.
 - Git diff collection.
