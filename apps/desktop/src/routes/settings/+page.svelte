@@ -3,6 +3,7 @@
   import { mode, setMode } from "mode-watcher";
 
   import ConfirmDeleteDialog from "$lib/components/desktop/ConfirmDeleteDialog.svelte";
+  import SegmentedControl from "$lib/components/desktop/SegmentedControl.svelte";
   import SettingsListRow from "$lib/components/desktop/SettingsListRow.svelte";
   import SettingsRow from "$lib/components/desktop/SettingsRow.svelte";
   import SettingsSection from "$lib/components/desktop/SettingsSection.svelte";
@@ -13,7 +14,16 @@
 
   const piDocsUrl = "https://pi.dev/docs";
 
-  const segmentedButtonClass = "h-8 text-[11px] capitalize";
+  const themeOptions = [
+    { value: "light", label: "Light" },
+    { value: "dark", label: "Dark" },
+    { value: "system", label: "System" },
+  ] as const;
+
+  const deliveryOptions = [
+    { value: "one-at-a-time", label: "One" },
+    { value: "all", label: "All" },
+  ] as const;
 
   let appVersion = $state("…");
   let repoRemovalOpen = $state(false);
@@ -79,18 +89,12 @@
       <SettingsSection id="appearance" title="Appearance" description="Theme and visual defaults.">
         <SettingsRow label="Color theme" description="Light, dark, or match your system.">
           {#snippet control()}
-            <div class="flex flex-wrap gap-1" role="group" aria-label="Color theme">
-              {#each ["light", "dark", "system"] as themeOption}
-                <Button
-                  variant={mode.current === themeOption ? "default" : "outline"}
-                  size="sm"
-                  class={segmentedButtonClass}
-                  onclick={() => setMode(themeOption as "light" | "dark" | "system")}
-                >
-                  {themeOption}
-                </Button>
-              {/each}
-            </div>
+            <SegmentedControl
+              ariaLabel="Color theme"
+              options={themeOptions}
+              value={mode.current}
+              onChange={(value) => setMode(value)}
+            />
           {/snippet}
         </SettingsRow>
       </SettingsSection>
@@ -181,19 +185,13 @@
           description="How queued steer messages are delivered while the agent is running."
         >
           {#snippet control()}
-            <div class="flex flex-wrap gap-1" role="group" aria-label="Steering delivery mode">
-              {#each ["one-at-a-time", "all"] as queueMode}
-                <Button
-                  variant={desktopState.sessionState?.steeringMode === queueMode ? "default" : "outline"}
-                  size="sm"
-                  class="h-8 text-[11px]"
-                  disabled={queueControlsDisabled}
-                  onclick={() => desktopState.setSteeringMode(queueMode as PiQueueMode)}
-                >
-                  {queueMode === "one-at-a-time" ? "One" : "All"}
-                </Button>
-              {/each}
-            </div>
+            <SegmentedControl
+              ariaLabel="Steering delivery mode"
+              options={deliveryOptions}
+              value={desktopState.sessionState?.steeringMode}
+              disabled={queueControlsDisabled}
+              onChange={(value) => desktopState.setSteeringMode(value as PiQueueMode)}
+            />
           {/snippet}
         </SettingsRow>
 
@@ -202,19 +200,13 @@
           description="How follow-up messages are delivered after the agent stops."
         >
           {#snippet control()}
-            <div class="flex flex-wrap gap-1" role="group" aria-label="Follow-up delivery mode">
-              {#each ["one-at-a-time", "all"] as queueMode}
-                <Button
-                  variant={desktopState.sessionState?.followUpMode === queueMode ? "default" : "outline"}
-                  size="sm"
-                  class="h-8 text-[11px]"
-                  disabled={queueControlsDisabled}
-                  onclick={() => desktopState.setFollowUpMode(queueMode as PiQueueMode)}
-                >
-                  {queueMode === "one-at-a-time" ? "One" : "All"}
-                </Button>
-              {/each}
-            </div>
+            <SegmentedControl
+              ariaLabel="Follow-up delivery mode"
+              options={deliveryOptions}
+              value={desktopState.sessionState?.followUpMode}
+              disabled={queueControlsDisabled}
+              onChange={(value) => desktopState.setFollowUpMode(value as PiQueueMode)}
+            />
           {/snippet}
         </SettingsRow>
 
@@ -234,22 +226,25 @@
         </SettingsRow>
 
         {#if sessionConnected}
-          <div class="space-y-2 px-2 py-1 text-xs" role="status" aria-live="polite">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <span class="text-muted-foreground">Agent</span>
-              <span class="font-medium capitalize">{desktopState.piStatus.state}</span>
+          <dl class="flex flex-col gap-2.5 px-2 pt-1 text-xs" role="status" aria-live="polite">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <dt class="text-muted-foreground">Agent</dt>
+              <dd class="flex items-center gap-1.5 font-medium capitalize">
+                <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
+                {desktopState.piStatus.state}
+              </dd>
             </div>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <span class="text-muted-foreground">Repository</span>
-              <span class="truncate font-medium">{desktopState.repoName}</span>
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <dt class="text-muted-foreground">Repository</dt>
+              <dd class="min-w-0 truncate font-medium">{desktopState.repoName}</dd>
             </div>
             {#if desktopState.sessionState?.thinkingLevel}
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <span class="text-muted-foreground">Thinking</span>
-                <span class="font-medium capitalize">{desktopState.sessionState.thinkingLevel}</span>
+              <div class="flex flex-wrap items-center justify-between gap-4">
+                <dt class="text-muted-foreground">Thinking</dt>
+                <dd class="font-medium capitalize">{desktopState.sessionState.thinkingLevel}</dd>
               </div>
             {/if}
-          </div>
+          </dl>
         {:else if desktopState.piStatus.diagnostic}
           <p class="px-2 text-[11px] text-destructive">{desktopState.piStatus.diagnostic}</p>
         {/if}
@@ -306,10 +301,10 @@
       </SettingsSection>
 
       <SettingsSection id="about" title="About" description="Application and runtime diagnostics.">
-        <dl class="grid gap-3 px-2 text-xs">
+        <dl class="flex flex-col gap-2.5 px-2 text-xs">
           <div class="flex flex-wrap items-center justify-between gap-4">
             <dt class="text-muted-foreground">Version</dt>
-            <dd class="font-medium">{appVersion}</dd>
+            <dd class="font-medium tabular-nums">{appVersion}</dd>
           </div>
           <div class="flex flex-wrap items-center justify-between gap-4">
             <dt class="text-muted-foreground">Platform</dt>
@@ -317,13 +312,13 @@
           </div>
           <div class="flex flex-wrap items-start justify-between gap-4">
             <dt class="shrink-0 text-muted-foreground">Preferences DB</dt>
-            <dd class="max-w-md truncate text-right font-mono text-[11px] font-medium">
+            <dd class="max-w-md truncate text-right font-mono text-[11px] font-medium select-text">
               {desktopState.preferencesDatabasePath ?? "Loading…"}
             </dd>
           </div>
           <div class="flex flex-wrap items-center justify-between gap-4">
             <dt class="text-muted-foreground">Indexed repos</dt>
-            <dd class="font-medium">{desktopState.repos.length}</dd>
+            <dd class="font-medium tabular-nums">{desktopState.repos.length}</dd>
           </div>
           {#if desktopState.piStatus.diagnostic && !sessionConnected}
             <div class="flex flex-wrap items-start justify-between gap-4">
