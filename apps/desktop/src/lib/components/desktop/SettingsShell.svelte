@@ -16,7 +16,6 @@
     { id: "workspace", label: "Workspace", href: "/settings#workspace" },
     { id: "agent", label: "Agent", href: "/settings#agent" },
     { id: "data", label: "Data", href: "/settings#data" },
-    { id: "worktrees", label: "Worktrees", href: "/settings#worktrees" },
     { id: "about", label: "About", href: "/settings#about" },
   ] as const;
 
@@ -109,29 +108,34 @@
   });
 </script>
 
-<PageShell>
+<PageShell header="settings">
   <div class="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden md:flex-row">
     <nav
-      class="flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 px-4 py-2 md:w-44 md:shrink-0 md:flex-col md:border-b-0 md:border-r md:px-0 md:py-4"
-      aria-label="Settings"
+      class="flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 px-3 py-2 md:w-52 md:shrink-0 md:flex-col md:gap-0.5 md:border-b-0 md:border-r md:px-0 md:py-3"
+      aria-label="Settings sections"
     >
+      <p
+        class="hidden px-3 pb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase md:block"
+      >
+        Sections
+      </p>
       {#each sections as section (section.id)}
         <a
           href={section.href}
           class={cn(
-            "shrink-0 rounded-full px-2.5 py-1.5 text-xs whitespace-nowrap transition-colors md:mx-4",
+            "inline-flex h-7 shrink-0 items-center rounded-full px-2.5 text-xs whitespace-nowrap transition-colors md:mx-2 md:w-[calc(100%-1rem)]",
             activeSection === section.id
               ? "bg-accent font-medium text-foreground"
               : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
-          aria-current={activeSection === section.id ? "page" : undefined}
+          aria-current={activeSection === section.id ? "true" : undefined}
           onclick={(event) => handleNavClick(event, section.id)}
         >
           {section.label}
         </a>
       {/each}
     </nav>
-    <div bind:this={contentRef} class="min-h-0 min-w-0 flex-1 overflow-y-auto p-6">
+    <div bind:this={contentRef} class="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
       {@render children()}
     </div>
   </div>

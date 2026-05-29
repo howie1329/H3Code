@@ -13,11 +13,13 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "svelte-check --tsconfig ./tsconfig.json",
     "test:pi-session": "tsc -p tsconfig.pi-session-test.json && node --test dist-electron/src/lib/pi-session/projector.test.js",
-    "test:preferences": "tsc -p tsconfig.preferences-test.json && node --test dist-electron/electron/preferences.test.js dist-electron/electron/worktree-inventory.test.js"
+    "test:preferences": "npm run test --workspace @h3code/agent-metadata",
+    "test:agent-lib": "tsc -p tsconfig.agent-lib-test.json && node --test dist-agent-lib-test/agent-adapters.test.js",
+    "test:transcript-normalize": "tsc -p tsconfig.transcript-test.json && node --test dist-transcript-test/transcript-render.test.js"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",
-    "@hugeicons/core-free-icons": "^4.1.4",
+    "@hugeicons/core-free-icons": "^4.2.0",
     "@hugeicons/svelte": "^1.1.2",
     "@internationalized/date": "^3.12.1",
     "@sveltejs/adapter-static": "^3.0.0",
@@ -42,7 +44,9 @@
     "wait-on": "^9.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.75.4",
+    "@h3code/agent-core": "*",
+    "@h3code/agent-metadata": "*",
+    "@h3code/agent-server": "*",
     "@lucide/svelte": "^1.16.0",
     "@pierre/diffs": "^1.2.3",
     "@shikijs/langs": "^4.1.0",

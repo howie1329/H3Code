@@ -17,6 +17,10 @@ import {
   statusStripLines as selectStatusStripLines,
   transcriptMessages as selectTranscriptMessages,
 } from "$lib/pi-session/selectors.js";
+import type { ProviderCapabilities } from "@h3code/agent-core";
+
+import { getDesktopAgentApi } from "$lib/desktop-agent-api.js";
+import { getDesktopShellApi } from "$lib/desktop-shell-api.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
 
 export type WorkspaceInspector = "diff" | "context";
@@ -51,6 +55,8 @@ const defaultDesktopSettings: DesktopSettings = {
   autoConnectOnLaunch: false,
 };
 
+export const LANDING_ADD_REPO_VALUE = "__add_repository__";
+
 type OptimisticUserMessage = {
   id: string;
   role: "user";
@@ -65,7 +71,14 @@ type AgentSessionEvent = SessionDomainEvent & {
 
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
+  providerCapabilities = $state<ProviderCapabilities | null>(null);
+  supportsSlashCommands = $derived(this.providerCapabilities?.ui.commands === true);
+  supportsModelPicker = $derived(this.providerCapabilities?.ui.modelsList === true);
+  supportsQueueSettings = $derived(this.providerCapabilities?.ui.queueSettings === true);
+  supportsCompactionSettings = $derived(this.providerCapabilities?.ui.compaction === true);
   promptValue = $state("");
+  landingRepoPath = $state<string | undefined>();
+  landingPromptValue = $state("");
   activeAgentId = $state<string | undefined>();
   repoPath = $state<string | undefined>();
   worktreePath = $state<string | undefined>();
@@ -80,9 +93,6 @@ class DesktopState {
   sessionDiffLoading = $state(false);
   sessionDiffError = $state<string | undefined>();
   sessionDiffPanelOpen = $state(false);
-  worktrees = $state<PiWorktreeSummary[]>([]);
-  worktreesLoading = $state(false);
-  worktreesError = $state<string | undefined>();
   slashCommands = $state<PiSlashCommand[]>([]);
   slashCommandsLoading = $state(false);
   slashCommandsError = $state<string | undefined>();
@@ -104,7 +114,6 @@ class DesktopState {
   errorMessage = $state<string | undefined>();
   preferencesLoaded = $state(false);
   preferencesDatabasePath = $state<string | undefined>();
-  piExecutablePath = $state("pi");
   extensionUiRequest = $state<PiExtensionUiRequest | undefined>();
   desktopSettings = $state<DesktopSettings>(defaultDesktopSettings);
 
@@ -115,6 +124,19 @@ class DesktopState {
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
   canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  hasActiveWorkspaceSession = $derived(
+    Boolean(this.selectedSessionPath || this.sessionState?.sessionFile),
+  );
+  canSubmitLanding = $derived(
+    Boolean(this.landingRepoPath && this.landingPromptValue.trim()) &&
+      !this.isBusy &&
+      !this.isSendingPrompt,
+  );
+  landingRepoName = $derived(
+    this.landingRepoPath
+      ? (this.repos.find((repo) => repo.path === this.landingRepoPath)?.name ?? basename(this.landingRepoPath))
+      : undefined,
+  );
   isAgentRunning = $derived(this.sessionReadModel.isAgentRunning);
   canChangeSessionSettings = $derived(
     this.canUseSession && !this.isBusy && !this.isSendingPrompt && !this.isAgentRunning && !this.sessionState?.isStreaming,
@@ -158,63 +180,88 @@ class DesktopState {
     }
   }
 
+  async ensureLandingRoute() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (window.location.pathname !== "/") {
+      await goto("/");
+    }
+  }
+
+  focusLandingComposer() {
+    window.dispatchEvent(new CustomEvent("h3code:focus-landing-composer"));
+  }
+
   initializeListeners() {
-    const removeSessionEventListener = window.h3code?.onSessionEvent((event) => {
-      this.handleSessionEvent(event);
-    });
+    const agentApi = getDesktopAgentApi();
 
-    const removeStatusListener = window.h3code?.onPiStatus((status) => {
-      if (status.agentId) {
-        this.agentStatuses = {
-          ...this.agentStatuses,
-          [status.agentId]: status,
-        };
-
-        if (!this.activeAgentId) {
-          this.activeAgentId = status.agentId;
-        }
-      }
-
-      const isActiveStatus = !status.agentId || status.agentId === this.activeAgentId;
-
-      if (isActiveStatus) {
-        this.piStatus = status;
-
-        if (status.state !== "connected") {
-          this.resetSlashCommands();
-          this.resetModels();
-          this.resetSessionReadModel();
-          this.resetSessionDiff();
-          this.clearExtensionUiRequest();
-          this.cancelDebouncedDiffRefresh();
-        }
-
-        if (status.diagnostic) {
-          this.errorMessage = status.diagnostic;
-        }
-      }
-    });
-
-    const removeExtensionUiListener = window.h3code?.onExtensionUiRequest((request) => {
-      const agentId = request.agentId ?? this.activeAgentId;
-
-      if (agentId) {
-        this.extensionUiRequestsByAgent = {
-          ...this.extensionUiRequestsByAgent,
-          [agentId]: request,
-        };
-      }
-
-      if (!agentId || agentId === this.activeAgentId) {
-        this.extensionUiRequest = request;
-      }
+    agentApi.setEventListeners({
+      onSessionEvent: (event) => {
+        this.handleSessionEvent(event);
+      },
+      onPiStatus: (status) => {
+        this.applyPiStatus(status);
+      },
+      onExtensionUiRequest: (request) => {
+        this.applyExtensionUiRequest(request);
+      },
+      onWorkspaceDiff: (diff) => {
+        this.applyWorkspaceDiff(diff);
+      },
     });
 
     return () => {
-      removeSessionEventListener?.();
-      removeStatusListener?.();
-      removeExtensionUiListener?.();
+      agentApi.setEventListeners({});
     };
+  }
+
+  applyPiStatus(status: PiStatus) {
+    if (status.agentId) {
+      this.agentStatuses = {
+        ...this.agentStatuses,
+        [status.agentId]: status,
+      };
+
+      if (!this.activeAgentId) {
+        this.activeAgentId = status.agentId;
+      }
+    }
+
+    const isActiveStatus = !status.agentId || status.agentId === this.activeAgentId;
+
+    if (isActiveStatus) {
+      this.piStatus = status;
+
+      if (status.state !== "connected") {
+        this.resetSlashCommands();
+        this.resetModels();
+        this.resetSessionReadModel();
+        this.resetSessionDiff();
+        this.clearExtensionUiRequest();
+        this.cancelDebouncedDiffRefresh();
+      }
+
+      if (status.diagnostic) {
+        this.errorMessage = status.diagnostic;
+      }
+    }
+  }
+
+  applyExtensionUiRequest(request: PiExtensionUiRequest) {
+    const agentId = request.agentId ?? this.activeAgentId;
+
+    if (agentId) {
+      this.extensionUiRequestsByAgent = {
+        ...this.extensionUiRequestsByAgent,
+        [agentId]: request,
+      };
+    }
+
+    if (!agentId || agentId === this.activeAgentId) {
+      this.extensionUiRequest = request;
+    }
   }
 
   async initializePreferences() {
@@ -223,17 +270,16 @@ class DesktopState {
     }
 
     try {
-      const preferences = await window.h3code.getPreferences();
+      const preferences = await this.getAgentApi().getPreferences();
       this.preferencesLoaded = true;
       this.preferencesDatabasePath = preferences.databasePath;
-      this.piExecutablePath = preferences.piExecutablePath;
       this.desktopSettings = preferences.desktopSettings;
 
       const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
       this.repos = preferences.recentRepos.map((repo) =>
         createRepo(repo.path, {
           name: repo.name,
-          expanded: repo.path === preferences.lastSelectedRepoPath,
+          expanded: false,
           sessions: indexedSessionsByRepo.get(repo.path) ?? [],
           sessionsLoaded: Boolean(repo.sessionsIndexedAt),
           sessionsLoading: false,
@@ -241,23 +287,9 @@ class DesktopState {
         }),
       );
 
-      if (preferences.lastSelectedRepoPath) {
-        this.repoPath = preferences.lastSelectedRepoPath;
-        this.selectedSessionPath = preferences.lastSelectedSessionPath;
-        this.sessions = indexedSessionsByRepo.get(preferences.lastSelectedRepoPath) ?? [];
-        await this.loadRepoSessions(preferences.lastSelectedRepoPath);
+      this.clearWorkspaceSessionState();
+      await this.ensureLandingRoute();
 
-        if (
-          preferences.desktopSettings.autoConnectOnLaunch &&
-          this.piStatus.state !== "connected"
-        ) {
-          await this.connectRepo(preferences.lastSelectedRepoPath, preferences.lastSelectedSessionPath);
-        } else {
-          await this.resyncConnectedSessionIfNeeded();
-        }
-      }
-
-      await this.refreshWorktrees();
     } catch (error) {
       this.preferencesLoaded = true;
       this.errorMessage = getErrorMessage(error);
@@ -265,7 +297,7 @@ class DesktopState {
   }
 
   async handleSelectRepo() {
-    const selected = await window.h3code?.selectRepo();
+    const selected = await this.getShellApi().selectRepo();
 
     if (!selected) {
       return;
@@ -298,7 +330,7 @@ class DesktopState {
     });
 
     try {
-      const sessions = await this.requireApi().listRepoSessions(nextRepoPath, markRecent);
+      const sessions = await this.getAgentApi().listRepoSessions(nextRepoPath, markRecent);
       this.repos = updateRepo(this.repos, nextRepoPath, {
         sessions,
         sessionsLoaded: true,
@@ -323,9 +355,15 @@ class DesktopState {
     });
   }
 
-  async connectRepoInternal(nextRepoPath: string, selectedSessionPath?: string) {
+  async connectRepoInternal(
+    nextRepoPath: string,
+    selectedSessionPath?: string,
+    options: { navigateToWorkspace?: boolean } = {},
+  ) {
+    const { navigateToWorkspace = true } = options;
     this.errorMessage = undefined;
-    const result = await this.requireApi().connectRepo(nextRepoPath, selectedSessionPath);
+    const result = await this.getAgentApi().connectRepo(nextRepoPath, selectedSessionPath);
+    this.syncProviderCapabilities();
 
     this.repoPath = result.repoPath;
     this.activeAgentId = result.agentId;
@@ -355,7 +393,46 @@ class DesktopState {
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
-    await this.ensureWorkspaceRoute();
+
+    if (navigateToWorkspace) {
+      await this.ensureWorkspaceRoute();
+    }
+  }
+
+  clearWorkspaceSessionState() {
+    this.repoPath = undefined;
+    this.activeAgentId = undefined;
+    this.worktreePath = undefined;
+    this.sessions = [];
+    this.selectedSessionPath = undefined;
+    this.sessionState = undefined;
+    this.sessionStats = null;
+    this.piStatus = { state: "disconnected" };
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+    this.resetSessionReadModel();
+    this.resetTransientTranscript();
+    this.promptValue = "";
+  }
+
+  async enterLanding(options: { repoPath?: string } = {}) {
+    this.clearWorkspaceSessionState();
+    this.landingRepoPath = options.repoPath;
+    this.landingPromptValue = "";
+    this.errorMessage = undefined;
+    await this.ensureLandingRoute();
+  }
+
+  async addRepoFromLanding() {
+    const selected = await this.getShellApi().selectRepo();
+
+    if (!selected) {
+      return;
+    }
+
+    await this.addRepo(selected.path);
+    this.landingRepoPath = selected.path;
   }
 
   async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
@@ -376,7 +453,7 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const result = await this.requireApi().switchSession(sessionPath);
+      const result = await this.getAgentApi().switchSession(sessionPath);
       this.activeAgentId = result.agentId;
       this.repoPath = result.repoPath ?? this.repoPath;
       this.worktreePath = result.worktreePath;
@@ -403,6 +480,39 @@ class DesktopState {
     });
   }
 
+  async createNewSessionForRepo(repoPath: string) {
+    const parentSessionPath = this.selectedSessionPath;
+    const result = await this.getAgentApi().newSession(parentSessionPath);
+    this.activeAgentId = result.agentId;
+    this.repoPath = result.repoPath ?? repoPath;
+    this.worktreePath = result.worktreePath;
+    this.syncActiveAgentStatus();
+    this.sessionState = result.state;
+    this.selectedSessionPath = result.state.sessionFile;
+    this.sessionStats = null;
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+    this.sessionReadModel = hydrateFromSnapshot(
+      createInitialSessionReadModel(),
+      result.state,
+      result.messages,
+    );
+    this.storeActiveAgentReadModel();
+    this.resetTransientTranscript();
+    this.sessions = await this.getAgentApi().listSessions();
+    this.repos = upsertRepo(this.repos, repoPath, {
+      expanded: true,
+      sessions: this.sessions,
+      sessionsLoaded: true,
+      sessionsLoading: false,
+      sessionsError: undefined,
+    });
+    await this.refreshSessionStats();
+    await this.refreshSessionDiff();
+    void this.ensureAvailableModels(true);
+  }
+
   async handleNewSession(repoPath = this.repoPath) {
     if (!repoPath) {
       this.errorMessage = "Select a repo before creating a session.";
@@ -413,46 +523,68 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const parentSessionPath = this.selectedSessionPath;
-
-      await this.connectRepoInternal(repoPath);
-
-      const result = await this.requireApi().newSession(parentSessionPath);
-      this.activeAgentId = result.agentId;
-      this.repoPath = result.repoPath ?? repoPath;
-      this.worktreePath = result.worktreePath;
-      this.syncActiveAgentStatus();
-      this.sessionState = result.state;
-      this.selectedSessionPath = result.state.sessionFile;
-      this.sessionStats = null;
-      this.resetSessionDiff();
-      this.resetSlashCommands();
-      this.resetModels();
-      this.sessionReadModel = hydrateFromSnapshot(
-        createInitialSessionReadModel(),
-        result.state,
-        result.messages,
-      );
-      this.storeActiveAgentReadModel();
-      this.resetTransientTranscript();
-      this.sessions = await this.requireApi().listSessions();
-      this.repos = upsertRepo(this.repos, repoPath, {
-        expanded: true,
-        sessions: this.sessions,
-        sessionsLoaded: true,
-        sessionsLoading: false,
-        sessionsError: undefined,
-      });
-      await this.refreshSessionStats();
-      await this.refreshSessionDiff();
-      void this.ensureAvailableModels(true);
+      await this.connectRepoInternal(repoPath, undefined, { navigateToWorkspace: true });
+      await this.createNewSessionForRepo(repoPath);
     });
+  }
+
+  async startSessionFromLanding(repoPath: string, promptText: string) {
+    const text = promptText.trim();
+
+    if (!repoPath || !text) {
+      return;
+    }
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+
+      try {
+        await this.connectRepoInternal(repoPath, undefined, { navigateToWorkspace: false });
+        await this.createNewSessionForRepo(repoPath);
+        this.landingPromptValue = "";
+        await this.ensureWorkspaceRoute();
+        await this.sendPromptText(text);
+      } catch (error) {
+        this.errorMessage = getErrorMessage(error);
+      }
+    });
+  }
+
+  async sendPromptText(text: string) {
+    if (!text || !this.canUseSession) {
+      return;
+    }
+
+    const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
+    const optimisticMessage = createOptimisticUserMessage(text);
+    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
+    this.isSendingPrompt = true;
+
+    try {
+      this.errorMessage = undefined;
+
+      if (isRunning) {
+        await this.getAgentApi().sendFollowUp(text);
+      } else {
+        await this.getAgentApi().sendPrompt(text);
+      }
+
+      this.promptValue = "";
+    } catch (error) {
+      this.pendingUserMessages = this.pendingUserMessages.filter(
+        (pendingMessage) => pendingMessage.id !== optimisticMessage.id,
+      );
+      this.errorMessage = getErrorMessage(error);
+      throw error;
+    } finally {
+      this.isSendingPrompt = false;
+    }
   }
 
   async removeRepoFromIndex(repoPath: string) {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const preferences = await this.requireApi().removeIndexedRepo(repoPath);
+      const preferences = await this.getAgentApi().removeIndexedRepo(repoPath);
       const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
       this.preferencesDatabasePath = preferences.databasePath;
       this.desktopSettings = preferences.desktopSettings;
@@ -481,7 +613,6 @@ class DesktopState {
         this.resetTransientTranscript();
       }
 
-      await this.refreshWorktrees();
     });
   }
 
@@ -494,7 +625,7 @@ class DesktopState {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
       const deletingActiveSession = sessionPath === this.selectedSessionPath || sessionPath === this.sessionState?.sessionFile;
-      const sessions = await this.requireApi().deletePiSession(repoPath, sessionPath);
+      const sessions = await this.getAgentApi().deleteSession(repoPath, sessionPath);
       this.repos = upsertRepo(this.repos, repoPath, {
         sessions,
         sessionsLoaded: true,
@@ -514,9 +645,9 @@ class DesktopState {
         this.resetSlashCommands();
         this.resetSessionReadModel();
         this.resetTransientTranscript();
+        await this.enterLanding({ repoPath });
       }
 
-      await this.refreshWorktrees();
     });
   }
 
@@ -531,7 +662,7 @@ class DesktopState {
 
     try {
       this.errorMessage = undefined;
-      await this.requireApi().sendSteer(text);
+      await this.getAgentApi().sendSteer(text);
       this.promptValue = "";
     } catch (error) {
       this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
@@ -550,33 +681,17 @@ class DesktopState {
       return;
     }
 
-    const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
-    const optimisticMessage = createOptimisticUserMessage(text);
-    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
-    this.isSendingPrompt = true;
-
     try {
-      this.errorMessage = undefined;
-
-      if (isRunning) {
-        await this.requireApi().sendFollowUp(text);
-      } else {
-        await this.requireApi().sendPrompt(text);
-      }
-
-      this.promptValue = "";
-    } catch (error) {
-      this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
-      this.errorMessage = getErrorMessage(error);
-    } finally {
-      this.isSendingPrompt = false;
+      await this.sendPromptText(text);
+    } catch {
+      // sendPromptText records errorMessage
     }
   }
 
   async handleAbort() {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      await this.requireApi().abort();
+      await this.getAgentApi().abort();
       await this.refreshActiveSessionData();
       this.resetTransientTranscript();
     });
@@ -594,7 +709,7 @@ class DesktopState {
     }
 
     try {
-      const result = await this.requireApi().getSessionSnapshot();
+      const result = await this.getAgentApi().getSessionSnapshot();
       this.applySessionSnapshot(result);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
@@ -647,7 +762,7 @@ class DesktopState {
     this.sessionStatsError = undefined;
 
     try {
-      this.sessionStats = await this.requireApi().getSessionStats();
+      this.sessionStats = await this.getAgentApi().getSessionStatsFromSnapshot();
     } catch (error) {
       this.sessionStatsError = getErrorMessage(error);
     } finally {
@@ -665,7 +780,7 @@ class DesktopState {
     this.sessionDiffError = undefined;
 
     try {
-      this.sessionDiff = await this.requireApi().getSessionDiff();
+      this.sessionDiff = await this.getAgentApi().getSessionDiff();
 
       if (!this.hasSessionDiff) {
         this.sessionDiffPanelOpen = false;
@@ -739,7 +854,30 @@ class DesktopState {
     }
   }
 
+  applyWorkspaceDiff(diff: PiSessionDiff) {
+    this.sessionDiff = diff;
+    this.sessionDiffLoading = false;
+    this.sessionDiffError = undefined;
+
+    if (!this.hasSessionDiff) {
+      this.sessionDiffPanelOpen = false;
+    } else if (this.desktopSettings.preferDiffPanel) {
+      this.sessionDiffPanelOpen = true;
+    }
+  }
+
+  syncProviderCapabilities() {
+    this.providerCapabilities = this.getAgentApi().getProviderCapabilities() ?? null;
+  }
+
   async ensureSlashCommands(refresh = false) {
+    if (!this.supportsSlashCommands) {
+      this.slashCommands = [];
+      this.slashCommandsLoaded = true;
+      this.slashCommandsError = undefined;
+      return;
+    }
+
     const sessionKey = this.selectedSessionPath ?? this.sessionState?.sessionFile;
 
     if (!this.canUseSession || !sessionKey) {
@@ -761,7 +899,7 @@ class DesktopState {
     this.slashCommandsError = undefined;
 
     try {
-      const commands = await this.requireApi().getCommands();
+      const commands = await this.getAgentApi().getCommands();
 
       if (sessionKey !== (this.selectedSessionPath ?? this.sessionState?.sessionFile)) {
         return;
@@ -787,6 +925,13 @@ class DesktopState {
   }
 
   async ensureAvailableModels(refresh = false) {
+    if (!this.supportsModelPicker) {
+      this.availableModels = [];
+      this.modelsLoaded = true;
+      this.modelsError = undefined;
+      return;
+    }
+
     const sessionKey = this.selectedSessionPath ?? this.sessionState?.sessionFile;
 
     if (!this.canUseSession || !sessionKey) {
@@ -808,7 +953,7 @@ class DesktopState {
     this.modelsError = undefined;
 
     try {
-      const models = await this.requireApi().getAvailableModels();
+      const models = await this.getAgentApi().getAvailableModels();
 
       if (sessionKey !== (this.selectedSessionPath ?? this.sessionState?.sessionFile)) {
         return;
@@ -839,7 +984,7 @@ class DesktopState {
     }
 
     try {
-      const model = await this.requireApi().setModel(provider, modelId);
+      const model = await this.getAgentApi().setModel(provider, modelId);
 
       if (this.sessionState) {
         this.sessionState = {
@@ -860,7 +1005,7 @@ class DesktopState {
     }
 
     try {
-      await this.requireApi().setThinkingLevel(level);
+      await this.getAgentApi().setThinkingLevel(level);
 
       if (this.sessionState) {
         this.sessionState = {
@@ -929,60 +1074,22 @@ class DesktopState {
     void this.persistDesktopSettings({ autoConnectOnLaunch: enabled });
   }
 
-  async pickPiExecutable() {
-    const selected = await this.requireApi().pickExecutable();
-    return selected?.path;
-  }
-
   async revealPreferencesDatabase() {
-    return this.requireApi().revealPreferencesDatabase();
+    return this.getShellApi().revealPreferencesDatabase();
   }
 
-  async revealWorktree() {
-    return this.requireApi().revealWorktree();
-  }
+  async revealFolder() {
+    const targetPath = this.sessionDiffCwd();
 
-  async refreshWorktrees() {
-    if (!window.h3code) {
-      return;
+    if (!targetPath) {
+      throw new Error("No folder is available to reveal.");
     }
 
-    this.worktreesLoading = true;
-    this.worktreesError = undefined;
-
-    try {
-      this.worktrees = await this.requireApi().listWorktrees();
-    } catch (error) {
-      this.worktreesError = getErrorMessage(error);
-    } finally {
-      this.worktreesLoading = false;
-    }
-  }
-
-  async revealWorktreePath(worktreePath: string) {
-    return this.requireApi().revealWorktreePath(worktreePath);
-  }
-
-  async removeStaleWorktree(sessionPath: string) {
-    const result = await this.requireApi().removeStaleWorktree(sessionPath);
-    this.worktrees = result.worktrees;
-    return result.removed;
-  }
-
-  async archiveSessionWorktree(sessionPath: string) {
-    const result = await this.requireApi().archiveSessionWorktree(sessionPath);
-    this.worktrees = result.worktrees;
-    this.applyPreferencesSnapshot(result.preferences);
-  }
-
-  async pruneStaleWorktrees() {
-    const result = await this.requireApi().pruneStaleWorktrees();
-    this.worktrees = result.worktrees;
-    return result.removed;
+    return this.getShellApi().revealPath(targetPath);
   }
 
   async clearAllIndexedData() {
-    const preferences = await this.requireApi().clearAllIndexedData();
+    const preferences = await this.getAgentApi().clearAllIndexedData();
     this.applyPreferencesSnapshot(preferences);
     this.repoPath = undefined;
     this.activeAgentId = undefined;
@@ -993,12 +1100,10 @@ class DesktopState {
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
-    await this.refreshWorktrees();
   }
 
   applyPreferencesSnapshot(preferences: DesktopPreferences) {
     this.preferencesDatabasePath = preferences.databasePath;
-    this.piExecutablePath = preferences.piExecutablePath;
     this.desktopSettings = preferences.desktopSettings;
 
     const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
@@ -1015,36 +1120,36 @@ class DesktopState {
   }
 
   async setSteeringMode(mode: PiQueueMode) {
-    if (!this.canChangeSessionSettings) {
+    if (!this.canChangeSessionSettings || !this.supportsQueueSettings) {
       return;
     }
 
     try {
-      this.sessionState = await this.requireApi().setSteeringMode(mode);
+      this.sessionState = await this.getAgentApi().setSteeringMode(mode);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
   }
 
   async setFollowUpMode(mode: PiQueueMode) {
-    if (!this.canChangeSessionSettings) {
+    if (!this.canChangeSessionSettings || !this.supportsQueueSettings) {
       return;
     }
 
     try {
-      this.sessionState = await this.requireApi().setFollowUpMode(mode);
+      this.sessionState = await this.getAgentApi().setFollowUpMode(mode);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
   }
 
   async setAutoCompaction(enabled: boolean) {
-    if (!this.canChangeSessionSettings) {
+    if (!this.canChangeSessionSettings || !this.supportsCompactionSettings) {
       return;
     }
 
     try {
-      this.sessionState = await this.requireApi().setAutoCompaction(enabled);
+      this.sessionState = await this.getAgentApi().setAutoCompaction(enabled);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
@@ -1055,7 +1160,7 @@ class DesktopState {
     this.desktopSettings = { ...this.desktopSettings, ...settings };
 
     try {
-      await this.requireApi().updateDesktopSettings(settings);
+      await this.getAgentApi().updateDesktopSettings(settings);
     } catch (error) {
       this.desktopSettings = previous;
       this.errorMessage = getErrorMessage(error);
@@ -1217,13 +1322,8 @@ class DesktopState {
   }
 
   async respondToExtensionUi(response: PiExtensionUiResponse) {
-    await this.requireApi().respondToExtensionUi(response);
+    await this.getAgentApi().respondToExtensionUi(response);
     this.clearExtensionUiRequest();
-  }
-
-  async setPiExecutablePath(executablePath: string) {
-    const result = await this.requireApi().setPiExecutablePath(executablePath);
-    this.piExecutablePath = result.piExecutablePath;
   }
 
   resetTransientTranscript() {
@@ -1283,12 +1383,24 @@ class DesktopState {
     }
   }
 
-  requireApi() {
+  sessionDiffCwd() {
+    return this.worktreePath ?? this.repoPath;
+  }
+
+  getAgentApi() {
     if (!window.h3code) {
       throw new Error("Desktop API is unavailable.");
     }
 
-    return window.h3code;
+    return getDesktopAgentApi();
+  }
+
+  getShellApi() {
+    if (!window.h3code) {
+      throw new Error("Desktop API is unavailable.");
+    }
+
+    return getDesktopShellApi();
   }
 }
 

@@ -1,0 +1,3 @@
+export { configureMetadataStore, defaultMetadataDataDir, getConfiguredDataDir, resolveMetadataDataDir, } from "./config.js";
+export { clearAllIndexedData, closePreferencesDatabase, getAllSessionWorktrees, getPiExecutablePath, getPreferences, getRepoWorktrees, getSessionWorktree, recordRepoSessionRows, recordRepoSessions, recordRepoUsage, recordSessionWorktree, removeIndexedRepo, removeIndexedSession, removeSessionWorktreeMapping, revealPreferencesDatabase, setPiExecutablePath, updateDesktopSettings, } from "./preferences.js";
+//# sourceMappingURL=index.js.map

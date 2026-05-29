@@ -7,28 +7,20 @@ import {
   type MetadataEntry,
 } from "$lib/components/desktop/transcript-metadata.js";
 
-export type TranscriptTextBlock = {
-  kind: "text";
-  id: string;
-  text: string;
-};
+export type {
+  TranscriptTextBlock,
+  TranscriptThinkingBlock,
+  TranscriptToolBlock,
+  TranscriptWorkBlock,
+  RenderBlock,
+} from "$lib/components/desktop/transcript-render.js";
+export { groupBlocksForRender, extractStreamingThinkingText } from "$lib/components/desktop/transcript-render.js";
 
-export type TranscriptThinkingBlock = {
-  kind: "thinking";
-  id: string;
-  text: string;
-};
-
-export type TranscriptToolBlock = {
-  kind: "tool";
-  id: string;
-  toolCallId: string;
-  type: string;
-  state: ToolUIPartState;
-  input?: unknown;
-  output?: unknown;
-  errorText?: string;
-};
+import type {
+  TranscriptTextBlock,
+  TranscriptThinkingBlock,
+  TranscriptToolBlock,
+} from "$lib/components/desktop/transcript-render.js";
 
 export type TranscriptMetadataBlockModel = {
   kind: "metadata";
@@ -382,47 +374,6 @@ function getString(value: unknown) {
 
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-export type RenderBlock =
-  | TranscriptTextBlock
-  | TranscriptThinkingBlock
-  | { kind: "activity"; id: string; tools: TranscriptToolBlock[] };
-
-export function groupBlocksForRender(blocks: TranscriptBlock[]): RenderBlock[] {
-  const grouped: RenderBlock[] = [];
-  let pendingTools: TranscriptToolBlock[] = [];
-
-  function flushTools() {
-    if (pendingTools.length === 0) {
-      return;
-    }
-
-    grouped.push({
-      kind: "activity",
-      id: `activity-${pendingTools[0].id}`,
-      tools: pendingTools,
-    });
-    pendingTools = [];
-  }
-
-  for (const block of blocks) {
-    if (block.kind === "tool") {
-      pendingTools.push(block);
-      continue;
-    }
-
-    flushTools();
-
-    if (block.kind === "metadata") {
-      continue;
-    }
-
-    grouped.push(block);
-  }
-
-  flushTools();
-  return grouped;
 }
 
 export function formatToolValue(value: unknown) {

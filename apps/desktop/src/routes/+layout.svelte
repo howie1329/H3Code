@@ -2,7 +2,9 @@
   import { ModeWatcher } from "mode-watcher";
   import { onMount } from "svelte";
 
+  import AppCommandMenu from "$lib/components/desktop/AppCommandMenu.svelte";
   import AppSidebar from "$lib/components/desktop/AppSidebar.svelte";
+  import { commandMenuController } from "$lib/command-menu-controller.svelte.js";
   import ExtensionUiDialog from "$lib/components/desktop/ExtensionUiDialog.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
@@ -11,6 +13,8 @@
   let { children } = $props();
 
   onMount(() => {
+    console.info("[h3code] agent transport: ws");
+
     const cleanup = desktopState.initializeListeners();
     void desktopState.initializePreferences();
 
@@ -39,6 +43,12 @@
       return;
     }
 
+    if (key === "k") {
+      event.preventDefault();
+      commandMenuController.open = true;
+      return;
+    }
+
     if (key === "l") {
       event.preventDefault();
       desktopState.focusComposer();
@@ -57,9 +67,15 @@
       return;
     }
 
-    if (key === "n" && desktopState.repoPath && !desktopState.isBusy) {
+    if (key === "n" && !desktopState.isBusy) {
       event.preventDefault();
-      void desktopState.handleNewSession();
+
+      if (typeof window !== "undefined" && window.location.pathname === "/") {
+        desktopState.focusLandingComposer();
+        return;
+      }
+
+      void desktopState.enterLanding(desktopState.repoPath ? { repoPath: desktopState.repoPath } : {});
       return;
     }
 
@@ -75,6 +91,8 @@
 <ModeWatcher />
 
 <ExtensionUiDialog />
+
+<AppCommandMenu bind:open={commandMenuController.open} />
 
 <Sidebar.Provider
   open={desktopState.desktopSettings.sidebarOpen}

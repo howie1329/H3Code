@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/utils";
 	import { Button } from "$lib/components/ui/button";
 	import type { ButtonProps } from "$lib/components/ui/button/index.js";
 
@@ -18,11 +18,12 @@
 	let newSize = $derived.by((): "default" | "sm" | "lg" | "icon" => {
 		return (size ?? hasMultipleChildren) ? "default" : "icon";
 	});
+	// indexing
 </script>
 
 <Button
 	class={cn(
-		"shrink-0 gap-1.5 rounded-lg",
+		"shrink-0 gap-1.5",
 		variant === "ghost" && "text-muted-foreground",
 		newSize === "default" && "px-3",
 		className

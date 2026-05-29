@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/utils";
 
 	interface Props {
 		class?: string;
@@ -7,10 +7,11 @@
 	}
 
 	let { class: className, children, ...props }: Props = $props();
+	// indexing
 </script>
 
 <div
-	class={cn("flex items-center gap-1", "[&_button:first-child]:rounded-bl-xl", className)}
+	class={cn("flex items-center gap-1", "[&_button:first-child]:rounded-bl-md", className)}
 	{...props}
 >
 	{#if children}

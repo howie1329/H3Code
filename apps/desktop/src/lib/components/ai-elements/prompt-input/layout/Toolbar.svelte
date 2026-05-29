@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/utils";
 
 	interface Props {
 		class?: string;
@@ -7,9 +7,10 @@
 	}
 
 	let { class: className, children, ...props }: Props = $props();
+	// indexing
 </script>
 
-<div class={cn("flex items-center justify-between p-1", className)} {...props}>
+<div class={cn("flex min-h-9 items-center justify-between border-t border-border/50 px-2.5 py-1.5", className)} {...props}>
 	{#if children}
 		{@render children()}
 	{/if}

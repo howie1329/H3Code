@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { FileUIPart } from "ai";
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/utils";
 	import { watch } from "runed";
 	import { onDestroy } from "svelte";
 	import { AttachmentsContext, setAttachmentsContext } from "../context/attachments.svelte.js";
@@ -34,6 +34,7 @@
 		onSubmit: (message: Message, event: SubmitEvent) => void | Promise<void>;
 		children?: import("svelte").Snippet;
 	}
+	// indexing
 
 	let {
 		class: className,
@@ -300,7 +301,11 @@
 />
 <form
 	bind:this={formRef}
-	class={cn("bg-background w-full overflow-hidden rounded-xl border shadow-sm", className)}
+	class={cn(
+		"bg-background w-full overflow-hidden rounded-md border border-border/50 transition-[border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+		"focus-within:border-border focus-within:ring-2 focus-within:ring-ring/30",
+		className
+	)}
 	onsubmit={handleSubmit}
 	{...props}
 >

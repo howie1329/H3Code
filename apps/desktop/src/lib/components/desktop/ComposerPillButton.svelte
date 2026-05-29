@@ -37,14 +37,14 @@
       "disabled:pointer-events-none disabled:opacity-50",
       variant === "inline"
         ? cn(
-            "h-6 gap-1 rounded-md px-1.5 text-[10px] leading-tight font-normal text-muted-foreground",
+            "h-7 gap-1 rounded-md px-2 text-[11px] leading-tight font-normal text-muted-foreground",
             maxWidthClass,
-            "hover:bg-accent/40 hover:text-foreground",
-            open && "bg-accent/40 text-foreground"
+            "hover:bg-accent hover:text-foreground",
+            open && "bg-accent text-foreground"
           )
         : variant === "footer"
         ? cn(
-            "h-7 max-w-[14rem] rounded-md px-1.5 text-[11px] leading-tight font-medium text-muted-foreground",
+            "h-7 max-w-[14rem] rounded-md px-2 text-[11px] leading-tight font-normal text-muted-foreground",
             "hover:bg-accent hover:text-foreground",
             open && "bg-accent text-foreground"
           )

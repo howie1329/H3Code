@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/utils";
 	import type { ChatStatus } from "../context/types.js";
 	import LoaderIcon from "@lucide/svelte/icons/loader";
 	import SendIcon from "@lucide/svelte/icons/send";
@@ -17,6 +17,7 @@
 	type SubmitClickEvent = MouseEvent & {
 		currentTarget: EventTarget & HTMLButtonElement;
 	};
+	// indexing
 
 	interface Props extends Omit<HTMLButtonAttributes, "type" | "onclick" | "aria-label"> {
 		class?: string;
@@ -84,7 +85,7 @@
 <button
 	bind:this={ref}
 	aria-label={ariaLabel}
-	class={cn(buttonVariants({ variant, size }), "gap-1.5 rounded-lg", className)}
+	class={cn(buttonVariants({ variant, size }), "gap-1.5", className)}
 	data-slot="button"
 	type={buttonType}
 	onclick={handleClick}

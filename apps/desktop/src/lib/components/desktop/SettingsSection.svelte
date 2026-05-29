@@ -14,14 +14,14 @@
   } = $props();
 </script>
 
-<section {id} class="scroll-mt-6 space-y-4" aria-labelledby="{id}-heading">
-  <div>
-    <h3 id="{id}-heading" class="text-base font-semibold leading-tight">{title}</h3>
+<section {id} class="scroll-mt-4 space-y-3 border-b border-border/50 pb-8 last:border-b-0" aria-labelledby="{id}-heading">
+  <div class="space-y-1">
+    <h2 id="{id}-heading" class="text-base font-semibold leading-tight">{title}</h2>
     {#if description}
-      <p class="mt-1 text-xs text-muted-foreground">{description}</p>
+      <p class="text-[11px] leading-snug text-muted-foreground">{description}</p>
     {/if}
   </div>
-  <div class="space-y-4">
+  <div class="space-y-3">
     {@render children()}
   </div>
 </section>

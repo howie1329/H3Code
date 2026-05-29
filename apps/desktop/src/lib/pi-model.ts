@@ -18,6 +18,28 @@ export const PI_THINKING_LEVEL_SHORT_LABELS: Record<PiThinkingLevel, string> = {
   xhigh: "XHi",
 };
 
+export function normalizeModel(model: unknown): PiModel | undefined {
+  if (!model || typeof model !== "object") {
+    return undefined;
+  }
+
+  const record = model as Record<string, unknown>;
+  const provider = typeof record.provider === "string" ? record.provider : "";
+  const id = typeof record.id === "string" ? record.id : typeof record.modelId === "string" ? record.modelId : "";
+
+  if (!provider || !id) {
+    return undefined;
+  }
+
+  return {
+    id,
+    provider,
+    modelId: typeof record.modelId === "string" ? record.modelId : id,
+    name: typeof record.name === "string" ? record.name : undefined,
+    reasoning: record.reasoning === true,
+  };
+}
+
 export function getModelId(model: PiModel | undefined) {
   return model?.id ?? model?.modelId;
 }
