@@ -269,7 +269,13 @@
                 <EmptyDescription>Start a session for this repository when you are ready.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button onclick={() => desktopState.handleNewSession()} disabled={desktopState.isBusy}>
+                <Button
+                  onclick={() =>
+                    desktopState.enterLanding(
+                      desktopState.repoPath ? { repoPath: desktopState.repoPath } : {},
+                    )}
+                  disabled={desktopState.isBusy}
+                >
                   <HugeiconsIcon icon={AiBrain02Icon} data-icon="inline-start" />
                   New session
                 </Button>

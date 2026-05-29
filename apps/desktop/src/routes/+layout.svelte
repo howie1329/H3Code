@@ -67,9 +67,15 @@
       return;
     }
 
-    if (key === "n" && desktopState.repoPath && !desktopState.isBusy) {
+    if (key === "n" && !desktopState.isBusy) {
       event.preventDefault();
-      void desktopState.handleNewSession();
+
+      if (typeof window !== "undefined" && window.location.pathname === "/") {
+        desktopState.focusLandingComposer();
+        return;
+      }
+
+      void desktopState.enterLanding(desktopState.repoPath ? { repoPath: desktopState.repoPath } : {});
       return;
     }
 

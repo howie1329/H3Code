@@ -55,6 +55,8 @@ const defaultDesktopSettings: DesktopSettings = {
   autoConnectOnLaunch: false,
 };
 
+export const LANDING_ADD_REPO_VALUE = "__add_repository__";
+
 type OptimisticUserMessage = {
   id: string;
   role: "user";
@@ -75,6 +77,8 @@ class DesktopState {
   supportsQueueSettings = $derived(this.providerCapabilities?.ui.queueSettings === true);
   supportsCompactionSettings = $derived(this.providerCapabilities?.ui.compaction === true);
   promptValue = $state("");
+  landingRepoPath = $state<string | undefined>();
+  landingPromptValue = $state("");
   activeAgentId = $state<string | undefined>();
   repoPath = $state<string | undefined>();
   worktreePath = $state<string | undefined>();
@@ -120,6 +124,19 @@ class DesktopState {
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
   canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  hasActiveWorkspaceSession = $derived(
+    Boolean(this.selectedSessionPath || this.sessionState?.sessionFile),
+  );
+  canSubmitLanding = $derived(
+    Boolean(this.landingRepoPath && this.landingPromptValue.trim()) &&
+      !this.isBusy &&
+      !this.isSendingPrompt,
+  );
+  landingRepoName = $derived(
+    this.landingRepoPath
+      ? (this.repos.find((repo) => repo.path === this.landingRepoPath)?.name ?? basename(this.landingRepoPath))
+      : undefined,
+  );
   isAgentRunning = $derived(this.sessionReadModel.isAgentRunning);
   canChangeSessionSettings = $derived(
     this.canUseSession && !this.isBusy && !this.isSendingPrompt && !this.isAgentRunning && !this.sessionState?.isStreaming,
@@ -161,6 +178,20 @@ class DesktopState {
     if (window.location.pathname !== "/workspace") {
       await goto("/workspace");
     }
+  }
+
+  async ensureLandingRoute() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (window.location.pathname !== "/") {
+      await goto("/");
+    }
+  }
+
+  focusLandingComposer() {
+    window.dispatchEvent(new CustomEvent("h3code:focus-landing-composer"));
   }
 
   initializeListeners() {
@@ -248,7 +279,7 @@ class DesktopState {
       this.repos = preferences.recentRepos.map((repo) =>
         createRepo(repo.path, {
           name: repo.name,
-          expanded: repo.path === preferences.lastSelectedRepoPath,
+          expanded: false,
           sessions: indexedSessionsByRepo.get(repo.path) ?? [],
           sessionsLoaded: Boolean(repo.sessionsIndexedAt),
           sessionsLoading: false,
@@ -256,21 +287,8 @@ class DesktopState {
         }),
       );
 
-      if (preferences.lastSelectedRepoPath) {
-        this.repoPath = preferences.lastSelectedRepoPath;
-        this.selectedSessionPath = preferences.lastSelectedSessionPath;
-        this.sessions = indexedSessionsByRepo.get(preferences.lastSelectedRepoPath) ?? [];
-        await this.loadRepoSessions(preferences.lastSelectedRepoPath);
-
-        if (
-          preferences.desktopSettings.autoConnectOnLaunch &&
-          this.piStatus.state !== "connected"
-        ) {
-          await this.connectRepo(preferences.lastSelectedRepoPath, preferences.lastSelectedSessionPath);
-        } else {
-          await this.resyncConnectedSessionIfNeeded();
-        }
-      }
+      this.clearWorkspaceSessionState();
+      await this.ensureLandingRoute();
 
     } catch (error) {
       this.preferencesLoaded = true;
@@ -337,7 +355,12 @@ class DesktopState {
     });
   }
 
-  async connectRepoInternal(nextRepoPath: string, selectedSessionPath?: string) {
+  async connectRepoInternal(
+    nextRepoPath: string,
+    selectedSessionPath?: string,
+    options: { navigateToWorkspace?: boolean } = {},
+  ) {
+    const { navigateToWorkspace = true } = options;
     this.errorMessage = undefined;
     const result = await this.getAgentApi().connectRepo(nextRepoPath, selectedSessionPath);
     this.syncProviderCapabilities();
@@ -370,7 +393,46 @@ class DesktopState {
     await this.refreshSessionStats();
     await this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
-    await this.ensureWorkspaceRoute();
+
+    if (navigateToWorkspace) {
+      await this.ensureWorkspaceRoute();
+    }
+  }
+
+  clearWorkspaceSessionState() {
+    this.repoPath = undefined;
+    this.activeAgentId = undefined;
+    this.worktreePath = undefined;
+    this.sessions = [];
+    this.selectedSessionPath = undefined;
+    this.sessionState = undefined;
+    this.sessionStats = null;
+    this.piStatus = { state: "disconnected" };
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+    this.resetSessionReadModel();
+    this.resetTransientTranscript();
+    this.promptValue = "";
+  }
+
+  async enterLanding(options: { repoPath?: string } = {}) {
+    this.clearWorkspaceSessionState();
+    this.landingRepoPath = options.repoPath;
+    this.landingPromptValue = "";
+    this.errorMessage = undefined;
+    await this.ensureLandingRoute();
+  }
+
+  async addRepoFromLanding() {
+    const selected = await this.getShellApi().selectRepo();
+
+    if (!selected) {
+      return;
+    }
+
+    await this.addRepo(selected.path);
+    this.landingRepoPath = selected.path;
   }
 
   async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
@@ -418,6 +480,39 @@ class DesktopState {
     });
   }
 
+  async createNewSessionForRepo(repoPath: string) {
+    const parentSessionPath = this.selectedSessionPath;
+    const result = await this.getAgentApi().newSession(parentSessionPath);
+    this.activeAgentId = result.agentId;
+    this.repoPath = result.repoPath ?? repoPath;
+    this.worktreePath = result.worktreePath;
+    this.syncActiveAgentStatus();
+    this.sessionState = result.state;
+    this.selectedSessionPath = result.state.sessionFile;
+    this.sessionStats = null;
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+    this.sessionReadModel = hydrateFromSnapshot(
+      createInitialSessionReadModel(),
+      result.state,
+      result.messages,
+    );
+    this.storeActiveAgentReadModel();
+    this.resetTransientTranscript();
+    this.sessions = await this.getAgentApi().listSessions();
+    this.repos = upsertRepo(this.repos, repoPath, {
+      expanded: true,
+      sessions: this.sessions,
+      sessionsLoaded: true,
+      sessionsLoading: false,
+      sessionsError: undefined,
+    });
+    await this.refreshSessionStats();
+    await this.refreshSessionDiff();
+    void this.ensureAvailableModels(true);
+  }
+
   async handleNewSession(repoPath = this.repoPath) {
     if (!repoPath) {
       this.errorMessage = "Select a repo before creating a session.";
@@ -428,40 +523,62 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const parentSessionPath = this.selectedSessionPath;
-
-      await this.connectRepoInternal(repoPath);
-
-      const result = await this.getAgentApi().newSession(parentSessionPath);
-      this.activeAgentId = result.agentId;
-      this.repoPath = result.repoPath ?? repoPath;
-      this.worktreePath = result.worktreePath;
-      this.syncActiveAgentStatus();
-      this.sessionState = result.state;
-      this.selectedSessionPath = result.state.sessionFile;
-      this.sessionStats = null;
-      this.resetSessionDiff();
-      this.resetSlashCommands();
-      this.resetModels();
-      this.sessionReadModel = hydrateFromSnapshot(
-        createInitialSessionReadModel(),
-        result.state,
-        result.messages,
-      );
-      this.storeActiveAgentReadModel();
-      this.resetTransientTranscript();
-      this.sessions = await this.getAgentApi().listSessions();
-      this.repos = upsertRepo(this.repos, repoPath, {
-        expanded: true,
-        sessions: this.sessions,
-        sessionsLoaded: true,
-        sessionsLoading: false,
-        sessionsError: undefined,
-      });
-      await this.refreshSessionStats();
-      await this.refreshSessionDiff();
-      void this.ensureAvailableModels(true);
+      await this.connectRepoInternal(repoPath, undefined, { navigateToWorkspace: true });
+      await this.createNewSessionForRepo(repoPath);
     });
+  }
+
+  async startSessionFromLanding(repoPath: string, promptText: string) {
+    const text = promptText.trim();
+
+    if (!repoPath || !text) {
+      return;
+    }
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+
+      try {
+        await this.connectRepoInternal(repoPath, undefined, { navigateToWorkspace: false });
+        await this.createNewSessionForRepo(repoPath);
+        this.landingPromptValue = "";
+        await this.ensureWorkspaceRoute();
+        await this.sendPromptText(text);
+      } catch (error) {
+        this.errorMessage = getErrorMessage(error);
+      }
+    });
+  }
+
+  async sendPromptText(text: string) {
+    if (!text || !this.canUseSession) {
+      return;
+    }
+
+    const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
+    const optimisticMessage = createOptimisticUserMessage(text);
+    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
+    this.isSendingPrompt = true;
+
+    try {
+      this.errorMessage = undefined;
+
+      if (isRunning) {
+        await this.getAgentApi().sendFollowUp(text);
+      } else {
+        await this.getAgentApi().sendPrompt(text);
+      }
+
+      this.promptValue = "";
+    } catch (error) {
+      this.pendingUserMessages = this.pendingUserMessages.filter(
+        (pendingMessage) => pendingMessage.id !== optimisticMessage.id,
+      );
+      this.errorMessage = getErrorMessage(error);
+      throw error;
+    } finally {
+      this.isSendingPrompt = false;
+    }
   }
 
   async removeRepoFromIndex(repoPath: string) {
@@ -528,6 +645,7 @@ class DesktopState {
         this.resetSlashCommands();
         this.resetSessionReadModel();
         this.resetTransientTranscript();
+        await this.enterLanding({ repoPath });
       }
 
     });
@@ -563,26 +681,10 @@ class DesktopState {
       return;
     }
 
-    const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
-    const optimisticMessage = createOptimisticUserMessage(text);
-    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
-    this.isSendingPrompt = true;
-
     try {
-      this.errorMessage = undefined;
-
-      if (isRunning) {
-        await this.getAgentApi().sendFollowUp(text);
-      } else {
-        await this.getAgentApi().sendPrompt(text);
-      }
-
-      this.promptValue = "";
-    } catch (error) {
-      this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
-      this.errorMessage = getErrorMessage(error);
-    } finally {
-      this.isSendingPrompt = false;
+      await this.sendPromptText(text);
+    } catch {
+      // sendPromptText records errorMessage
     }
   }
 

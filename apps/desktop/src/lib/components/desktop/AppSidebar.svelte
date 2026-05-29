@@ -4,6 +4,7 @@
   import {
     ArrowDown01Icon,
     ArrowRight01Icon,
+    Add01Icon,
     FolderAddIcon,
     FolderCodeIcon,
     Moon02Icon,
@@ -49,9 +50,8 @@
   const contextMenuContentClass = "w-44";
   const themeToggleLabel = $derived(mode.current === "dark" ? "Switch to light mode" : "Switch to dark mode");
 
-  async function startNewSession(repoPath: string) {
-    await goto("/workspace");
-    await desktopState.handleNewSession(repoPath);
+  async function openNewSessionLanding(repoPath?: string) {
+    await desktopState.enterLanding(repoPath ? { repoPath } : {});
   }
 
   async function handleSessionClick(sessionPath: string, repoPath: string) {
@@ -103,16 +103,28 @@
         <span class="text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/70">
           Repositories
         </span>
-        <button
-          type="button"
-          aria-label="Add repository"
-          title="Add repository"
-          disabled={desktopState.isBusy}
-          class="grid size-6 shrink-0 place-items-center rounded-md text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3"
-          onclick={() => desktopState.handleSelectRepo()}
-        >
-          <HugeiconsIcon icon={FolderAddIcon} />
-        </button>
+        <div class="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            aria-label="New session"
+            title="New session"
+            disabled={desktopState.isBusy}
+            class="grid size-6 shrink-0 place-items-center rounded-md text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3"
+            onclick={() => !desktopState.isBusy && openNewSessionLanding()}
+          >
+            <HugeiconsIcon icon={Add01Icon} />
+          </button>
+          <button
+            type="button"
+            aria-label="Add repository"
+            title="Add repository"
+            disabled={desktopState.isBusy}
+            class="grid size-6 shrink-0 place-items-center rounded-md text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3"
+            onclick={() => desktopState.handleSelectRepo()}
+          >
+            <HugeiconsIcon icon={FolderAddIcon} />
+          </button>
+        </div>
       </div>
 
       <Sidebar.GroupContent class="flex min-h-0 flex-1 flex-col">
@@ -167,7 +179,7 @@
                     <ContextMenu.Content class={contextMenuContentClass}>
                       <ContextMenu.Item
                         disabled={desktopState.isBusy}
-                        onSelect={() => startNewSession(repo.path)}
+                        onSelect={() => openNewSessionLanding(repo.path)}
                       >
                         New session
                       </ContextMenu.Item>
@@ -197,7 +209,7 @@
                     <ContextMenu.Content class={contextMenuContentClass}>
                       <ContextMenu.Item
                         disabled={desktopState.isBusy}
-                        onSelect={() => startNewSession(repo.path)}
+                        onSelect={() => openNewSessionLanding(repo.path)}
                       >
                         New session
                       </ContextMenu.Item>

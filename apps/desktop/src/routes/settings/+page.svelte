@@ -140,8 +140,8 @@
           {/snippet}
         </SettingsRow>
         <SettingsRow
-          label="Reconnect last repo on launch"
-          description="Automatically connect to your last repository when the app opens."
+          label="Auto-connect when opening a session"
+          description="Connect to Pi automatically when you open an existing session from the sidebar."
           controlId="auto-connect"
         >
           {#snippet control()}

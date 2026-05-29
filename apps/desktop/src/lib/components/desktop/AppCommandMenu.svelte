@@ -7,7 +7,7 @@
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
 
-  const canStartNewSession = $derived(Boolean(desktopState.repoPath) && !desktopState.isBusy);
+  const canStartNewSession = $derived(!desktopState.isBusy);
   const canRevealPreferences = $derived(Boolean(desktopState.preferencesDatabasePath));
 
   async function runAction(action: () => void | Promise<void>) {
@@ -49,8 +49,7 @@
         disabled={!canStartNewSession}
         onclick={() =>
           runAction(async () => {
-            await goto("/workspace");
-            await desktopState.handleNewSession();
+            await desktopState.enterLanding();
           })}
       >
         New session
