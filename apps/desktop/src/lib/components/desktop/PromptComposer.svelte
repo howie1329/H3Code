@@ -28,7 +28,6 @@
     PromptInputTools,
     type ChatStatus,
   } from "$lib/components/ai-elements/prompt-input/index.js";
-  import { Separator } from "$lib/components/ui/separator/index.js";
 
   type ComposerMenu = "none" | "slash" | "model" | "thinking";
 
@@ -552,8 +551,6 @@
           onselect={handlePromptInteraction}
         />
       </PromptInputBody>
-
-      <Separator />
 
       <PromptInputToolbar>
         <PromptInputTools>

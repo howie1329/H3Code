@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { ArrowDown01Icon, FolderAddIcon, FolderCodeIcon } from "@hugeicons/core-free-icons";
+  import { FolderAddIcon, FolderCodeIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
+  import ComposerPillButton from "$lib/components/desktop/ComposerPillButton.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
   import { cn } from "$lib/utils";
@@ -15,19 +16,7 @@
   let open = $state(false);
 
   const repoOptions = $derived(desktopState.repos);
-  const label = $derived(
-    desktopState.landingRepoName ?? (repoOptions.length === 0 ? "Repository" : "Repository"),
-  );
-
-  const triggerClass = $derived(
-    cn(
-      "inline-flex h-7 max-w-[14rem] shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] leading-tight font-medium shadow-none",
-      "text-muted-foreground transition-colors duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-      "hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-      "disabled:pointer-events-none disabled:opacity-50",
-      open && "bg-accent text-foreground",
-    ),
-  );
+  const label = $derived(desktopState.landingRepoName ?? "Select repository");
 
   async function handleAddRepository() {
     await desktopState.addRepoFromLanding();
@@ -38,12 +27,21 @@
   <DropdownMenu.Trigger
     type="button"
     {disabled}
-    class={triggerClass}
+    class={cn(
+      "inline-flex border-0 bg-transparent p-0 shadow-none outline-none",
+      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+    )}
     aria-label="Select repository"
     title={desktopState.landingRepoPath ?? "Select repository"}
   >
-    <span class="truncate">{label}</span>
-    <HugeiconsIcon icon={ArrowDown01Icon} class="size-2.5 shrink-0 opacity-40" data-icon />
+    <ComposerPillButton
+      {label}
+      {open}
+      {disabled}
+      variant="footer"
+      maxWidthClass="max-w-[14rem]"
+      ariaLabel="Select repository"
+    />
   </DropdownMenu.Trigger>
 
   <DropdownMenu.Content

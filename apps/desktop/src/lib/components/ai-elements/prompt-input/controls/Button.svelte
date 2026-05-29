@@ -23,7 +23,7 @@
 
 <Button
 	class={cn(
-		"shrink-0 gap-1.5 rounded-lg",
+		"shrink-0 gap-1.5",
 		variant === "ghost" && "text-muted-foreground",
 		newSize === "default" && "px-3",
 		className

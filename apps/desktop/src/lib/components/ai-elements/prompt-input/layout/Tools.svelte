@@ -11,7 +11,7 @@
 </script>
 
 <div
-	class={cn("flex items-center gap-1", "[&_button:first-child]:rounded-bl-xl", className)}
+	class={cn("flex items-center gap-1", "[&_button:first-child]:rounded-bl-md", className)}
 	{...props}
 >
 	{#if children}
