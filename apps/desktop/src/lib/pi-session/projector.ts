@@ -359,6 +359,10 @@ function pushNotification(
   return pushActivity(model, "extension.notify", message, occurredAt);
 }
 
+export function cloneSessionReadModel(model: SessionReadModel): SessionReadModel {
+  return cloneModel(model);
+}
+
 function cloneModel(model: SessionReadModel): SessionReadModel {
   return {
     ...model,

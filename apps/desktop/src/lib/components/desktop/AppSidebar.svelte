@@ -54,9 +54,12 @@
     await desktopState.enterLanding(repoPath ? { repoPath } : {});
   }
 
-  async function handleSessionClick(sessionPath: string, repoPath: string) {
-    await goto("/workspace");
-    await desktopState.handleSwitchSession(sessionPath, repoPath);
+  function handleSessionClick(sessionPath: string, repoPath: string) {
+    if (page.url.pathname !== "/workspace") {
+      void goto("/workspace");
+    }
+
+    void desktopState.handleSwitchSession(sessionPath, repoPath);
   }
 </script>
 

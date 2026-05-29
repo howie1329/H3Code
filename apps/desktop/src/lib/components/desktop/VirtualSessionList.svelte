@@ -17,7 +17,7 @@
   }: {
     repo: SidebarRepo;
     sessions: PiSessionSummary[];
-    onSessionClick: (sessionPath: string, repoPath: string) => Promise<void>;
+    onSessionClick: (sessionPath: string, repoPath: string) => void;
     onSessionDeleteRequest: (repo: SidebarRepo, session: PiSessionSummary) => void;
   } = $props();
 
@@ -49,6 +49,7 @@
       {@const session = sessions[virtualItem.index]}
       {#if session}
         {@const isSessionActive = session.path === desktopState.selectedSessionPath}
+        {@const isSessionSwitching = isSessionActive && desktopState.isSwitchingSession}
         {@const sessionLabel = getSessionDisplayTitle(session)}
         {@const sessionModified = formatSessionModified(session.modified)}
         {@const sessionStatus = desktopState.getSessionRowStatus(session)}
@@ -62,7 +63,6 @@
             <ContextMenu.Trigger class="w-full">
               <Sidebar.MenuSubButton
                 isActive={isSessionActive}
-                aria-disabled={desktopState.isBusy}
                 class="h-7 w-full max-w-full translate-x-0 rounded-md px-2 pr-8 text-[11px] leading-snug [&_svg]:size-3"
               >
                 {#snippet child({ props })}
@@ -71,8 +71,8 @@
                     type="button"
                     title={`${sessionLabel} · ${repo.name} · ${sessionStatus.label}`}
                     aria-current={isSessionActive ? "page" : undefined}
+                    aria-busy={isSessionSwitching}
                     aria-label={`${sessionLabel}, ${sessionStatus.label}`}
-                    disabled={desktopState.isBusy}
                     onclick={() => onSessionClick(session.path, repo.path)}
                   >
                     <span
