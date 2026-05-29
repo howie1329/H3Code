@@ -76,11 +76,17 @@
                     onclick={() => onSessionClick(session.path, repo.path)}
                   >
                     <span
-                      class="size-2 shrink-0 rounded-full {sessionStatus.dotClass}"
+                      class="size-1.5 shrink-0 rounded-full {sessionStatus.dotClass}"
                       title={sessionStatus.label}
                       aria-hidden="true"
                     ></span>
-                    <span class="min-w-0 flex-1 truncate text-left">{sessionLabel}</span>
+                    <span
+                      class={isSessionActive
+                        ? "min-w-0 flex-1 truncate text-left font-medium"
+                        : "min-w-0 flex-1 truncate text-left"}
+                    >
+                      {sessionLabel}
+                    </span>
                     {#if sessionModified}
                       <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">{sessionModified}</span>
                     {/if}

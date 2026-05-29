@@ -62,13 +62,13 @@
 
 <Sidebar.Sidebar collapsible="offcanvas">
   <Sidebar.Content class="min-h-0 flex-1">
-    <div class="flex h-10 shrink-0 items-center gap-1 border-b border-border/50 px-3">
+    <div class="flex h-10 shrink-0 items-center gap-1 border-b border-border/50 px-1.5 py-1.5">
       <Button
         variant="ghost"
         size="icon-sm"
         class="shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         aria-label="Command center"
-        title="Command center"
+        title="Command center (⌘K)"
         onclick={() => {
           commandMenuController.open = true;
         }}
@@ -165,7 +165,6 @@
                         {:else}
                           <HugeiconsIcon icon={ArrowRight01Icon} class="shrink-0 text-muted-foreground" />
                         {/if}
-                        <HugeiconsIcon icon={FolderCodeIcon} />
                         <span class={isRepoActive ? "min-w-0 flex-1 truncate font-medium" : "min-w-0 flex-1 truncate"}>
                           {repo.name}
                         </span>
