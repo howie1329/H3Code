@@ -34,8 +34,12 @@
 
   let { children }: { children?: Snippet } = $props();
   let transcriptScrollElement = $state<HTMLDivElement | null>(null);
+  let composerOverlayElement = $state<HTMLDivElement | null>(null);
+  let composerInsetPx = $state(176);
   let hasScrolledInitialTranscript = $state(false);
   let transcriptSessionKey = $state<string | undefined>();
+
+  const composerScrollInsetPx = $derived(composerInsetPx + 8);
 
   const transcriptView = $derived(buildTranscriptViewModel(desktopState.transcriptMessages));
   const transcriptMessages = $derived(transcriptView.messages);
@@ -74,8 +78,40 @@
   });
 
   $effect(() => {
+    const overlay = composerOverlayElement;
+    if (!overlay) {
+      return;
+    }
+
+    const updateInset = () => {
+      const nextInset = Math.ceil(overlay.getBoundingClientRect().height);
+      if (nextInset === composerInsetPx) {
+        return;
+      }
+
+      composerInsetPx = nextInset;
+
+      if (transcriptItems.length > 0 && get(transcriptVirtualizer).isAtEnd(280)) {
+        void tick().then(() => get(transcriptVirtualizer).scrollToEnd({ behavior: "auto" }));
+      }
+    };
+
+    updateInset();
+
+    const observer = new ResizeObserver(updateInset);
+    observer.observe(overlay);
+
+    return () => observer.disconnect();
+  });
+
+  $effect(() => {
     const count = transcriptItems.length;
-    get(transcriptVirtualizer).setOptions({ count });
+    const inset = composerScrollInsetPx;
+    get(transcriptVirtualizer).setOptions({
+      count,
+      paddingEnd: inset,
+      scrollPaddingEnd: inset,
+    });
 
     if (!count) {
       hasScrolledInitialTranscript = false;
@@ -120,7 +156,8 @@
       <Conversation class="h-full min-h-0">
         <ConversationContent
           bind:ref={transcriptScrollElement}
-          class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-6 scroll-pb-36"
+          class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-4"
+          style={`scroll-padding-bottom: ${composerScrollInsetPx}px`}
         >
           {#if desktopState.errorMessage}
             <div
@@ -201,15 +238,18 @@
               {/if}
             {/each}
           </div>
-          <div class="mx-auto h-36 max-w-[46rem] shrink-0" aria-hidden="true"></div>
         </ConversationContent>
         <ConversationScrollButton
-          class="!bottom-36 size-8 border-border/50 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
+          bottomOffset={composerScrollInsetPx + 12}
+          class="size-8 border-border/50 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
           onclick={() => get(transcriptVirtualizer).scrollToEnd({ behavior: "smooth" })}
         />
       </Conversation>
     {:else}
-      <div class="h-full overflow-auto px-6 py-5 pb-36">
+      <div
+        class="h-full overflow-auto px-6 py-5"
+        style={`scroll-padding-bottom: ${composerScrollInsetPx}px; padding-bottom: ${composerScrollInsetPx}px`}
+      >
         {#if desktopState.errorMessage}
           <div class="mb-4 flex items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive" role="alert" aria-live="assertive">
             <HugeiconsIcon icon={AlertCircleIcon} data-icon />
@@ -309,7 +349,7 @@
     {/if}
   </div>
 
-  <div class="absolute inset-x-0 bottom-0 z-10">
+  <div class="absolute inset-x-0 bottom-0 z-10" bind:this={composerOverlayElement}>
     {@render children?.()}
   </div>
 </section>
