@@ -1,11 +1,11 @@
 <!-- agentkit:start design-system -->
-# H3 Code Design System - Linear-Inspired Foundations
+# [Project Name] Design System - Linear-Inspired Foundations
 
-This design system codifies the visual and interaction principles for H3 Code (desktop and web apps).
+This design system codifies the visual and interaction principles for [Project Name].
 
 It is the default source of truth for app shell layout, navigation, lists, controls, and page chrome in this repository.
 
-All colors, typography families, and radii must be consumed through semantic tokens in each app's `src/app.css` (or a dedicated theme stylesheet imported there). Edit tokens in **the app you are changing**; there is no shared `packages/` UI layer today. Components must not hardcode literal color values or font family names.
+All colors, typography families, and radii must be consumed through semantic tokens in `[theme stylesheet path, e.g. src/styles.css]` or a dedicated theme stylesheet imported there. Components must not hardcode literal color values or font family names.
 
 ## 1) Surface And Color
 
@@ -203,17 +203,9 @@ Density guidelines:
 
 ### Where Values Live
 
-**Desktop (`apps/desktop`)**
-
-- Theme tokens and base layer: `apps/desktop/src/app.css`.
-- App shell composition: `apps/desktop/src/routes/` (root layout: `apps/desktop/src/routes/+layout.svelte`).
-- Reusable UI primitives: `apps/desktop/src/lib/components/ui/`.
-
-**Web (`apps/web`)**
-
-- Theme tokens and base layer: `apps/web/src/app.css`.
-- App shell composition: `apps/web/src/routes/` (root layout: `apps/web/src/routes/+layout.svelte`).
-- Reusable UI primitives: `apps/web/src/lib/components/ui/`.
+- Theme tokens and base layer: `[theme stylesheet path, e.g. src/styles.css]`.
+- App shell composition: `[route/layout path, e.g. src/routes or app]`.
+- Reusable UI primitives: `[components path, e.g. src/components/ui]`.
 
 ### New Component Checklist
 

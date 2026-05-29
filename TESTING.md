@@ -22,20 +22,15 @@ Choose tests based on the change:
 
 ## Running Checks
 
-There is no `npm test` script in this repository yet. For behavior changes, use manual QA per the UI checklist below until a test runner is added.
+Document project-specific commands here:
 
 ```bash
-npm run check    # preferred first pass (types + Svelte)
+npm test
 npm run lint
-npm run build    # broader / release-bound changes
+npm run build
 ```
 
-Per-app checks when scope is limited to one workspace:
-
-```bash
-npm run check --workspace @h3code/desktop
-npm run check --workspace @h3code/web
-```
+Remove commands that do not apply.
 
 Prefer file-scoped or package-scoped commands when available. Use full-suite checks for broad, risky, or release-bound changes.
 
