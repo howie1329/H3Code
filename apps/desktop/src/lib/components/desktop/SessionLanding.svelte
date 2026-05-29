@@ -5,11 +5,14 @@
 
   import {
     PromptInput,
+    PromptInputBody,
     PromptInputSubmit,
     PromptInputTextarea,
+    PromptInputToolbar,
+    PromptInputTools,
   } from "$lib/components/ai-elements/prompt-input/index.js";
+  import { Separator } from "$lib/components/ui/separator/index.js";
   import LandingRepoSelector from "$lib/components/desktop/LandingRepoSelector.svelte";
-  import PromptComposerField from "$lib/components/desktop/PromptComposerField.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import * as Kbd from "$lib/components/ui/kbd/index.js";
 
@@ -63,45 +66,38 @@
         </div>
       {/if}
 
-      <PromptInput
-        onSubmit={(message, event) => handleLandingSubmit(message, event)}
-        class="w-full overflow-visible rounded-none border-0 bg-transparent shadow-none"
-      >
-        <PromptComposerField layout="stacked">
-          {#snippet input()}
-            <label for="landing-prompt" class="sr-only">Prompt</label>
-            <PromptInputTextarea
-              id="landing-prompt"
-              bind:ref={textareaRef}
-              bind:value={desktopState.landingPromptValue}
-              class="min-h-24! w-full resize-none border-none bg-transparent p-0 text-xs leading-snug text-foreground shadow-none placeholder:text-xs placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-              placeholder={desktopState.landingRepoPath
-                ? `Ask Pi about ${desktopState.landingRepoName ?? "this repo"}…`
-                : "Describe what you want Pi to do…"}
-              title="Enter to start session and send"
-              disabled={!desktopState.landingRepoPath || isSubmitting}
-            />
-          {/snippet}
+      <PromptInput onSubmit={(message, event) => handleLandingSubmit(message, event)} class="w-full">
+        <PromptInputBody>
+          <label for="landing-prompt" class="sr-only">Prompt</label>
+          <PromptInputTextarea
+            id="landing-prompt"
+            bind:ref={textareaRef}
+            bind:value={desktopState.landingPromptValue}
+            placeholder={desktopState.landingRepoPath
+              ? `Ask Pi about ${desktopState.landingRepoName ?? "this repo"}…`
+              : "Describe what you want Pi to do…"}
+            title="Enter to start session and send"
+            disabled={!desktopState.landingRepoPath || isSubmitting}
+          />
+        </PromptInputBody>
 
-          {#snippet footer()}
+        <Separator />
+
+        <PromptInputToolbar>
+          <PromptInputTools>
             <LandingRepoSelector disabled={isSubmitting} />
-          {/snippet}
+          </PromptInputTools>
 
-          {#snippet trailing()}
-            <PromptInputSubmit
-              variant={desktopState.canSubmitLanding ? "default" : "ghost"}
-              size="icon"
-              data-prompt-input-submit
-              class="size-7 shrink-0 rounded-full shadow-none transition-[background-color,color,opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 {desktopState.canSubmitLanding
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : 'text-muted-foreground/55 hover:text-muted-foreground'}"
-              title="Start session"
-              disabled={!desktopState.canSubmitLanding}
-            >
-              <HugeiconsIcon icon={ArrowUp02Icon} data-icon />
-            </PromptInputSubmit>
-          {/snippet}
-        </PromptComposerField>
+          <PromptInputSubmit
+            variant={desktopState.canSubmitLanding ? "default" : "ghost"}
+            size="icon"
+            data-prompt-input-submit
+            title="Start session"
+            disabled={!desktopState.canSubmitLanding}
+          >
+            <HugeiconsIcon icon={ArrowUp02Icon} data-icon class="size-4" />
+          </PromptInputSubmit>
+        </PromptInputToolbar>
       </PromptInput>
 
       <p class="mt-2 text-center text-[11px] leading-tight text-muted-foreground">

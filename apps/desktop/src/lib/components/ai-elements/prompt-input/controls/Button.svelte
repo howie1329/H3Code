@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/utils";
 	import { Button } from "$lib/components/ui/button";
 	import type { ButtonProps } from "$lib/components/ui/button/index.js";
 
@@ -18,6 +18,7 @@
 	let newSize = $derived.by((): "default" | "sm" | "lg" | "icon" => {
 		return (size ?? hasMultipleChildren) ? "default" : "icon";
 	});
+	// indexing
 </script>
 
 <Button

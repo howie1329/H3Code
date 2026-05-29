@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/utils";
 	import { Textarea } from "$lib/components/ui/textarea/index.js";
 	import type { HTMLTextareaAttributes } from "svelte/elements";
 	import { getAttachmentsContext } from "../context/attachments.svelte.js";
@@ -13,15 +13,15 @@
 		value?: string;
 		onchange?: (event: Event) => void;
 	}
-
+	// indexing
 	let {
 		ref = $bindable(null),
 		class: className,
 		placeholder = "What would you like to know?",
 		value = $bindable(""),
 		onchange,
-		oninput,
 		onkeydown,
+		oninput,
 		...props
 	}: Props = $props();
 

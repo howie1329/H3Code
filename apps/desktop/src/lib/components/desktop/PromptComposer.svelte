@@ -6,14 +6,13 @@
     ArrowUp02Icon,
     Cancel01Icon,
     InformationCircleIcon,
-    StopCircleIcon,
+    SquareIcon,
   } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
   import ComposerModelMenuPanel from "$lib/components/desktop/ComposerModelMenuPanel.svelte";
   import ComposerThinkingMenuPanel from "$lib/components/desktop/ComposerThinkingMenuPanel.svelte";
   import ModelSelector from "$lib/components/desktop/ModelSelector.svelte";
-  import PromptComposerField from "$lib/components/desktop/PromptComposerField.svelte";
   import SlashCommandMenu from "$lib/components/desktop/SlashCommandMenu.svelte";
   import ThinkingLevelSelector from "$lib/components/desktop/ThinkingLevelSelector.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
@@ -21,10 +20,15 @@
   import { filterSlashCommands, getActiveSlashToken, replaceSlashToken, type SlashToken } from "$lib/slash-commands";
   import {
     PromptInput,
+    PromptInputBody,
+    PromptInputHeader,
     PromptInputSubmit,
     PromptInputTextarea,
+    PromptInputToolbar,
+    PromptInputTools,
+    type ChatStatus,
   } from "$lib/components/ai-elements/prompt-input/index.js";
-  import { Button } from "$lib/components/ui/button/index.js";
+  import { Separator } from "$lib/components/ui/separator/index.js";
 
   type ComposerMenu = "none" | "slash" | "model" | "thinking";
 
@@ -44,9 +48,19 @@
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
   const isSlashMenuOpen = $derived(activeMenu === "slash" && Boolean(slashToken && tokenKey !== dismissedTokenKey));
-  const isRunning = $derived(desktopState.isAgentRunning || desktopState.sessionState?.isStreaming);
-  const showAbort = $derived(isRunning);
+  const isRunning = $derived(desktopState.isAgentRunning || Boolean(desktopState.sessionState?.isStreaming));
   const showSessionControls = $derived(desktopState.canUseSession);
+  const submitStatus = $derived.by((): ChatStatus => {
+    if (isRunning) {
+      return "streaming";
+    }
+
+    if (desktopState.isSendingPrompt) {
+      return "submitted";
+    }
+
+    return "ready";
+  });
   const showSlashHint = $derived(
     desktopState.supportsSlashCommands &&
       desktopState.canUseSession &&
@@ -508,33 +522,43 @@
         closeMenus();
         desktopState.handlePromptSubmit(message, event);
       }}
-      class="w-full overflow-visible rounded-none border-0 bg-transparent shadow-none"
+      class="w-full"
     >
-      <PromptComposerField showStatus={showStatusLine}>
-        {#snippet input()}
-          <label for="prompt" class="sr-only">Prompt</label>
-          <PromptInputTextarea
-            id="prompt"
-            bind:ref={textareaRef}
-            bind:value={desktopState.promptValue}
-            class="max-h-40 min-h-6! w-full resize-none border-none bg-transparent p-0 text-xs leading-snug text-foreground shadow-none placeholder:text-xs placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-            placeholder={promptPlaceholder}
-            title={textareaTitle}
-            disabled={!desktopState.canUseSession || desktopState.isBusy}
-            oninput={handlePromptInput}
-            onkeydown={handlePromptKeydown}
-            onkeyup={handlePromptInteraction}
-            onclick={(event) => {
-              event.stopPropagation();
-              handlePromptInteraction();
-            }}
-            onselect={handlePromptInteraction}
-          />
-        {/snippet}
+      {#if showStatusLine}
+        <PromptInputHeader class="gap-2 border-b border-border/50 px-3 py-1.5 text-[11px] leading-tight text-muted-foreground">
+          {#if composerMeta.showDot}
+            <span class={composerMeta.dotClass} aria-hidden="true"></span>
+          {/if}
+          <span class="min-w-0 truncate">{composerMeta.text}</span>
+        </PromptInputHeader>
+      {/if}
 
-        {#snippet trailing()}
+      <PromptInputBody>
+        <label for="prompt" class="sr-only">Prompt</label>
+        <PromptInputTextarea
+          id="prompt"
+          bind:ref={textareaRef}
+          bind:value={desktopState.promptValue}
+          placeholder={promptPlaceholder}
+          title={textareaTitle}
+          disabled={!desktopState.canUseSession || desktopState.isBusy}
+          oninput={handlePromptInput}
+          onkeydown={handlePromptKeydown}
+          onkeyup={handlePromptInteraction}
+          onclick={(event) => {
+            event.stopPropagation();
+            handlePromptInteraction();
+          }}
+          onselect={handlePromptInteraction}
+        />
+      </PromptInputBody>
+
+      <Separator />
+
+      <PromptInputToolbar>
+        <PromptInputTools>
           {#if showSessionControls}
-            <div class="flex shrink-0 items-center gap-0.5 rounded-md bg-transparent" role="group" aria-label="Prompt settings">
+            <div class="flex shrink-0 items-center gap-0.5" role="group" aria-label="Prompt settings">
               {#if desktopState.supportsModelPicker}
                 <ModelSelector
                   open={activeMenu === "model"}
@@ -552,42 +576,26 @@
                 onToggle={toggleThinkingMenu}
               />
             </div>
-            <span class="mx-0.5 h-5 w-px shrink-0 bg-border/50" aria-hidden="true"></span>
           {/if}
-          {#if showAbort}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="size-7 text-muted-foreground shadow-none transition-[background-color,color,opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-foreground active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
-              aria-label="Abort run"
-              title="Abort run"
-              onclick={() => desktopState.handleAbort()}
-              disabled={desktopState.isBusy}
-            >
-              <HugeiconsIcon icon={StopCircleIcon} data-icon />
-            </Button>
-          {/if}
-          <PromptInputSubmit
-            variant={desktopState.canSubmit ? "default" : "ghost"}
-            size="icon"
-            data-prompt-input-submit
-            class="size-7 shrink-0 rounded-full shadow-none transition-[background-color,color,opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 {desktopState.canSubmit
-              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-              : 'text-muted-foreground/55 hover:text-muted-foreground'}"
-            title="Send prompt"
-            disabled={!desktopState.canSubmit}
-          >
-            <HugeiconsIcon icon={ArrowUp02Icon} data-icon />
-          </PromptInputSubmit>
-        {/snippet}
+        </PromptInputTools>
 
-        {#snippet status()}
-          {#if composerMeta.showDot}
-            <span class={composerMeta.dotClass} aria-hidden="true"></span>
+        <PromptInputSubmit
+          status={submitStatus}
+          variant={desktopState.canSubmit || isRunning ? "default" : "ghost"}
+          size="icon"
+          data-prompt-input-submit
+          class="shrink-0"
+          title={isRunning ? "Stop run" : "Send prompt"}
+          disabled={!isRunning && !desktopState.canSubmit}
+          onStop={() => desktopState.handleAbort()}
+        >
+          {#if isRunning}
+            <HugeiconsIcon icon={SquareIcon} data-icon class="size-4" />
+          {:else}
+            <HugeiconsIcon icon={ArrowUp02Icon} data-icon class="size-4" />
           {/if}
-          <span class="truncate">{composerMeta.text}</span>
-        {/snippet}
-      </PromptComposerField>
+        </PromptInputSubmit>
+      </PromptInputToolbar>
     </PromptInput>
   </div>
 </div>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { FileUIPart } from "ai";
-	import { cn } from "$lib/utils.js";
+	import { cn } from "$lib/utils";
 	import { watch } from "runed";
 	import { onDestroy } from "svelte";
 	import { AttachmentsContext, setAttachmentsContext } from "../context/attachments.svelte.js";
@@ -34,6 +34,7 @@
 		onSubmit: (message: Message, event: SubmitEvent) => void | Promise<void>;
 		children?: import("svelte").Snippet;
 	}
+	// indexing
 
 	let {
 		class: className,
