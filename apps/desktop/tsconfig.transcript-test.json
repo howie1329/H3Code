@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-transcript-test",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "rootDir": "src/lib/components/desktop"
+  },
+  "include": [
+    "src/lib/components/desktop/transcript-render.ts",
+    "src/lib/components/desktop/transcript-render.test.ts"
+  ]
+}

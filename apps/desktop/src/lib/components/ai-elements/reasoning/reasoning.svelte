@@ -2,7 +2,7 @@
 	import { cn } from "$lib/utils";
 	import { watch } from "runed";
 	import { Collapsible } from "$lib/components/ui/collapsible/index.js";
-	import { ReasoningContext, setReasoningContext } from "./reasoning-context.svelte";
+	import { ReasoningContext, setReasoningContext } from "./reasoning-context.svelte.js";
 	import { untrack } from "svelte";
 
 	// indexing
@@ -21,7 +21,7 @@
 		class: className = "",
 		isStreaming = false,
 		open = $bindable(),
-		defaultOpen = true,
+		defaultOpen = false,
 		onOpenChange,
 		duration = $bindable(),
 		children,
@@ -115,7 +115,7 @@
 </script>
 
 <Collapsible
-	class={cn("not-prose mb-4", className)}
+	class={cn("not-prose", className)}
 	bind:open={isOpen}
 	onOpenChange={handleOpenChange}
 	{...props}

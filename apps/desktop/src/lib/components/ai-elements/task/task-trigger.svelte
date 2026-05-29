@@ -7,12 +7,12 @@
 	import type { Snippet } from "svelte";
 
 	export interface TaskTriggerProps extends CollapsiblePrimitive.TriggerProps {
-		title: string;
+		title?: string;
 		class?: string;
 		children?: Snippet;
 	}
 
-	let { children, class: className, title, ...restProps }: TaskTriggerProps = $props();
+	let { children, class: className, title = "", ...restProps }: TaskTriggerProps = $props();
 
 	let randomId = crypto.randomUUID();
 </script>

@@ -6,16 +6,17 @@
 
 	export interface TaskProps extends CollapsiblePrimitive.RootProps {
 		class?: string;
+		animate?: boolean;
 		children?: Snippet;
 	}
-	// indexing
 
-	let { open = $bindable(true), class: className, children, ...restProps }: TaskProps = $props();
+	let { open = $bindable(true), class: className, animate = true, children, ...restProps }: TaskProps = $props();
 </script>
 
 <Collapsible
 	class={cn(
-		"data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=open]:animate-in",
+		animate &&
+			"data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=open]:animate-in motion-reduce:animate-none",
 		className
 	)}
 	bind:open

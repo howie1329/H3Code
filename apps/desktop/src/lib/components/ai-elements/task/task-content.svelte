@@ -7,19 +7,22 @@
 	export interface TaskContentProps extends CollapsiblePrimitive.ContentProps {
 		children?: Snippet;
 		class?: string;
+		compact?: boolean;
 	}
 
-	let { children, class: className, ...restProps }: TaskContentProps = $props();
+	let { children, class: className, compact = false, ...restProps }: TaskContentProps = $props();
 </script>
 
 <CollapsibleContent
 	class={cn(
-		"data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground data-[state=closed]:animate-out data-[state=open]:animate-in outline-none",
+		compact
+			? "outline-none motion-reduce:animate-none"
+			: "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground data-[state=closed]:animate-out data-[state=open]:animate-in outline-none",
 		className
 	)}
 	{...restProps}
 >
-	<div class="border-muted mt-4 space-y-2 border-l-2 pl-4">
+	<div class={cn(compact ? "space-y-1" : "border-muted mt-4 space-y-2 border-l-2 pl-4")}>
 		{@render children?.()}
 	</div>
 </CollapsibleContent>

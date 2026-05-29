@@ -16,9 +16,10 @@
     MessageContent,
     MessageResponse,
   } from "$lib/components/ai-elements/message/index.js";
-  import TranscriptActivityGroup from "$lib/components/desktop/TranscriptActivityGroup.svelte";
+  import TranscriptWorkBlock from "$lib/components/desktop/TranscriptWorkBlock.svelte";
   import {
     buildTranscriptViewModel,
+    extractStreamingThinkingText,
     groupBlocksForRender,
   } from "$lib/components/desktop/transcript-normalize.js";
   import { Button } from "$lib/components/ui/button/index.js";
@@ -44,6 +45,9 @@
   const transcriptView = $derived(buildTranscriptViewModel(desktopState.transcriptMessages));
   const transcriptMessages = $derived(transcriptView.messages);
   const isThinking = $derived(desktopState.composerPhaseLine?.text === "Thinking…");
+  const streamingThinkingText = $derived(
+    extractStreamingThinkingText(desktopState.sessionReadModel.streamingMessage)
+  );
   const transcriptItems = $derived([
     ...transcriptMessages.map((message) => ({ kind: "message" as const, key: message.id, message })),
     ...(isThinking ? [{ kind: "thinking" as const, key: "pi-thinking" }] : []),
@@ -134,10 +138,9 @@
     return "Pi response";
   }
 
-  function hasTextBeforeActivity(blocks: ReturnType<typeof groupBlocksForRender>, activityIndex: number) {
-    for (let index = 0; index < activityIndex; index += 1) {
-      const block = blocks[index];
-      if (block.kind === "text" || block.kind === "thinking") {
+  function hasTextBeforeWork(blocks: ReturnType<typeof groupBlocksForRender>, workIndex: number) {
+    for (let index = 0; index < workIndex; index += 1) {
+      if (blocks[index]?.kind === "text") {
         return true;
       }
     }
@@ -195,24 +198,18 @@
                         ? "ml-auto max-w-[min(36rem,78%)] rounded-lg bg-accent/35 px-2.5 py-1.5"
                         : "w-full max-w-full overflow-visible"}
                     >
-                      {#each renderBlocks as block, blockIndex (block.kind === "activity" ? block.id : block.id)}
+                      {#each renderBlocks as block, blockIndex (block.kind === "work" ? block.id : block.id)}
                         {#if block.kind === "text"}
                           {#if message.role === "user"}
                             <p class="whitespace-pre-wrap break-words text-[13px] leading-snug">{block.text}</p>
                           {:else}
                             <MessageResponse content={block.text} transcript />
                           {/if}
-                        {:else if block.kind === "thinking"}
-                          <details class="py-0.5 text-xs leading-snug text-muted-foreground">
-                            <summary class="cursor-pointer text-[10px] font-normal text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                              Reasoning notes
-                            </summary>
-                            <p class="mt-1 whitespace-pre-wrap break-words text-[11px] leading-snug">{block.text}</p>
-                          </details>
-                        {:else if block.kind === "activity"}
-                          <TranscriptActivityGroup
+                        {:else if block.kind === "work"}
+                          <TranscriptWorkBlock
+                            thinking={block.thinking}
                             tools={block.tools}
-                            followsText={hasTextBeforeActivity(renderBlocks, blockIndex)}
+                            followsText={hasTextBeforeWork(renderBlocks, blockIndex)}
                           />
                         {/if}
                       {/each}
@@ -228,9 +225,11 @@
                 >
                   <Message from="assistant" class="max-w-full gap-1.5" aria-label="Pi response">
                     <MessageContent class="w-full max-w-full overflow-visible">
-                      <div class="flex items-center gap-2 text-xs leading-snug text-muted-foreground" aria-live="polite" aria-busy="true">
-                        <span class="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true"></span>
-                        <span>Pi is thinking…</span>
+                      <div aria-live="polite" aria-busy="true">
+                        <TranscriptWorkBlock
+                          isStreamingReasoning={true}
+                          streamingThinkingText={streamingThinkingText}
+                        />
                       </div>
                     </MessageContent>
                   </Message>

@@ -66,6 +66,20 @@ export function getTranscriptToolLabel(type: string, input?: unknown): string {
   }
 }
 
+export function summarizeWork(thinkingCount: number, tools: { state: string }[]) {
+  const toolSummary = summarizeActivity(tools);
+
+  if (thinkingCount === 0) {
+    return toolSummary;
+  }
+
+  if (tools.length === 0) {
+    return thinkingCount === 1 ? "Reasoning" : `${thinkingCount} reasoning notes`;
+  }
+
+  return `${toolSummary} · reasoning`;
+}
+
 export function summarizeActivity(tools: { state: string }[]) {
   const total = tools.length;
   const errors = tools.filter((tool) => tool.state === "output-error").length;

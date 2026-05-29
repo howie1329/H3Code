@@ -53,7 +53,7 @@ export function setReasoningContext(context: ReasoningContext) {
 }
 
 export function getReasoningContext(): ReasoningContext {
-	let context = getContext<ReasoningContext | undefined>(REASONING_CONTEXT_KEY);
+	const context = getContext<ReasoningContext | undefined>(REASONING_CONTEXT_KEY);
 	if (!context) {
 		throw new Error("Reasoning components must be used within Reasoning");
 	}
