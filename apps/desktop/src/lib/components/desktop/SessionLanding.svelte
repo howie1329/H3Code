@@ -51,14 +51,14 @@
     <div
       class="relative w-full max-w-xl animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none motion-reduce:opacity-100"
     >
-      <div class="mb-8 space-y-1 text-center">
+      <div class="mb-7 space-y-1 text-center">
         <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">New session</p>
         <h1 class="text-xl font-semibold leading-tight text-foreground">What should Pi work on?</h1>
       </div>
 
       {#if desktopState.errorMessage}
         <div
-          class="mb-3 flex items-start gap-2 border-l-2 border-destructive bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          class="mb-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
           role="alert"
           aria-live="assertive"
         >
@@ -99,7 +99,7 @@
         </PromptInputToolbar>
       </PromptInput>
 
-      <p class="mt-3 text-center text-[11px] leading-tight text-muted-foreground">
+      <p class="mt-3.5 text-center text-[11px] leading-tight text-muted-foreground">
         <Kbd.Kbd>Enter</Kbd.Kbd>
         <span class="px-1">starts session</span>
       </p>

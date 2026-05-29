@@ -464,7 +464,7 @@
 <div
   class={cn(
     floating
-      ? "pointer-events-none bg-gradient-to-t from-background from-35% via-background/75 via-65% to-transparent px-6 pt-12 pb-4"
+      ? "pointer-events-none bg-[linear-gradient(to_top,var(--background)_55%,transparent)] px-6 pt-10 pb-4"
       : "border-t border-border/50 px-6 py-1.5",
   )}
 >
@@ -535,11 +535,11 @@
       }}
       class={cn(
         "w-full",
-        floating && "rounded-xl border-border/50 bg-background/95 shadow-sm backdrop-blur-md",
+        floating && "rounded-xl border-border/50 bg-background/95 backdrop-blur-sm",
       )}
     >
       {#if showStatusLine}
-        <PromptInputHeader class="gap-2 border-b border-border/50 px-3 py-1.5 text-[11px] leading-tight text-muted-foreground">
+        <PromptInputHeader class="gap-2 border-b border-border/50 px-2.5 py-1.5 text-[11px] leading-tight text-muted-foreground">
           {#if composerMeta.showDot}
             <span class={composerMeta.dotClass} aria-hidden="true"></span>
           {/if}
@@ -602,9 +602,9 @@
           onStop={() => desktopState.handleAbort()}
         >
           {#if isRunning}
-            <HugeiconsIcon icon={SquareIcon} data-icon class="size-4" />
+            <HugeiconsIcon icon={SquareIcon} data-icon class="size-3.5" />
           {:else}
-            <HugeiconsIcon icon={ArrowUp02Icon} data-icon class="size-4" />
+            <HugeiconsIcon icon={ArrowUp02Icon} data-icon class="size-3.5" />
           {/if}
         </PromptInputSubmit>
       </PromptInputToolbar>
