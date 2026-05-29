@@ -5,12 +5,11 @@
   import { get } from "svelte/store";
   import { tick, type Snippet } from "svelte";
 
+  import ArrowDown from "@lucide/svelte/icons/arrow-down";
+  import { backOut } from "svelte/easing";
+  import { fly } from "svelte/transition";
+
   import { desktopState } from "$lib/desktop-state.svelte";
-  import {
-    Conversation,
-    ConversationContent,
-    ConversationScrollButton,
-  } from "$lib/components/ai-elements/conversation/index.js";
   import {
     Message,
     MessageContent,
@@ -32,6 +31,9 @@
     EmptyTitle,
   } from "$lib/components/ui/empty/index.js";
   import { Kbd } from "$lib/components/ui/kbd/index.js";
+  import { cn } from "$lib/utils.js";
+
+  const TRANSCRIPT_SCROLL_END_THRESHOLD = 48;
 
   let { children }: { children?: Snippet } = $props();
   let transcriptScrollElement = $state<HTMLDivElement | null>(null);
@@ -39,6 +41,9 @@
   let composerInsetPx = $state(176);
   let hasScrolledInitialTranscript = $state(false);
   let transcriptSessionKey = $state<string | undefined>();
+  let transcriptPinnedToEnd = $state(true);
+  let transcriptAtEnd = $state(true);
+  let lastTranscriptScrollTop = 0;
 
   const composerScrollInsetPx = $derived(composerInsetPx + 8);
 
@@ -60,7 +65,7 @@
     getItemKey: (index) => transcriptItems[index]?.key ?? index,
     anchorTo: "end",
     followOnAppend: true,
-    scrollEndThreshold: 200,
+    scrollEndThreshold: TRANSCRIPT_SCROLL_END_THRESHOLD,
     overscan: 6,
     gap: 14,
     useAnimationFrameWithResizeObserver: true,
@@ -77,6 +82,9 @@
     if (nextSessionKey !== transcriptSessionKey) {
       transcriptSessionKey = nextSessionKey;
       hasScrolledInitialTranscript = false;
+      transcriptPinnedToEnd = true;
+      transcriptAtEnd = true;
+      lastTranscriptScrollTop = 0;
       get(transcriptVirtualizer).measure();
     }
   });
@@ -95,8 +103,12 @@
 
       composerInsetPx = nextInset;
 
-      if (transcriptItems.length > 0 && get(transcriptVirtualizer).isAtEnd(280)) {
-        void tick().then(() => get(transcriptVirtualizer).scrollToEnd({ behavior: "auto" }));
+      if (
+        transcriptPinnedToEnd &&
+        transcriptItems.length > 0 &&
+        get(transcriptVirtualizer).isAtEnd(TRANSCRIPT_SCROLL_END_THRESHOLD)
+      ) {
+        void tick().then(() => scrollTranscriptToEnd("auto"));
       }
     };
 
@@ -111,10 +123,13 @@
   $effect(() => {
     const count = transcriptItems.length;
     const inset = composerScrollInsetPx;
+    const pinnedToEnd = transcriptPinnedToEnd;
     get(transcriptVirtualizer).setOptions({
       count,
       paddingEnd: inset,
       scrollPaddingEnd: inset,
+      anchorTo: pinnedToEnd ? "end" : "start",
+      followOnAppend: pinnedToEnd,
     });
 
     if (!count) {
@@ -124,10 +139,38 @@
 
     if (!hasScrolledInitialTranscript) {
       void tick().then(() => {
-        get(transcriptVirtualizer).scrollToEnd({ behavior: "auto" });
+        scrollTranscriptToEnd("auto");
         hasScrolledInitialTranscript = true;
       });
     }
+  });
+
+  $effect(() => {
+    const scrollElement = transcriptScrollElement;
+    if (!scrollElement) {
+      return;
+    }
+
+    const handleScroll = () => {
+      const virtualizer = get(transcriptVirtualizer);
+      const atEnd = virtualizer.isAtEnd(TRANSCRIPT_SCROLL_END_THRESHOLD);
+      const scrollTop = scrollElement.scrollTop;
+
+      transcriptAtEnd = atEnd;
+
+      if (scrollTop < lastTranscriptScrollTop - 2) {
+        transcriptPinnedToEnd = false;
+      } else if (atEnd) {
+        transcriptPinnedToEnd = true;
+      }
+
+      lastTranscriptScrollTop = scrollTop;
+    };
+
+    scrollElement.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+
+    return () => scrollElement.removeEventListener("scroll", handleScroll);
   });
 
   function messageAriaLabel(role: string) {
@@ -151,14 +194,23 @@
   function measureTranscriptItem(node: HTMLDivElement) {
     get(transcriptVirtualizer).measureElement(node);
   }
+
+  function scrollTranscriptToEnd(behavior: ScrollBehavior = "smooth") {
+    transcriptPinnedToEnd = true;
+    get(transcriptVirtualizer).setOptions({
+      anchorTo: "end",
+      followOnAppend: true,
+    });
+    get(transcriptVirtualizer).scrollToEnd({ behavior });
+  }
 </script>
 
 <section class="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Workspace transcript">
   <div class="absolute inset-0 flex min-h-0 flex-col overflow-hidden">
     {#if hasTranscriptMessages}
-      <Conversation class="h-full min-h-0">
-        <ConversationContent
-          bind:ref={transcriptScrollElement}
+      <div class="relative flex h-full min-h-0 flex-col overflow-hidden" role="log">
+        <div
+          bind:this={transcriptScrollElement}
           class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-4"
           style={`scroll-padding-bottom: ${composerScrollInsetPx}px`}
         >
@@ -237,13 +289,29 @@
               {/if}
             {/each}
           </div>
-        </ConversationContent>
-        <ConversationScrollButton
-          bottomOffset={composerScrollInsetPx + 12}
-          class="size-8 border-border/50 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
-          onclick={() => get(transcriptVirtualizer).scrollToEnd({ behavior: "smooth" })}
-        />
-      </Conversation>
+        </div>
+        {#if !transcriptAtEnd}
+          <div
+            in:fly={{ duration: 300, y: 10, easing: backOut }}
+            out:fly={{ duration: 200, y: 10, easing: backOut }}
+            class="absolute left-[50%] translate-x-[-50%] motion-reduce:transition-none"
+            style:bottom="{composerScrollInsetPx + 12}px"
+          >
+            <Button
+              class={cn(
+                "size-8 rounded-full border-border/50 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground",
+              )}
+              onclick={() => scrollTranscriptToEnd("smooth")}
+              size="icon"
+              type="button"
+              variant="outline"
+              aria-label="Scroll to latest messages"
+            >
+              <ArrowDown class="size-4" />
+            </Button>
+          </div>
+        {/if}
+      </div>
     {:else}
       <div
         class="h-full overflow-auto px-6 py-5"
