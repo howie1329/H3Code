@@ -114,11 +114,14 @@
   }
 </script>
 
-<section class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Workspace transcript">
-  <div class="min-h-0 flex-1 overflow-hidden">
+<section class="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Workspace transcript">
+  <div class="absolute inset-0 flex min-h-0 flex-col overflow-hidden">
     {#if hasTranscriptMessages}
       <Conversation class="h-full min-h-0">
-        <ConversationContent bind:ref={transcriptScrollElement} class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-24">
+        <ConversationContent
+          bind:ref={transcriptScrollElement}
+          class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-6 scroll-pb-36"
+        >
           {#if desktopState.errorMessage}
             <div
               class="mx-auto mb-4 flex max-w-[46rem] items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive"
@@ -198,14 +201,15 @@
               {/if}
             {/each}
           </div>
+          <div class="mx-auto h-36 max-w-[46rem] shrink-0" aria-hidden="true"></div>
         </ConversationContent>
         <ConversationScrollButton
-          class="size-8 border-border/50 bg-background text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
+          class="!bottom-36 size-8 border-border/50 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground"
           onclick={() => get(transcriptVirtualizer).scrollToEnd({ behavior: "smooth" })}
         />
       </Conversation>
     {:else}
-      <div class="h-full overflow-auto px-6 py-5">
+      <div class="h-full overflow-auto px-6 py-5 pb-36">
         {#if desktopState.errorMessage}
           <div class="mb-4 flex items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive" role="alert" aria-live="assertive">
             <HugeiconsIcon icon={AlertCircleIcon} data-icon />
@@ -305,7 +309,7 @@
     {/if}
   </div>
 
-  <div class="shrink-0">
+  <div class="absolute inset-x-0 bottom-0 z-10">
     {@render children?.()}
   </div>
 </section>

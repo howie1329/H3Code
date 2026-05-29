@@ -28,8 +28,11 @@
     PromptInputTools,
     type ChatStatus,
   } from "$lib/components/ai-elements/prompt-input/index.js";
+  import { cn } from "$lib/utils.js";
 
   type ComposerMenu = "none" | "slash" | "model" | "thinking";
+
+  let { floating = false }: { floating?: boolean } = $props();
 
   let wrapperRef = $state<HTMLDivElement | null>(null);
   let textareaRef = $state<HTMLTextAreaElement | null>(null);
@@ -458,8 +461,17 @@
 
 <svelte:window onclick={handleWindowClick} />
 
-<div class="border-t border-border/50 px-6 py-1.5">
-  <div bind:this={wrapperRef} class="relative mx-auto max-w-3xl">
+<div
+  class={cn(
+    floating
+      ? "pointer-events-none bg-gradient-to-t from-background from-35% via-background/75 via-65% to-transparent px-6 pt-12 pb-4"
+      : "border-t border-border/50 px-6 py-1.5",
+  )}
+>
+  <div
+    bind:this={wrapperRef}
+    class={cn("relative mx-auto w-full", floating ? "pointer-events-auto max-w-[46rem]" : "max-w-3xl")}
+  >
     {#if desktopState.sessionNotification}
       {@const notification = desktopState.sessionNotification}
       <div
@@ -521,7 +533,10 @@
         closeMenus();
         desktopState.handlePromptSubmit(message, event);
       }}
-      class="w-full"
+      class={cn(
+        "w-full",
+        floating && "rounded-xl border-border/50 bg-background/95 shadow-sm backdrop-blur-md",
+      )}
     >
       {#if showStatusLine}
         <PromptInputHeader class="gap-2 border-b border-border/50 px-3 py-1.5 text-[11px] leading-tight text-muted-foreground">
