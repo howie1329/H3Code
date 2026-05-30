@@ -1,0 +1,107 @@
+# Desktop shell — top bar + session sidebar + workspace
+# Status: proposed
+# Design system: DESIGN-SYSTEM.md (Linear-inspired, single canvas)
+
+id: desktop-shell-layout
+version: 1
+status: proposed
+title: Persistent top bar with session-only sidebar
+
+goal: >
+  Maximize horizontal and vertical space for the agent workspace by moving
+  global chrome (repo scope, sidebar toggle) into a slim persistent header and
+  restricting the collapsible sidebar to session navigation only.
+
+regions:
+  - id: top_bar
+    position: top
+    height: h-10
+    persist: true
+    border: border-b border-border/50
+    background: background
+    children:
+      - id: sidebar_toggle
+        align: start
+        order: 1
+        control: Sidebar.Trigger
+        shortcut: Cmd+B
+      - id: repo_selector
+        align: start
+        order: 2
+        control: RepoDropdown
+        note: Switches active workspace repo for the entire app inset
+      - id: top_bar_actions
+        align: end
+        order: 3
+        optional: true
+        items:
+          - command_menu_trigger
+          - context_inspector_toggle
+          - session_diff_toggle
+          - pi_status_compact
+
+  - id: body
+    position: below top_bar
+    flex: flex-1 min-h-0
+    children:
+      - id: session_sidebar
+        position: left
+        width_expanded: 15rem
+        width_collapsed: 3rem
+        collapsible: true
+        variant: offcanvas
+        purpose: session_navigation_only
+        note: No repo tree in sidebar header; repos live in top bar dropdown
+
+      - id: main_inset
+        position: center
+        flex: flex-1 min-w-0
+        children:
+          - id: workspace_route
+            routes: [/, /workspace]
+            children:
+              - id: workspace_header_optional
+                note: >
+                  May merge session title / git chip into top_bar later;
+                  initially keep minimal route header or fold into top bar phase 2
+              - id: agent_workspace
+                flex: flex-1
+                contains:
+                  - transcript
+                  - floating_prompt_composer
+              - id: right_inspector
+                width: 22rem-28rem
+                modes: [context, diff]
+                mutually_exclusive: true
+                collapsible: true
+
+  - id: settings_route
+    route: /settings
+    pattern: settings_split
+    note: Unchanged pattern; top bar may show "Settings" label instead of repo dropdown
+
+layout_delta_from_current:
+  removed_from_sidebar:
+    - repo_list_as_primary_navigation
+    - sidebar_top_actions_that_duplicate_top_bar
+  moved_to_top_bar:
+    - sidebar_toggle
+    - active_repo_dropdown
+  sidebar_becomes:
+    - flat_or_grouped_session_list_for_active_repo_only
+    - new_session_button
+    - search_sessions_optional
+
+acceptance:
+  - Top bar visible on workspace routes without scrolling away
+  - Toggling sidebar does not change selected repo
+  - Workspace transcript area gains width equal to former repo tree chrome in sidebar
+  - Inspector behavior and shortcuts (Cmd+I, Cmd+D) unchanged unless spec updated
+
+open_questions:
+  - id: session_title_location
+    options: [top_bar_center, slim_strip_below_top_bar, floating_in_transcript]
+  - id: landing_route
+    question: Does / show top bar + empty sidebar or full-bleed landing?
+  - id: multi_repo_sessions_visible
+    question: When switching repo via dropdown, close inspector or preserve per-repo?

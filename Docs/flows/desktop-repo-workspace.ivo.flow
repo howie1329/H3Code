@@ -1,0 +1,79 @@
+# Repo selection scopes the entire workspace below the header
+
+id: desktop-repo-workspace
+version: 1
+status: proposed
+title: Top bar repo dropdown drives workspace scope
+
+goal: >
+  One active repo at a time. The dropdown in the persistent header is the
+  primary control for which repository the agent workspace, session list, and
+  connection context use.
+
+state:
+  source: desktopState
+  fields:
+    - repoPath
+    - repos
+    - landingRepoPath
+
+controls:
+  - id: repo_dropdown
+    location: top_bar
+    placement: immediately_right_of_sidebar_toggle
+    type: custom_combobox_or_select
+    display:
+      - repo_name
+      - optional_path_truncation
+    actions:
+      - select_repo
+      - add_repository
+      - remove_repository_from_index
+
+flows:
+  - name: switch_active_repo
+    trigger: user_selects_different_repo_in_dropdown
+    steps:
+      - set desktopState.repoPath to selected path
+      - refresh session list for that repo in sidebar
+      - if selectedSession belongs to other repo:
+          clear or prompt to switch session
+      - navigate to /workspace if on landing with repo chosen
+      - optional: auto_connect per desktopSettings.autoConnectOnLaunch
+    outcome: main_inset shows workspace for new repo; sidebar lists only that repo sessions
+
+  - name: add_repo
+    trigger: user_chooses_add_in_dropdown
+    steps:
+      - native folder picker via desktop shell API
+      - index repo in SQLite metadata
+      - append to repos list
+      - set as active repo
+    outcome: dropdown shows new repo; sidebar loads sessions
+
+  - name: first_launch_no_repos
+    trigger: repos empty
+    steps:
+      - show empty state in dropdown placeholder
+      - sidebar shows add repo CTA or mirrors dropdown add action
+      - workspace shows SessionLanding or empty workspace prompt
+    outcome: user adds repo from dropdown before sessions appear
+
+ui_rules:
+  - Dropdown width capped; long paths in title attribute only
+  - Active repo visually distinct in closed state (name + mono path chip optional)
+  - Switching repo does not collapse session sidebar unless user toggled it
+
+persistence:
+  - remember last_active_repo_path in preferences
+  - sidebarOpen unchanged on repo switch
+
+acceptance:
+  - Single repo dropdown is sufficient to change workspace without opening sidebar
+  - Session sidebar always reflects active repo only (no multi-repo tree in sidebar)
+
+open_questions:
+  - id: recent_repos_section
+    question: Pin recent repos in dropdown footer vs flat list?
+  - id: worktree_display
+    question: Show worktree path in dropdown when session uses worktree?

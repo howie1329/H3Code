@@ -1,0 +1,115 @@
+# Sessions live in the sidebar; new session stays discoverable
+
+id: desktop-session-navigation
+version: 1
+status: proposed
+title: Session-only sidebar navigation
+
+goal: >
+  Users pick and manage sessions from the collapsible left sidebar. The top bar
+  handles repo scope only. New sessions must remain obvious without crowding the
+  top bar.
+
+recommendation:
+  primary: sidebar
+  secondary_optional: session_dropdown_in_top_bar
+  rationale: >
+    Session lists are longer and benefit from scroll, search, status dots, and
+    context menus already in VirtualSessionList. A second top-bar dropdown
+    duplicates the sidebar unless the sidebar stays collapsed by default.
+
+regions:
+  session_sidebar:
+    scope: active_repo_only
+    sections:
+      - header:
+          - label: Sessions
+          - actions: [new_session, search_optional]
+      - body:
+          - virtualized_session_list
+          - row: title, status dot, delete on hover
+      - footer:
+          - settings_link
+          - theme_toggle_optional_relocate
+
+flows:
+  - name: select_session
+    trigger: click_session_row_in_sidebar
+    steps:
+      - goto /workspace
+      - desktopState.handleSwitchSession(sessionPath, repoPath)
+    outcome: transcript loads; composer focused per existing shortcuts
+
+  - name: new_session_from_sidebar
+    trigger: click_new_session_in_sidebar_header
+    steps:
+      - desktopState.enterLanding with active repoPath
+      - goto /
+    outcome: SessionLanding with repo preselected; user submits prompt to start
+
+  - name: new_session_keyboard
+    trigger: Cmd+N
+    steps:
+      - same as new_session_from_sidebar when repoPath set
+      - else focus landing composer on /
+    outcome: unchanged from current global shortcut behavior
+
+  - name: sidebar_collapsed
+    trigger: user_closes_sidebar_or_offcanvas
+    steps:
+      - session list hidden
+      - top bar repo dropdown still switches repo
+      - user reopens via toggle or Cmd+B
+    outcome: full width for workspace; session pick requires opening sidebar
+
+alternative_considered:
+  id: session_dropdown_in_top_bar
+  placement: right_of_repo_dropdown
+  pros:
+    - switch session without opening sidebar
+    - pairs with always-collapsed sidebar for maximum space
+  cons:
+    - poor fit for long lists and virtualized rows
+    - duplicates VirtualSessionList logic
+    - crowded top bar on narrow windows
+  verdict: defer unless user testing shows sidebar-open rate is too low
+
+flows_new_session:
+  recommended:
+    - location: sidebar_header_primary_button
+    - label: New session
+    - shortcut: Cmd+N
+  acceptable_secondary:
+    - command_menu: New session
+    - landing_route: / when no session selected
+
+empty_states:
+  - no_sessions_in_repo:
+      sidebar: No sessions yet + New session
+      workspace: empty transcript prompt
+  - no_session_selected:
+      workspace: Choose a session from the sidebar
+  - sidebar_closed_no_selection:
+      workspace: Open sidebar to pick a session or use Cmd+N
+
+acceptance:
+  - All session rows for active repo visible in sidebar only
+  - New session reachable in one click from expanded sidebar
+  - No repo folders in sidebar (repo switch only via top bar)
+  - VirtualSessionList and session delete flows preserved
+
+implementation_notes:
+  map_to_files:
+    - AppSidebar.svelte — remove repo accordion; session list only
+    - new AppTopBar.svelte — toggle + RepoDropdown
+    - +layout.svelte — Sidebar.Provider wraps body below top bar, not full screen
+    - PageShell / AppHeader — merge or remove duplicate Sidebar.Trigger
+  state:
+    - repos still in desktopState.repos for dropdown data
+    - expand/collapse per-repo in sidebar may become unnecessary
+
+open_questions:
+  - id: cross_repo_session_memory
+    question: When returning to a repo, restore last selected session?
+  - id: search
+    question: Keep command menu (Cmd+K) as primary session search vs sidebar filter?
