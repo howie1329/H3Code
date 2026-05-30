@@ -137,9 +137,9 @@
 	<Textarea
 		bind:ref
 		class={cn(
-			"w-full resize-none rounded-none border-none px-3 py-2.5 text-xs leading-snug shadow-none ring-0 outline-none",
+			"w-full resize-none rounded-none border-none px-2.5 py-1.5 !text-[11px] leading-tight shadow-none ring-0 outline-none",
 			"field-sizing-content bg-transparent dark:bg-transparent",
-			"max-h-48 min-h-10",
+			"max-h-48 !min-h-8 placeholder:text-muted-foreground",
 			"focus-visible:ring-0",
 			className
 		)}
@@ -156,9 +156,9 @@
 	<Textarea
 		bind:ref
 		class={cn(
-			"w-full resize-none rounded-none border-none px-3 py-2.5 text-xs leading-snug shadow-none ring-0 outline-none",
+			"w-full resize-none rounded-none border-none px-2.5 py-1.5 !text-[11px] leading-tight shadow-none ring-0 outline-none",
 			"field-sizing-content bg-transparent dark:bg-transparent",
-			"max-h-48 min-h-10",
+			"max-h-48 !min-h-8 placeholder:text-muted-foreground",
 			"focus-visible:ring-0",
 			className
 		)}
