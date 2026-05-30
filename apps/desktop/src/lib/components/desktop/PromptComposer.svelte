@@ -10,9 +10,16 @@
   } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
+  import {
+    SESSION_SETTINGS_STATIC_LABEL_CLASS,
+  } from "$lib/components/desktop/composer-menu.js";
   import SessionSettingsMenu from "$lib/components/desktop/SessionSettingsMenu.svelte";
   import SessionSettingsTrigger from "$lib/components/desktop/SessionSettingsTrigger.svelte";
   import SlashCommandMenu from "$lib/components/desktop/SlashCommandMenu.svelte";
+  import {
+    WORKSPACE_COLUMN_INSET_CLASS,
+    WORKSPACE_COLUMN_MAX_W_CLASS,
+  } from "$lib/components/desktop/workspace-column.js";
   import { desktopState } from "$lib/desktop-state.svelte";
   import {
     getModelLabel,
@@ -408,13 +415,19 @@
 <div
   class={cn(
     floating
-      ? "pointer-events-none bg-[linear-gradient(to_top,var(--background)_55%,transparent)] px-6 pt-10 pb-4"
-      : "border-t border-border/50 px-6 py-1.5",
+      ? cn(
+          "pointer-events-none bg-[linear-gradient(to_top,var(--background)_60%,transparent)] pt-8 pb-3",
+          WORKSPACE_COLUMN_INSET_CLASS,
+        )
+      : cn("border-t border-border/50 py-1.5", WORKSPACE_COLUMN_INSET_CLASS),
   )}
 >
   <div
     bind:this={wrapperRef}
-    class={cn("relative mx-auto w-full", floating ? "pointer-events-auto max-w-[46rem]" : "max-w-3xl")}
+    class={cn(
+      "relative mx-auto w-full",
+      floating ? cn("pointer-events-auto", WORKSPACE_COLUMN_MAX_W_CLASS) : WORKSPACE_COLUMN_MAX_W_CLASS,
+    )}
   >
     {#if desktopState.sessionNotification}
       {@const notification = desktopState.sessionNotification}
@@ -497,10 +510,7 @@
           {#if showSessionControls}
             <div class="flex min-w-0 shrink items-center" role="group" aria-label="Session settings">
               {#if showStaticSessionLabel}
-                <span
-                  class="inline-flex h-6 max-w-[min(100%,12rem)] shrink-0 items-center truncate px-0.5 font-sans text-[0.625rem] font-[400] leading-none text-muted-foreground/90"
-                  title={staticSessionLabel}
-                >
+                <span class={SESSION_SETTINGS_STATIC_LABEL_CLASS} title={staticSessionLabel}>
                   {staticSessionLabel}
                 </span>
               {:else if showSessionSettings}

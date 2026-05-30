@@ -40,7 +40,7 @@
 <button
   bind:this={anchor}
   type="button"
-  class={cn(SESSION_SETTINGS_TRIGGER_CLASS, open && "bg-accent/60")}
+  class={cn(SESSION_SETTINGS_TRIGGER_CLASS, open && "bg-accent")}
   aria-haspopup="listbox"
   aria-expanded={open}
   aria-label="Session settings"
@@ -54,8 +54,8 @@
   <span class="flex min-w-0 items-center gap-1 truncate">
     <span class="truncate">{modelLabel}</span>
     {#if supportsThinking}
-      <span class="shrink-0 text-muted-foreground/75">· {thinkingShort}</span>
+      <span class="shrink-0 font-normal text-muted-foreground">· {thinkingShort}</span>
     {/if}
   </span>
-  <HugeiconsIcon icon={ArrowDown01Icon} class="size-2 shrink-0 opacity-35" data-icon />
+  <HugeiconsIcon icon={ArrowDown01Icon} class="size-2.5 shrink-0 text-muted-foreground" data-icon />
 </button>

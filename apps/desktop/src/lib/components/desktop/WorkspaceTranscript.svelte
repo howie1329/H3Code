@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AiBrain02Icon, AlertCircleIcon, FolderCodeIcon, TerminalIcon } from "@hugeicons/core-free-icons";
+  import { AiBrain02Icon, AlertCircleIcon, FolderCodeIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { get } from "svelte/store";
@@ -22,15 +22,13 @@
     extractStreamingThinkingText,
     groupBlocksForRender,
   } from "$lib/components/desktop/transcript-normalize.js";
-  import { Button } from "$lib/components/ui/button/index.js";
+  import WorkspaceColumnEmpty from "$lib/components/desktop/WorkspaceColumnEmpty.svelte";
   import {
-    Empty,
-    EmptyContent,
-    EmptyDescription,
-    EmptyHeader,
-    EmptyMedia,
-    EmptyTitle,
-  } from "$lib/components/ui/empty/index.js";
+    WORKSPACE_COLUMN_INSET_CLASS,
+    WORKSPACE_COLUMN_MAX_W_CLASS,
+    WORKSPACE_TRANSCRIPT_ITEM_GAP,
+  } from "$lib/components/desktop/workspace-column.js";
+  import { Button } from "$lib/components/ui/button/index.js";
   import { Kbd } from "$lib/components/ui/kbd/index.js";
   import { cn } from "$lib/utils.js";
 
@@ -78,7 +76,7 @@
     followOnAppend: true,
     scrollEndThreshold: TRANSCRIPT_SCROLL_END_THRESHOLD,
     overscan: 6,
-    gap: 14,
+    gap: WORKSPACE_TRANSCRIPT_ITEM_GAP,
     useAnimationFrameWithResizeObserver: true,
   });
 
@@ -226,12 +224,15 @@
       <div class="relative flex h-full min-h-0 flex-col overflow-hidden" role="log">
         <div
           bind:this={transcriptScrollElement}
-          class="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-4"
+          class={cn("min-h-0 flex-1 overflow-y-auto pt-2 pb-3", WORKSPACE_COLUMN_INSET_CLASS)}
           style={`scroll-padding-bottom: ${composerScrollInsetPx}px`}
         >
           {#if desktopState.errorMessage}
             <div
-              class="mx-auto mb-4 flex max-w-[46rem] items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive"
+              class={cn(
+                "mx-auto mb-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive",
+                WORKSPACE_COLUMN_MAX_W_CLASS,
+              )}
               role="alert"
               aria-live="assertive"
             >
@@ -241,7 +242,7 @@
           {/if}
 
           <div
-            class="relative mx-auto max-w-[46rem]"
+            class={cn("relative mx-auto w-full", WORKSPACE_COLUMN_MAX_W_CLASS)}
             style={`height: ${$transcriptVirtualizer.getTotalSize()}px;`}
           >
             {#each $transcriptVirtualizer.getVirtualItems() as virtualItem (virtualItem.key)}
@@ -257,12 +258,12 @@
                 >
                   <Message
                     from={message.role}
-                    class="max-w-full gap-1.5"
+                    class="max-w-full gap-1"
                     aria-label={messageAriaLabel(message.role)}
                   >
                     <MessageContent
                       class={message.role === "user"
-                        ? "ml-auto max-w-[min(36rem,78%)] rounded-lg bg-accent/35 px-2.5 py-1.5"
+                        ? "ml-auto max-w-[min(36rem,78%)] rounded-md bg-accent/40 px-2.5 py-1.5"
                         : "w-full max-w-full overflow-visible"}
                     >
                       {#each renderBlocks as block, blockIndex (block.kind === "work" ? block.id : block.id)}
@@ -290,7 +291,7 @@
                   class="absolute top-0 left-0 w-full"
                   style={`transform: translateY(${virtualItem.start}px);`}
                 >
-                  <Message from="assistant" class="max-w-full gap-1.5" aria-label="Pi response">
+                  <Message from="assistant" class="max-w-full gap-1" aria-label="Pi response">
                     <MessageContent class="w-full max-w-full overflow-visible">
                       <div aria-live="polite" aria-busy="true">
                         <TranscriptWorkBlock
@@ -322,117 +323,111 @@
             style:bottom="{composerScrollInsetPx + 12}px"
           >
             <Button
-              class="size-8 rounded-full border-border/50 bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+              class="size-7 bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
               onclick={() => scrollTranscriptToEnd("smooth")}
-              size="icon"
+              size="icon-sm"
               type="button"
-              variant="outline"
+              variant="ghost"
               aria-label="Scroll to latest messages"
             >
-              <ArrowDown class="size-4" />
+              <ArrowDown class="size-3.5" />
             </Button>
           </div>
         {/if}
       </div>
     {:else}
       <div
-        class="h-full overflow-auto px-6 py-5"
+        class={cn("h-full overflow-auto py-4", WORKSPACE_COLUMN_INSET_CLASS)}
         style={`scroll-padding-bottom: ${composerScrollInsetPx}px; padding-bottom: ${composerScrollInsetPx}px`}
       >
-        {#if desktopState.errorMessage}
-          <div class="mb-4 flex items-start gap-2 border border-destructive/30 px-3 py-2 text-xs text-destructive" role="alert" aria-live="assertive">
-            <HugeiconsIcon icon={AlertCircleIcon} data-icon />
-            <span>{desktopState.errorMessage}</span>
-          </div>
-        {/if}
-
-        <div class="flex min-h-full items-center justify-center px-6 py-10">
-          {#if !desktopState.repoPath && desktopState.repos.length === 0}
-            <Empty class="max-w-sm border-0 bg-transparent p-0">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <HugeiconsIcon icon={FolderCodeIcon} data-icon />
-                </EmptyMedia>
-                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No repository selected</p>
-                <EmptyTitle>Choose a repo to start.</EmptyTitle>
-                <EmptyDescription>H3Code will load Pi sessions from the selected folder.</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button onclick={() => desktopState.handleSelectRepo()} disabled={desktopState.isBusy}>
-                  <HugeiconsIcon icon={FolderCodeIcon} data-icon="inline-start" />
-                  Select repo
-                </Button>
-              </EmptyContent>
-            </Empty>
-          {:else if !desktopState.repoPath}
-            <Empty class="max-w-sm border-0 bg-transparent p-0">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <HugeiconsIcon icon={AiBrain02Icon} data-icon />
-                </EmptyMedia>
-                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No session selected</p>
-                <EmptyTitle>Choose a session from the sidebar.</EmptyTitle>
-                <EmptyDescription>Expand a repository, then open an existing session or create a new one.</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          {:else if desktopState.piStatus.state !== "connected"}
-            <Empty class="max-w-sm border-0 bg-transparent p-0">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <HugeiconsIcon icon={TerminalIcon} data-icon />
-                </EmptyMedia>
-                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Agent offline</p>
-                <EmptyTitle>Connect to continue.</EmptyTitle>
-                <EmptyDescription>Connect to the local Agent Server for this repository.</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button onclick={() => desktopState.repoPath && desktopState.connectRepo(desktopState.repoPath)} disabled={desktopState.isBusy}>
-                  Connect
-                </Button>
-              </EmptyContent>
-            </Empty>
-          {:else if desktopState.sessions.length === 0}
-            <Empty class="max-w-sm border-0 bg-transparent p-0">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <HugeiconsIcon icon={AiBrain02Icon} data-icon />
-                </EmptyMedia>
-                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">No sessions</p>
-                <EmptyTitle>Create a Pi session.</EmptyTitle>
-                <EmptyDescription>Start a session for this repository when you are ready.</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button
-                  onclick={() =>
-                    desktopState.enterLanding(
-                      desktopState.repoPath ? { repoPath: desktopState.repoPath } : {},
-                    )}
-                  disabled={desktopState.isBusy}
-                >
-                  <HugeiconsIcon icon={AiBrain02Icon} data-icon="inline-start" />
-                  New session
-                </Button>
-              </EmptyContent>
-            </Empty>
-          {:else if desktopState.sessionReadModel.messages.length === 0}
-            <Empty class="max-w-sm border-0 bg-transparent p-0">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <HugeiconsIcon icon={TerminalIcon} data-icon />
-                </EmptyMedia>
-                <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Empty transcript</p>
-                <EmptyTitle>Ready for a prompt.</EmptyTitle>
-                <EmptyDescription>Ask Pi about this repository from the composer below.</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <div class="flex flex-wrap items-center justify-center gap-2 text-[11px] text-muted-foreground">
-                  <span class="inline-flex items-center gap-1"><Kbd>Enter</Kbd> send</span>
-                  <span class="inline-flex items-center gap-1"><Kbd>/</Kbd> commands</span>
-                  <span class="inline-flex items-center gap-1"><Kbd>{shortcutModifier}</Kbd><Kbd>L</Kbd> focus composer</span>
-                </div>
-              </EmptyContent>
-            </Empty>
+        <div class={cn("mx-auto flex w-full flex-col gap-4", WORKSPACE_COLUMN_MAX_W_CLASS)}>
+          {#if desktopState.errorMessage}
+            <div
+              class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+              role="alert"
+              aria-live="assertive"
+            >
+              <HugeiconsIcon icon={AlertCircleIcon} data-icon class="mt-0.5 size-3 shrink-0" />
+              <span>{desktopState.errorMessage}</span>
+            </div>
           {/if}
+
+          <div class="flex min-h-[min(100%,24rem)] flex-1 items-center justify-center py-8">
+            {#if !desktopState.repoPath && desktopState.repos.length === 0}
+              <WorkspaceColumnEmpty
+                title="Add a repository"
+                description="Choose a local folder to load Pi sessions and start work."
+              >
+                {#snippet actions()}
+                  <Button
+                    type="button"
+                    class="h-7 gap-1.5 text-xs"
+                    disabled={desktopState.isBusy}
+                    onclick={() => desktopState.handleSelectRepo()}
+                  >
+                    <HugeiconsIcon icon={FolderCodeIcon} data-icon class="size-3.5" />
+                    Select repository
+                  </Button>
+                {/snippet}
+              </WorkspaceColumnEmpty>
+            {:else if !desktopState.repoPath}
+              <WorkspaceColumnEmpty
+                title="Select a session"
+                description="Expand a repository in the sidebar, then open a session or start a new one."
+              />
+            {:else if desktopState.piStatus.state !== "connected"}
+              <WorkspaceColumnEmpty
+                title="Connect to the agent server"
+                description="Connect for this repository before sending prompts."
+              >
+                {#snippet actions()}
+                  <Button
+                    type="button"
+                    class="h-7 text-xs"
+                    disabled={desktopState.isBusy}
+                    onclick={() => desktopState.repoPath && desktopState.connectRepo(desktopState.repoPath)}
+                  >
+                    Connect repository
+                  </Button>
+                {/snippet}
+              </WorkspaceColumnEmpty>
+            {:else if desktopState.sessions.length === 0}
+              <WorkspaceColumnEmpty
+                title="No sessions in this repository"
+                description="Start a session when you are ready to work with Pi."
+              >
+                {#snippet actions()}
+                  <Button
+                    type="button"
+                    class="h-7 gap-1.5 text-xs"
+                    disabled={desktopState.isBusy}
+                    onclick={() =>
+                      desktopState.enterLanding(
+                        desktopState.repoPath ? { repoPath: desktopState.repoPath } : {},
+                      )}
+                  >
+                    <HugeiconsIcon icon={AiBrain02Icon} data-icon class="size-3.5" />
+                    Start new session
+                  </Button>
+                {/snippet}
+              </WorkspaceColumnEmpty>
+            {:else if desktopState.sessionReadModel.messages.length === 0}
+              <WorkspaceColumnEmpty
+                title="Transcript is empty"
+                description="Send a prompt from the composer below."
+              >
+                {#snippet actions()}
+                  <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                    <span class="inline-flex items-center gap-1"><Kbd>Enter</Kbd> send</span>
+                    <span class="inline-flex items-center gap-1"><Kbd>/</Kbd> commands</span>
+                    <span class="inline-flex items-center gap-1"
+                      ><Kbd>{shortcutModifier}</Kbd><Kbd>L</Kbd> focus composer</span
+                    >
+                  </div>
+                {/snippet}
+              </WorkspaceColumnEmpty>
+            {/if}
+          </div>
         </div>
       </div>
     {/if}
