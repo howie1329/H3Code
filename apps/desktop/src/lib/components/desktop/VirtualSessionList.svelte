@@ -9,6 +9,9 @@
   import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
+  /** Max height per repo session list before it scrolls internally. */
+  const MAX_VIEWPORT_HEIGHT_PX = 280;
+
   let {
     repo,
     sessions,
@@ -21,43 +24,59 @@
     onSessionDeleteRequest: (repo: SidebarRepo, session: PiSessionSummary) => void;
   } = $props();
 
-  let scrollElement = $state<HTMLUListElement | null>(null);
+  let scrollElement = $state<HTMLDivElement | null>(null);
 
   const sessionRowHeight = 28;
   const sessionRowGap = 4;
 
-  const sessionVirtualizer = createVirtualizer<HTMLUListElement, HTMLLIElement>({
+  const orderedSessions = $derived(
+    [...sessions].sort(
+      (left, right) => new Date(right.modified).getTime() - new Date(left.modified).getTime(),
+    ),
+  );
+
+  const sessionVirtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: 0,
     getScrollElement: () => scrollElement,
     estimateSize: () => sessionRowHeight,
     gap: sessionRowGap,
-    getItemKey: (index) => sessions[index]?.path ?? index,
+    getItemKey: (index) => orderedSessions[index]?.path ?? index,
     overscan: 8,
   });
 
   $effect(() => {
-    get(sessionVirtualizer).setOptions({ count: sessions.length });
+    get(sessionVirtualizer).setOptions({ count: orderedSessions.length });
   });
+
+  const totalContentHeight = $derived($sessionVirtualizer.getTotalSize());
+
+  /** Explicit height reserves layout space so the next repo row cannot overlap. */
+  const viewportHeight = $derived(
+    Math.min(MAX_VIEWPORT_HEIGHT_PX, Math.max(totalContentHeight, sessionRowHeight)),
+  );
 </script>
 
-<Sidebar.MenuSub
-  bind:ref={scrollElement}
-  class="relative mx-0 block max-h-[min(50svh,18rem)] min-h-0 w-full translate-x-0 gap-1 overflow-y-auto border-0 px-0 py-0 transition-[height,opacity] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+<div
+  bind:this={scrollElement}
+  role="list"
+  aria-label={`Sessions in ${repo.name}`}
+  class="relative w-full shrink-0 overflow-y-auto rounded-md outline-none transition-[height] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+  style:height="{viewportHeight}px"
 >
-  <div class="relative w-full" style={`height: ${$sessionVirtualizer.getTotalSize()}px;`}>
+  <div class="relative w-full" style:height="{totalContentHeight}px">
     {#each $sessionVirtualizer.getVirtualItems() as virtualItem (virtualItem.key)}
-      {@const session = sessions[virtualItem.index]}
+      {@const session = orderedSessions[virtualItem.index]}
       {#if session}
         {@const isSessionActive = session.path === desktopState.selectedSessionPath}
         {@const isSessionSwitching = isSessionActive && desktopState.isSwitchingSession}
         {@const sessionLabel = getSessionDisplayTitle(session)}
         {@const sessionModified = formatSessionModified(session.modified)}
         {@const sessionStatus = desktopState.getSessionRowStatus(session)}
-        <li
-          data-slot="sidebar-menu-sub-item"
-          data-sidebar="menu-sub-item"
+        <div
+          role="listitem"
           class="group/menu-sub-item absolute top-0 left-0 w-full"
-          style={`height: ${virtualItem.size}px; transform: translateY(${virtualItem.start}px);`}
+          style:height="{virtualItem.size}px"
+          style:transform="translateY({virtualItem.start}px)"
         >
           <ContextMenu.Root>
             <ContextMenu.Trigger class="w-full">
@@ -94,18 +113,6 @@
                 {/snippet}
               </Sidebar.MenuSubButton>
             </ContextMenu.Trigger>
-            <ContextMenu.Content class="w-44">
-              <ContextMenu.Item
-                variant="destructive"
-                disabled={desktopState.isBusy}
-                onSelect={() => onSessionDeleteRequest(repo, session)}
-              >
-                Delete session
-              </ContextMenu.Item>
-            </ContextMenu.Content>
-          </ContextMenu.Root>
-
-          <ContextMenu.Root>
             <ContextMenu.Trigger>
               <button
                 type="button"
@@ -127,8 +134,8 @@
               </ContextMenu.Item>
             </ContextMenu.Content>
           </ContextMenu.Root>
-        </li>
+        </div>
       {/if}
     {/each}
   </div>
-</Sidebar.MenuSub>
+</div>
