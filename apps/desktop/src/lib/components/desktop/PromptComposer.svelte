@@ -21,7 +21,6 @@
   import {
     PromptInput,
     PromptInputBody,
-    PromptInputHeader,
     PromptInputSubmit,
     PromptInputTextarea,
     PromptInputToolbar,
@@ -100,35 +99,17 @@
     return showSlashHint ? `${base} · / for commands` : base;
   });
 
-  const composerMeta = $derived.by(() => {
+  const submitTitle = $derived.by(() => {
+    if (isRunning) {
+      return "Stop run";
+    }
+
     if (desktopState.isSendingPrompt) {
-      return { showDot: true, dotClass: "size-1.5 shrink-0 animate-pulse rounded-full bg-primary", text: "Sending…" };
+      return "Sending prompt";
     }
 
-    const phase = desktopState.composerPhaseLine;
-
-    if (phase) {
-      const showDot = phase.tone === "working" || phase.tone === "warning" || phase.tone === "error";
-      const dotClass =
-        phase.tone === "error"
-          ? "size-1.5 shrink-0 rounded-full bg-destructive"
-          : phase.tone === "warning"
-            ? "size-1.5 shrink-0 animate-pulse rounded-full bg-amber-500"
-            : phase.tone === "working"
-              ? "size-1.5 shrink-0 animate-pulse rounded-full bg-primary"
-              : "size-1.5 shrink-0 rounded-full bg-muted-foreground/60";
-
-      return { showDot, dotClass, text: phase.text };
-    }
-
-    if (desktopState.isBusy) {
-      return { showDot: false, dotClass: "", text: "Busy…" };
-    }
-
-    return { showDot: false, dotClass: "", text: "" };
+    return "Send prompt";
   });
-
-  const showStatusLine = $derived(Boolean(composerMeta.text));
 
   $effect(() => {
     if (slashHighlightedIndex >= filteredCommands.length) {
@@ -533,20 +514,8 @@
         closeMenus();
         desktopState.handlePromptSubmit(message, event);
       }}
-      class={cn(
-        "w-full",
-        floating && "rounded-xl border-border/50 bg-background/95 backdrop-blur-sm",
-      )}
+      class="w-full"
     >
-      {#if showStatusLine}
-        <PromptInputHeader class="gap-2 border-b border-border/50 px-2.5 py-1.5 text-[11px] leading-tight text-muted-foreground">
-          {#if composerMeta.showDot}
-            <span class={composerMeta.dotClass} aria-hidden="true"></span>
-          {/if}
-          <span class="min-w-0 truncate">{composerMeta.text}</span>
-        </PromptInputHeader>
-      {/if}
-
       <PromptInputBody>
         <label for="prompt" class="sr-only">Prompt</label>
         <PromptInputTextarea
@@ -597,7 +566,7 @@
           size="icon"
           data-prompt-input-submit
           class="shrink-0"
-          title={isRunning ? "Stop run" : "Send prompt"}
+          title={submitTitle}
           disabled={!isRunning && !desktopState.canSubmit}
           onStop={() => desktopState.handleAbort()}
         >

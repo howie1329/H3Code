@@ -15,6 +15,7 @@
     MessageContent,
     MessageResponse,
   } from "$lib/components/ai-elements/message/index.js";
+  import TranscriptPhaseTail from "$lib/components/desktop/TranscriptPhaseTail.svelte";
   import TranscriptWorkBlock from "$lib/components/desktop/TranscriptWorkBlock.svelte";
   import {
     buildTranscriptViewModel,
@@ -50,12 +51,22 @@
   const transcriptView = $derived(buildTranscriptViewModel(desktopState.transcriptMessages));
   const transcriptMessages = $derived(transcriptView.messages);
   const isThinking = $derived(desktopState.composerPhaseLine?.text === "Thinking…");
+  const phaseTail = $derived.by(() => {
+    const phase = desktopState.composerPhaseLine;
+
+    if (!phase || phase.text === "Thinking…") {
+      return null;
+    }
+
+    return phase;
+  });
   const streamingThinkingText = $derived(
     extractStreamingThinkingText(desktopState.sessionReadModel.streamingMessage)
   );
   const transcriptItems = $derived([
     ...transcriptMessages.map((message) => ({ kind: "message" as const, key: message.id, message })),
     ...(isThinking ? [{ kind: "thinking" as const, key: "pi-thinking" }] : []),
+    ...(phaseTail ? [{ kind: "phase" as const, key: `phase-${phaseTail.text}`, phase: phaseTail }] : []),
   ]);
 
   const transcriptVirtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -72,7 +83,11 @@
   });
 
   const hasTranscriptMessages = $derived(
-    Boolean(desktopState.repoPath && desktopState.sessions.length > 0 && (transcriptMessages.length > 0 || isThinking))
+    Boolean(
+      desktopState.repoPath &&
+        desktopState.sessions.length > 0 &&
+        (transcriptMessages.length > 0 || isThinking || phaseTail),
+    ),
   );
   const shortcutModifier = $derived(desktopState.platform === "darwin" ? "⌘" : "Ctrl");
 
@@ -286,6 +301,15 @@
                     </MessageContent>
                   </Message>
                 </div>
+              {:else if item?.kind === "phase"}
+                <div
+                  data-index={virtualItem.index}
+                  use:measureTranscriptItem
+                  class="absolute top-0 left-0 w-full"
+                  style={`transform: translateY(${virtualItem.start}px);`}
+                >
+                  <TranscriptPhaseTail phase={item.phase} />
+                </div>
               {/if}
             {/each}
           </div>
@@ -298,9 +322,7 @@
             style:bottom="{composerScrollInsetPx + 12}px"
           >
             <Button
-              class={cn(
-                "size-8 rounded-full border-border/50 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-accent hover:text-foreground",
-              )}
+              class="size-8 rounded-full border-border/50 bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
               onclick={() => scrollTranscriptToEnd("smooth")}
               size="icon"
               type="button"
