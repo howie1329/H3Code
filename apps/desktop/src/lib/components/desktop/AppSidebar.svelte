@@ -46,6 +46,8 @@
   const repoRowButtonClass = `${rowButtonClass} !pr-8`;
   const sidebarInset = "px-2";
   const rowListGapClass = "gap-0.5";
+  const iconActionClass =
+    "grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3";
   const contextMenuContentClass = "w-44";
   const themeToggleLabel = $derived(mode.current === "dark" ? "Switch to light mode" : "Switch to dark mode");
 
@@ -67,57 +69,46 @@
 </script>
 
 <Sidebar.Sidebar collapsible="offcanvas">
-  <Sidebar.Header class="shrink-0 gap-2 border-b border-sidebar-border {sidebarInset} py-2">
-    <button
-      type="button"
-      class="flex h-8 w-full items-center gap-2 rounded-md border border-border/60 bg-background px-2 text-left text-[11px] text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-      aria-label="Open command center"
-      title="Command center (⌘K)"
-      onclick={openCommandMenu}
-    >
-      <HugeiconsIcon icon={Search01Icon} strokeWidth={2} class="size-3 shrink-0" />
-      <span class="min-w-0 flex-1 truncate">Search or jump</span>
-      <kbd
-        class="hidden shrink-0 rounded border border-border/60 bg-muted/40 px-1 py-px font-mono text-[10px] text-muted-foreground sm:inline"
+  <Sidebar.Header class="shrink-0 border-b border-sidebar-border/50 p-0 {sidebarInset} py-1.5">
+    <div class="flex h-7 items-center gap-0.5">
+      <button
+        type="button"
+        aria-label="Open command center"
+        title="Command center (⌘K)"
+        class={iconActionClass}
+        onclick={openCommandMenu}
       >
-        ⌘K
-      </kbd>
-    </button>
-
-    <Button
-      type="button"
-      class="h-7 w-full justify-between gap-2 px-2 text-[11px] font-medium"
-      disabled={desktopState.isBusy}
-      onclick={() => !desktopState.isBusy && openNewSessionLanding()}
-    >
-      <span class="inline-flex min-w-0 items-center gap-2">
-        <HugeiconsIcon icon={Add01Icon} class="size-3 shrink-0" />
-        <span>New session</span>
-      </span>
-      <kbd class="rounded border border-primary-foreground/20 bg-primary-foreground/10 px-1 py-px font-mono text-[10px]">
-        ⌘N
-      </kbd>
-    </Button>
+        <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        aria-label="New session"
+        title="New session (⌘N)"
+        disabled={desktopState.isBusy}
+        class={iconActionClass}
+        onclick={() => !desktopState.isBusy && openNewSessionLanding()}
+      >
+        <HugeiconsIcon icon={Add01Icon} />
+      </button>
+      <button
+        type="button"
+        aria-label="Add repository"
+        title="Add repository"
+        disabled={desktopState.isBusy}
+        class={iconActionClass}
+        onclick={() => desktopState.handleSelectRepo()}
+      >
+        <HugeiconsIcon icon={FolderAddIcon} />
+      </button>
+    </div>
   </Sidebar.Header>
 
   <Sidebar.Content class="min-h-0 flex-1">
     <Sidebar.Group class="flex min-h-0 flex-1 flex-col px-0 py-0">
-      <div class="flex h-7 shrink-0 items-center justify-between gap-1 pt-2 {sidebarInset}">
+      <div class="flex h-7 shrink-0 items-center pt-2 {sidebarInset}">
         <Sidebar.GroupLabel class="h-auto px-0 text-[11px] font-medium text-sidebar-foreground/80">
           Repositories
         </Sidebar.GroupLabel>
-        <div class="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            aria-label="Add repository"
-            title="Add repository"
-            disabled={desktopState.isBusy}
-            class="grid size-6 shrink-0 place-items-center rounded-md text-sidebar-foreground outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3"
-            onclick={() => desktopState.handleSelectRepo()}
-          >
-            <HugeiconsIcon icon={FolderAddIcon} />
-          </button>
-        </div>
       </div>
 
       <Sidebar.GroupContent class="flex min-h-0 flex-1 flex-col">
