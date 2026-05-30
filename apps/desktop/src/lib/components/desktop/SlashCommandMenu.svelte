@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ComposerSelectMenu from "$lib/components/desktop/ComposerSelectMenu.svelte";
+  import { COMPOSER_MENU_GROUP_LABEL_CLASS, composerMenuRowClass } from "$lib/components/desktop/composer-menu.js";
   import { getCommandLocation } from "$lib/slash-commands";
 
   type Props = {
@@ -38,47 +40,30 @@
   });
 </script>
 
-<div
-  class="absolute inset-x-0 bottom-full z-20 mb-2 max-h-80 overflow-hidden rounded-lg border border-border/50 bg-popover text-popover-foreground shadow-none transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none motion-reduce:transform-none"
-  role="listbox"
-  aria-label="Pi slash commands"
+<ComposerSelectMenu
+  open={true}
+  title="Pi commands"
+  description="Select a command to insert it into the prompt."
+  align="full"
+  ariaLabel="Pi slash commands"
+  loading={loading}
+  error={error ? "Couldn't load commands" : undefined}
+  onRetry={onRetry}
 >
-  <div class="border-b border-border/50 px-3 py-2">
-    <div class="text-xs font-medium leading-tight text-foreground">Pi commands</div>
-    <div class="mt-0.5 text-[11px] leading-tight text-muted-foreground">Select a command to insert it into the prompt.</div>
-  </div>
-
   {#if unavailable}
     <div class="px-3 py-4 text-xs text-muted-foreground">Slash commands unavailable for this session.</div>
-  {:else if loading}
-    <div class="px-3 py-4 text-xs text-muted-foreground">Loading slash commands…</div>
-  {:else if error}
-    <div class="flex items-center justify-between gap-3 px-3 py-3 text-xs text-muted-foreground">
-      <span>Couldn’t load commands — retry</span>
-      <button
-        type="button"
-        class="rounded-md px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        onclick={onRetry}
-      >
-        Retry
-      </button>
-    </div>
-  {:else if commands.length === 0}
+  {:else if commands.length === 0 && !loading && !error}
     <div class="px-3 py-4 text-xs text-muted-foreground">No slash commands available.</div>
   {:else}
     <div class="max-h-64 overflow-y-auto py-1">
       {#each groupedCommands as group}
-        <div class="px-2 pb-1 pt-2 text-[10px] font-medium uppercase leading-tight tracking-wide text-muted-foreground first:pt-1">
-          {sourceLabels[group.source]}
-        </div>
+        <div class={COMPOSER_MENU_GROUP_LABEL_CLASS}>{sourceLabels[group.source]}</div>
 
         {#each group.commands as item (`${item.command.source}:${item.command.name}`)}
           {@const location = getCommandLocation(item.command)}
           <button
             type="button"
-            class={item.index === highlightedIndex
-              ? "flex w-full items-start gap-2 bg-accent px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-              : "flex w-full items-start gap-2 px-3 py-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"}
+            class={composerMenuRowClass(item.index === highlightedIndex, true)}
             role="option"
             aria-selected={item.index === highlightedIndex}
             onmouseenter={() => onHighlight(item.index)}
@@ -102,4 +87,4 @@
       {/each}
     </div>
   {/if}
-</div>
+</ComposerSelectMenu>

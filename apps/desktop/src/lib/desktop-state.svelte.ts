@@ -3,7 +3,7 @@ import { goto } from "$app/navigation";
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
 import { extractSessionMetadata } from "$lib/components/desktop/transcript-normalize.js";
 import { formatMessageRole, formatMessageText } from "$lib/message-format.js";
-import { normalizeThinkingLevel } from "$lib/pi-model.js";
+import { mergeModelWithCatalog, normalizeThinkingLevel } from "$lib/pi-model.js";
 import type { SessionDomainEvent } from "$lib/pi-session/domain-events.js";
 import type { SessionActivity, SessionReadModel } from "$lib/pi-session/read-model.js";
 import {
@@ -1039,6 +1039,17 @@ class DesktopState {
       this.availableModels = models;
       this.modelsLoaded = true;
       this.modelsSessionKey = sessionKey;
+
+      if (this.sessionState?.model) {
+        const sessionModel = mergeModelWithCatalog(this.sessionState.model, models);
+
+        if (sessionModel && sessionModel.reasoning !== this.sessionState.model.reasoning) {
+          this.sessionState = {
+            ...this.sessionState,
+            model: sessionModel,
+          };
+        }
+      }
     } catch (error) {
       this.modelsError = getErrorMessage(error);
       this.modelsLoaded = false;
@@ -1062,11 +1073,12 @@ class DesktopState {
 
     try {
       const model = await this.getAgentApi().setModel(provider, modelId);
+      const sessionModel = mergeModelWithCatalog(model, this.availableModels);
 
-      if (this.sessionState) {
+      if (this.sessionState && sessionModel) {
         this.sessionState = {
           ...this.sessionState,
-          model,
+          model: sessionModel,
         };
       }
 
