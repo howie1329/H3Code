@@ -174,3 +174,27 @@ body {
 		@apply font-sans;
   }
 }
+
+@layer utilities {
+  .text-display-hero {
+    font-size: clamp(2.25rem, 4vw + 1rem, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+
+  .text-display-section {
+    font-size: clamp(1.625rem, 2vw + 0.75rem, 2.25rem);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+
+  .text-lead {
+    font-size: clamp(1rem, 0.5vw + 0.9rem, 1.125rem);
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+}

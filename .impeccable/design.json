@@ -1,0 +1,279 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-29T00:00:00.000Z",
+  "title": "Design System: H3Code",
+  "extensions": {
+    "colorMeta": {
+      "canvas-light": {
+        "role": "neutral",
+        "displayName": "Canvas Light",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.25 0 0)",
+          "oklch(0.35 0 0)",
+          "oklch(0.45 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.70 0 0)",
+          "oklch(0.85 0 0)",
+          "oklch(1 0 0)"
+        ]
+      },
+      "ink-light": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.145 0 0)",
+        "tonalRamp": [
+          "oklch(0.10 0 0)",
+          "oklch(0.15 0 0)",
+          "oklch(0.20 0 0)",
+          "oklch(0.30 0 0)",
+          "oklch(0.45 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.70 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "primary-ink": {
+        "role": "primary",
+        "displayName": "Operator Ink",
+        "canonical": "oklch(0.205 0 0)",
+        "tonalRamp": [
+          "oklch(0.10 0 0)",
+          "oklch(0.15 0 0)",
+          "oklch(0.20 0 0)",
+          "oklch(0.30 0 0)",
+          "oklch(0.45 0 0)",
+          "oklch(0.60 0 0)",
+          "oklch(0.75 0 0)",
+          "oklch(0.92 0 0)"
+        ]
+      },
+      "muted-fill": {
+        "role": "neutral",
+        "displayName": "Muted Fill",
+        "canonical": "oklch(0.95 0 0)",
+        "tonalRamp": [
+          "oklch(0.20 0 0)",
+          "oklch(0.30 0 0)",
+          "oklch(0.40 0 0)",
+          "oklch(0.50 0 0)",
+          "oklch(0.65 0 0)",
+          "oklch(0.80 0 0)",
+          "oklch(0.90 0 0)",
+          "oklch(0.98 0 0)"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(0.556 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.25 0 0)",
+          "oklch(0.35 0 0)",
+          "oklch(0.45 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.65 0 0)",
+          "oklch(0.80 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "destructive": {
+        "role": "semantic",
+        "displayName": "Destructive",
+        "canonical": "oklch(0.577 0.245 27.33)",
+        "tonalRamp": [
+          "oklch(0.25 0.12 27)",
+          "oklch(0.35 0.15 27)",
+          "oklch(0.45 0.18 27)",
+          "oklch(0.50 0.20 27)",
+          "oklch(0.55 0.22 27)",
+          "oklch(0.60 0.23 27)",
+          "oklch(0.70 0.20 27)",
+          "oklch(0.85 0.10 27)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Session landing headline only."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel and settings section headers."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Composer, transcript, and button labels at text-xs."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase nav group labels and compact meta."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Paths, IDs, diff metadata."
+      }
+    },
+    "shadows": [
+      {
+        "name": "micro",
+        "value": "0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10)",
+        "purpose": "Popovers and dropdowns only."
+      },
+      {
+        "name": "overlay",
+        "value": "0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10)",
+        "purpose": "Modals when elevation is required."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Row hovers, segmented controls, tool block expand (150ms)."
+      },
+      {
+        "name": "duration-micro",
+        "value": "150ms",
+        "purpose": "State feedback on interactive rows and buttons."
+      },
+      {
+        "name": "duration-layout",
+        "value": "200ms",
+        "purpose": "Inspector panel open/close, sidebar collapse."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Sparse primary action on workbench chrome.",
+      "html": "<button type=\"button\" class=\"ds-btn-primary\">Send message</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: var(--primary, #080808); color: var(--primary-foreground, #f5f5f5); font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; font-size: 0.75rem; font-weight: 500; line-height: 1.5; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), transform 150ms cubic-bezier(0.16, 1, 0.3, 1); outline: none; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary, #080808) 80%, transparent); } .ds-btn-primary:focus-visible { box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring, #8f8f8f) 30%, transparent); } .ds-btn-primary:active { transform: translateY(1px); } @media (prefers-reduced-motion: reduce) { .ds-btn-primary { transition: none; } .ds-btn-primary:active { transform: none; } }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Default toolbar and icon-adjacent actions.",
+      "html": "<button type=\"button\" class=\"ds-btn-ghost\" aria-label=\"Show context panel\"><span class=\"ds-btn-ghost-icon\" aria-hidden=\"true\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M4 6h16M4 12h10M4 18h16\"/></svg></span></button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--foreground, #050505); cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1); outline: none; } .ds-btn-ghost:hover { background: var(--muted, #dfdfdf); } .ds-btn-ghost:focus-visible { box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring, #8f8f8f) 30%, transparent); } .ds-btn-ghost-icon { display: grid; place-items: center; } @media (prefers-reduced-motion: reduce) { .ds-btn-ghost { transition: none; } }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-default",
+      "description": "Compact settings and search fields.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Model</span><input type=\"text\" class=\"ds-input\" placeholder=\"gpt-4.1\" /></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 4px; font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; } .ds-field-label { font-size: 0.75rem; font-weight: 500; color: var(--foreground, #050505); } .ds-input { height: 32px; padding: 0 8px; border: 1px solid var(--input, #f2f2f2); border-radius: 6px; background: var(--background, #ffffff); color: var(--foreground, #050505); font-size: 0.75rem; outline: none; transition: box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-input::placeholder { color: var(--muted-foreground, #3c3c3c); } .ds-input:focus-visible { box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring, #8f8f8f) 50%, transparent); } @media (prefers-reduced-motion: reduce) { .ds-input { transition: none; } }"
+    },
+    {
+      "name": "Sidebar Nav Row",
+      "kind": "nav",
+      "refersTo": "nav-row-active",
+      "description": "Session list row in app sidebar.",
+      "html": "<button type=\"button\" class=\"ds-nav-row ds-nav-row-active\"><span class=\"ds-nav-dot\" aria-hidden=\"true\"></span><span class=\"ds-nav-label\">Fix WebSocket reconnect</span><span class=\"ds-nav-meta\">2m</span></button>",
+      "css": ".ds-nav-row { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 8px; border: none; border-radius: 6px; background: transparent; color: var(--sidebar-foreground, #050505); font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; font-size: 0.6875rem; line-height: 1.35; text-align: left; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1); outline: none; } .ds-nav-row:hover { background: var(--sidebar-accent, #dfdfdf); color: var(--sidebar-accent-foreground, #050505); } .ds-nav-row-active { background: var(--sidebar-accent, #dfdfdf); font-weight: 500; } .ds-nav-row:focus-visible { box-shadow: 0 0 0 2px color-mix(in oklch, var(--sidebar-ring, #8f8f8f) 50%, transparent); } .ds-nav-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--primary, #080808); flex-shrink: 0; } .ds-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-nav-meta { flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #3c3c3c); } @media (prefers-reduced-motion: reduce) { .ds-nav-row { transition: none; } }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "button-ghost",
+      "description": "Inspector mode or compact enum picker.",
+      "html": "<div class=\"ds-segmented\" role=\"group\" aria-label=\"View\"><button type=\"button\" class=\"ds-segment ds-segment-active\">Context</button><button type=\"button\" class=\"ds-segment\">Diff</button></div>",
+      "css": ".ds-segmented { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid color-mix(in oklch, var(--border, #dfdfdf) 50%, transparent); border-radius: 6px; } .ds-segment { display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 10px; border: none; border-radius: 4px; background: transparent; color: var(--muted-foreground, #3c3c3c); font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; font-size: 0.6875rem; line-height: 1; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); outline: none; } .ds-segment:hover { color: var(--foreground, #050505); background: color-mix(in oklch, var(--accent, #dfdfdf) 40%, transparent); } .ds-segment-active { background: var(--background, #ffffff); color: var(--foreground, #050505); font-weight: 500; } .ds-segment:focus-visible { box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring, #8f8f8f) 30%, transparent); } @media (prefers-reduced-motion: reduce) { .ds-segment { transition: none; } }"
+    },
+    {
+      "name": "Settings Meta Badge",
+      "kind": "chip",
+      "refersTo": "button-ghost",
+      "description": "Compact status chip in settings rows.",
+      "html": "<span class=\"ds-badge\">Local only</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; min-height: 24px; max-width: 100%; padding: 2px 8px; border-radius: 6px; background: var(--muted, #dfdfdf); color: var(--muted-foreground, #3c3c3c); font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; font-size: 0.6875rem; font-weight: 500; line-height: 1.35; white-space: nowrap; }"
+    },
+    {
+      "name": "Transcript Tool Row",
+      "kind": "custom",
+      "refersTo": "nav-row-active",
+      "description": "Collapsible tool block header in transcript.",
+      "html": "<button type=\"button\" class=\"ds-tool-row\"><span class=\"ds-tool-dot ds-tool-dot-running\" aria-hidden=\"true\"></span><span class=\"ds-tool-label\">Read file</span><span class=\"ds-tool-chevron\" aria-hidden=\"true\">▾</span></button>",
+      "css": ".ds-tool-row { display: flex; align-items: center; gap: 6px; width: 100%; height: 24px; padding: 0 4px; border: none; border-radius: 6px; background: transparent; color: var(--muted-foreground, #3c3c3c); font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; font-size: 0.625rem; text-align: left; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); outline: none; } .ds-tool-row:hover { background: color-mix(in oklch, var(--accent, #dfdfdf) 40%, transparent); color: var(--foreground, #050505); } .ds-tool-row:focus-visible { box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring, #8f8f8f) 50%, transparent); } .ds-tool-dot { width: 6px; height: 6px; border-radius: 9999px; flex-shrink: 0; background: color-mix(in oklch, var(--muted-foreground, #3c3c3c) 45%, transparent); } .ds-tool-dot-running { background: var(--primary, #080808); animation: ds-pulse 1.2s ease-in-out infinite; } .ds-tool-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-tool-chevron { flex-shrink: 0; font-size: 0.625rem; } @keyframes ds-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } } @media (prefers-reduced-motion: reduce) { .ds-tool-row { transition: none; } .ds-tool-dot-running { animation: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Operator's Bench",
+    "overview": "H3Code desktop is a long-session workbench for solo developers running agents on local repos. The interface optimizes for orientation speed: connection health, run lifecycle, transcript, tools, and git context stay legible without decorative chrome. Visual hierarchy comes from engineered neutrals, tight type at text-xs / text-[11px], and structural hairlines—not card stacks or marketing gradients.",
+    "keyCharacteristics": [
+      "Engineered achromatic neutrals with near-zero chroma",
+      "Dense operator layout: h-7 sidebar rows, text-xs controls",
+      "Hairline borders + micro-shadows on overlays only",
+      "Tactile hover/active on interactive rows and ghost buttons",
+      "Inter Variable + Geist Mono; fixed rem scale",
+      "Keyboard-first focus rings; prefers-reduced-motion respected"
+    ],
+    "rules": [
+      {
+        "name": "The One Ink Rule",
+        "body": "--primary is the only brand chroma on product chrome. Chart tokens and destructive are semantic exceptions, not decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Canvas-Not-Card Rule",
+        "body": "Transcript, lists, and settings rows live on background. Do not wrap routine content in bg-card panels.",
+        "section": "colors"
+      },
+      {
+        "name": "The Muted-Ink Floor Rule",
+        "body": "text-muted-foreground on background or muted must meet 4.5:1. If a meta label feels faint, darken muted ink toward foreground.",
+        "section": "colors"
+      },
+      {
+        "name": "The Fixed Scale Rule",
+        "body": "Product UI uses fixed rem sizes. No clamp() hero type on workbench surfaces.",
+        "section": "typography"
+      },
+      {
+        "name": "The Eleven-Pixel Meta Rule",
+        "body": "Secondary information defaults to text-[11px]. Do not shrink below text-[10px] except mono IDs in sidebars.",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline-First Rule",
+        "body": "Prefer border-border over shadow to separate regions. Toolbars use bottom hairline, not a second background block.",
+        "section": "elevation"
+      },
+      {
+        "name": "The No Ghost-Card Rule",
+        "body": "Never pair border: 1px solid with wide soft shadows (blur ≥16px) on the same element.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do edit colors only in apps/desktop/src/app.css (and apps/web/src/app.css when touching marketing).",
+      "Do use semantic Tailwind tokens in all components.",
+      "Do keep sidebar and transcript rows at h-7 with text-[11px]–text-xs for density.",
+      "Do show connection, run, and error state in plain language with visible focus rings.",
+      "Do use skeletons for content loading and reserve spinners for inline actions.",
+      "Do respect prefers-reduced-motion: reduce."
+    ],
+    "donts": [
+      "Don't use SaaS marketing patterns on product surfaces: hero metrics, gradient CTAs, identical feature card grids, section eyebrows on every block.",
+      "Don't ship generic AI-tool slop: purple gradients, sparkle motifs, hype copy, or decorative gradients on the workbench.",
+      "Don't use neon, glassmorphism, or heavy atmospheric backgrounds on desktop chrome.",
+      "Don't use consumer chat bubbles, avatars, or playful empty states where a dense dev tool is appropriate.",
+      "Don't wrap routine transcript or list content in elevated cards; nested cards are forbidden.",
+      "Don't use side-stripe borders, gradient text, or border-radius above 16px on panels.",
+      "Don't hardcode font families or literal colors in .svelte files."
+    ]
+  }
+}
