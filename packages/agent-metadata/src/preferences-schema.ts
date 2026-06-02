@@ -33,6 +33,8 @@ export function migrateRepoSessionsSchema(db: DatabaseSync) {
   }
 }
 
+export { migrateSessionMessageCacheSchema } from "./session-message-cache.js";
+
 export function getRecentRepos(db: DatabaseSync, limit: number): RecentRepoPreference[] {
   return db.prepare(`
     SELECT

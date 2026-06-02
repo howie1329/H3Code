@@ -126,15 +126,15 @@ Store:
 
 - PI executable path (`app_settings`).
 - Recent repo paths and per-repo session metadata index (`recent_repos`, `repo_sessions`).
+- Non-canonical session message display cache (`session_message_cache`) for instant transcript paint; Pi `.jsonl` files remain authoritative.
 - Last selected repo path and session path.
 - Desktop UI toggles (sidebar, context panel).
 
 Do not store:
 
-- Full messages.
-- Full transcripts.
-- Tool outputs.
-- PI session files.
+- Canonical transcripts (Pi session files remain source of truth).
+- Tool outputs as a separate long-term store beyond the display cache.
+- PI session files (owned by Pi on disk outside H3Code's canonical role).
 - API keys or secrets.
 
 ## UI Direction
@@ -176,10 +176,10 @@ Required states:
 - Tool execution events are visible and update in place by `toolCallId`.
 - The user can abort a running operation.
 - The user can start a new PI-owned session.
-- The app persists only minimal preferences and recent repo paths.
-- The app does not persist transcripts or own PI sessions.
+- The app persists preferences, recent repo paths, and an optional SQLite display cache for messages.
+- The app does not own canonical transcripts or PI sessions.
 - The app does not touch the web/marketing app.
 
 ## Later Direction
 
-Extend the existing metadata-only SQL index for multi-provider routing and full-text discovery. Do not store canonical messages or transcripts in H3Code.
+Extend the existing SQL index for multi-provider routing and full-text discovery. Do not store canonical messages or transcripts in H3Code beyond the non-canonical display cache.

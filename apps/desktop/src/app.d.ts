@@ -183,6 +183,45 @@ declare global {
     piExecutablePath: string;
   };
 
+  type SessionMessageCacheState = {
+    isStreaming?: boolean;
+    isCompacting?: boolean;
+    sessionFile?: string;
+    sessionId?: string;
+  };
+
+  type SessionMessageCacheEntry = {
+    sessionPath: string;
+    repoPath: string;
+    providerId?: string;
+    messages: unknown[];
+    sessionState?: SessionMessageCacheState;
+    messageCount: number;
+    sourceMtimeMs?: number;
+    sourceSizeBytes?: number;
+    contentHash: string;
+    cachedAt: string;
+    syncedAt?: string;
+    lastOpenedAt: string;
+    syncStatus?: "fresh" | "stale" | "syncing" | "error";
+  };
+
+  type SessionMessageCacheUpsert = {
+    sessionPath: string;
+    repoPath: string;
+    providerId?: string;
+    messages: unknown[];
+    sessionState?: SessionMessageCacheState;
+    messageCount?: number;
+    sourceMtimeMs?: number;
+    sourceSizeBytes?: number;
+    contentHash?: string;
+    cachedAt?: string;
+    syncedAt?: string;
+    lastOpenedAt?: string;
+    syncStatus?: "fresh" | "stale" | "syncing" | "error";
+  };
+
   interface Window {
     h3code?: {
       platform: NodeJS.Platform;
@@ -191,6 +230,9 @@ declare global {
       selectRepo: () => Promise<{ path: string } | null>;
       revealPath: (targetPath: string) => Promise<string>;
       revealPreferencesDatabase: () => Promise<string>;
+      getSessionMessageCache: (sessionPath: string) => Promise<SessionMessageCacheEntry | undefined>;
+      upsertSessionMessageCache: (input: SessionMessageCacheUpsert) => Promise<void>;
+      deleteSessionMessageCache: (sessionPath: string) => Promise<void>;
     };
   }
 }

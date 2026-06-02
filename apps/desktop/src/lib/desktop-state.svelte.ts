@@ -30,6 +30,12 @@ import {
   type SessionCacheEntry,
   type SessionCacheMap,
 } from "$lib/session-cache.js";
+import {
+  loadSessionSqlCache,
+  removeSessionSqlCache,
+  saveSessionSqlCache,
+  type SessionSqlCacheState,
+} from "$lib/session-sql-cache.js";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -105,7 +111,9 @@ class DesktopState {
   modelsSessionKey = $state<string | undefined>();
   sessionReadModel = $state<SessionReadModel>(createInitialSessionReadModel());
   sessionCaches = $state<SessionCacheMap>({});
+  sessionCacheSyncing = $state(false);
   isSwitchingSession = $state(false);
+  sqlCachePersistTimer: ReturnType<typeof setTimeout> | undefined;
   reconciledSessionPath = $state<string | undefined>();
   switchGeneration = 0;
   agentReadModels = $state<Record<string, SessionReadModel>>({});
@@ -381,6 +389,11 @@ class DesktopState {
   ) {
     const { navigateToWorkspace = true } = options;
     this.errorMessage = undefined;
+
+    if (selectedSessionPath) {
+      await this.applySqlCacheIfPresent(selectedSessionPath, nextRepoPath);
+    }
+
     const result = await this.getAgentApi().connectRepo(nextRepoPath, selectedSessionPath);
     this.syncProviderCapabilities();
 
@@ -409,7 +422,9 @@ class DesktopState {
     );
     this.storeActiveAgentReadModel();
     this.reconciledSessionPath = this.selectedSessionPath;
+    this.sessionCacheSyncing = false;
     this.cacheCurrentSession();
+    void this.persistSessionSqlCacheImmediate();
     void this.refreshSessionStats();
     void this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
@@ -427,6 +442,8 @@ class DesktopState {
     this.selectedSessionPath = undefined;
     this.reconciledSessionPath = undefined;
     this.isSwitchingSession = false;
+    this.sessionCacheSyncing = false;
+    this.cancelSqlCachePersist();
     this.sessionCaches = clearSessionCache();
     this.sessionState = undefined;
     this.sessionStats = null;
@@ -489,12 +506,16 @@ class DesktopState {
       });
       this.applyCachedSession(cached);
     } else {
-      this.sessionReadModel = createInitialSessionReadModel();
-      this.sessionState = undefined;
-      this.sessionStats = null;
-      this.resetSessionDiff();
-      this.resetSlashCommands();
-      this.resetModels();
+      const sqlApplied = await this.applySqlCacheIfPresent(sessionPath, repoPath);
+
+      if (!sqlApplied) {
+        this.sessionReadModel = createInitialSessionReadModel();
+        this.sessionState = undefined;
+        this.sessionStats = null;
+        this.resetSessionDiff();
+        this.resetSlashCommands();
+        this.resetModels();
+      }
     }
 
     this.isSwitchingSession = true;
@@ -523,8 +544,10 @@ class DesktopState {
         result.messages,
       );
       this.reconciledSessionPath = sessionPath;
+      this.sessionCacheSyncing = false;
       this.storeActiveAgentReadModel();
       this.cacheCurrentSession();
+      void this.persistSessionSqlCacheImmediate();
       void this.refreshSessionStats();
       void this.refreshSessionDiff();
       void this.ensureAvailableModels(true);
@@ -559,7 +582,9 @@ class DesktopState {
     );
     this.storeActiveAgentReadModel();
     this.reconciledSessionPath = this.selectedSessionPath;
+    this.sessionCacheSyncing = false;
     this.cacheCurrentSession();
+    void this.persistSessionSqlCacheImmediate();
     this.sessions = await this.getAgentApi().listSessions();
     this.repos = upsertRepo(this.repos, repoPath, {
       expanded: true,
@@ -680,6 +705,7 @@ class DesktopState {
       this.errorMessage = undefined;
       const deletingActiveSession = sessionPath === this.selectedSessionPath || sessionPath === this.sessionState?.sessionFile;
       this.sessionCaches = deleteCachedSession(this.sessionCaches, sessionPath);
+      void removeSessionSqlCache(sessionPath);
       const sessions = await this.getAgentApi().deleteSession(repoPath, sessionPath);
       this.repos = upsertRepo(this.repos, repoPath, {
         sessions,
@@ -1422,6 +1448,101 @@ class DesktopState {
       sessionDiff: this.hasSessionDiff ? this.sessionDiff : undefined,
       lastAccessedAt: Date.now(),
     });
+    this.schedulePersistSessionSqlCache();
+  }
+
+  async applySqlCacheIfPresent(sessionPath: string, repoPath: string): Promise<boolean> {
+    const entry = await loadSessionSqlCache(sessionPath);
+
+    if (!entry || entry.messages.length === 0) {
+      return false;
+    }
+
+    const state = this.sqlCacheStateToPiSessionState(entry.sessionState, sessionPath, entry.messageCount);
+    this.sessionState = state;
+    this.sessionReadModel = hydrateFromSnapshot(createInitialSessionReadModel(), state, entry.messages);
+    this.sessionCacheSyncing = entry.syncStatus !== undefined && entry.syncStatus !== "fresh";
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+    return true;
+  }
+
+  sqlCacheStateToPiSessionState(
+    cached: SessionSqlCacheState | undefined,
+    sessionPath: string,
+    messageCount: number,
+  ): PiSessionState {
+    const sessionId = cached?.sessionId ?? sessionPathToId(sessionPath);
+
+    return {
+      thinkingLevel: "off",
+      isStreaming: cached?.isStreaming ?? false,
+      isCompacting: cached?.isCompacting ?? false,
+      steeringMode: "one-at-a-time",
+      followUpMode: "one-at-a-time",
+      sessionFile: cached?.sessionFile ?? sessionPath,
+      sessionId,
+      autoCompactionEnabled: true,
+      messageCount,
+      pendingMessageCount: 0,
+    };
+  }
+
+  cancelSqlCachePersist() {
+    if (this.sqlCachePersistTimer === undefined) {
+      return;
+    }
+
+    clearTimeout(this.sqlCachePersistTimer);
+    this.sqlCachePersistTimer = undefined;
+  }
+
+  schedulePersistSessionSqlCache() {
+    if (!this.repoPath || !this.sessionState) {
+      return;
+    }
+
+    if (this.sessionReadModel.isAgentRunning || this.sessionReadModel.phase === "running") {
+      return;
+    }
+
+    this.cancelSqlCachePersist();
+    this.sqlCachePersistTimer = setTimeout(() => {
+      this.sqlCachePersistTimer = undefined;
+      void this.persistSessionSqlCacheImmediate();
+    }, 500);
+  }
+
+  async persistSessionSqlCacheImmediate() {
+    const sessionPath = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+    const repoPath = this.repoPath;
+
+    if (!sessionPath || !repoPath || !this.sessionState) {
+      return;
+    }
+
+    if (this.sessionReadModel.isAgentRunning || this.sessionReadModel.phase === "running") {
+      return;
+    }
+
+    if (this.sessionReadModel.messages.length === 0) {
+      return;
+    }
+
+    await saveSessionSqlCache({
+      sessionPath,
+      repoPath,
+      messages: this.sessionReadModel.messages,
+      sessionState: {
+        isStreaming: this.sessionState.isStreaming,
+        isCompacting: this.sessionState.isCompacting,
+        sessionFile: this.sessionState.sessionFile,
+        sessionId: this.sessionState.sessionId,
+      },
+      messageCount: this.sessionReadModel.messages.length,
+      syncStatus: "fresh",
+    });
   }
 
   applyCachedSession(entry: SessionCacheEntry) {
@@ -1609,6 +1730,11 @@ function createSessionRowStatus(kind: SessionRowStatusKind): SessionRowStatus {
         dotClass: "bg-muted-foreground/25",
       };
   }
+}
+
+function sessionPathToId(sessionPath: string) {
+  const base = sessionPath.split(/[/\\]/).pop() ?? sessionPath;
+  return base.replace(/\.jsonl$/i, "");
 }
 
 function getErrorMessage(error: unknown) {
