@@ -13,7 +13,7 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "svelte-check --tsconfig ./tsconfig.json",
-    "test:pi-session": "tsc -p tsconfig.pi-session-test.json && node --test dist-electron/src/lib/pi-session/projector.test.js",
+    "test:pi-session": "tsc -p tsconfig.pi-session-test.json && node --test dist-electron/src/lib/pi-session/*.test.js",
     "test:preferences": "npm run test --workspace @h3code/agent-metadata",
     "test:agent-lib": "tsc -p tsconfig.agent-lib-test.json && node --test dist-agent-lib-test/agent-adapters.test.js",
     "test:transcript-normalize": "tsc -p tsconfig.transcript-test.json && node --test dist-transcript-test/transcript-render.test.js",

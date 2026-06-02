@@ -6,7 +6,7 @@ export type ComposerPhaseLine = {
   text: string;
 };
 
-export function transcriptMessages(model: SessionReadModel, pendingUserMessages: unknown[] = []): unknown[] {
+export function transcriptMessages(model: SessionReadModel): unknown[] {
   const committedIds = new Set(model.messages.map((message) => messageIdentity(message, "")));
   const extras: unknown[] = [];
 
@@ -21,7 +21,7 @@ export function transcriptMessages(model: SessionReadModel, pendingUserMessages:
     extras.push(createLiveToolMessage(tool));
   }
 
-  return [...model.messages, ...pendingUserMessages, ...extras];
+  return [...model.messages, ...extras];
 }
 
 export function composerPhase(model: SessionReadModel): ComposerPhaseLine | null {
