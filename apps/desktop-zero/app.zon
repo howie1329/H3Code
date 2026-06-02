@@ -1,0 +1,32 @@
+.{
+    .id ="dev.h3code.desktop-zero",
+    .name ="h3code-desktop-zero",
+    .display_name ="H3Code Zero Prototype",
+    .version = "0.1.0",
+    .icons = .{ "assets/icon.icns" },
+    .platforms = .{ "macos", "linux" },
+    .permissions = .{},
+    .capabilities = .{ "webview" },
+    .frontend = .{
+        .dist ="../desktop/build",
+        .entry = "index.html",
+        .spa_fallback = true,
+        .dev = .{
+            .url ="http://127.0.0.1:5173/",
+            .command = .{ "npm", "--prefix", "../desktop", "run", "dev:renderer" },
+            .ready_path = "/",
+            .timeout_ms = 30000,
+        },
+    },
+    .security = .{
+        .navigation = .{
+            .allowed_origins = .{ "zero://app", "zero://inline", "http://127.0.0.1:5173" },
+            .external_links = .{ .action = "deny" },
+        },
+    },
+    .web_engine = "system",
+    .cef = .{ .dir = "third_party/cef/macos", .auto_install = false },
+    .windows = .{
+        .{ .label = "main", .title ="H3Code Zero Prototype", .width = 1200, .height = 800, .restore_state = true },
+    },
+}
