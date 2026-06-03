@@ -1,13 +1,29 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
+  import { COMPOSER_MENU_SHELL_CLASS } from "$lib/components/desktop/composer-menu.js";
+  import { cn } from "$lib/utils.js";
+
+  type Align =
+    | "full"
+    | {
+        mode: "absolute";
+        left: number;
+        width?: number;
+      }
+    | {
+        mode: "fixed";
+        anchor: HTMLElement | null;
+        width?: number;
+      };
+
   type Props = {
     open: boolean;
     title?: string;
     description?: string;
     loading?: boolean;
     error?: string;
-    align?: "full" | { left: number; width?: number };
+    align?: Align;
     ariaLabel: string;
     onRetry?: () => void;
     children: Snippet;
@@ -25,21 +41,80 @@
     children,
   }: Props = $props();
 
+  const MENU_GAP_PX = 8;
+  const DEFAULT_WIDTH = 300;
+
+  let fixedStyle = $state("");
+
+  function updateFixedPosition(anchor: HTMLElement | null, width: number) {
+    if (!anchor) {
+      fixedStyle = "";
+      return;
+    }
+
+    const rect = anchor.getBoundingClientRect();
+    const menuWidth = Math.min(Math.max(width, rect.width), window.innerWidth - 16);
+    let left = rect.left;
+
+    if (left + menuWidth > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - menuWidth - 8);
+    }
+
+    const bottom = window.innerHeight - rect.top + MENU_GAP_PX;
+    fixedStyle = `left:${left}px;bottom:${bottom}px;width:${menuWidth}px;`;
+  }
+
+  $effect(() => {
+    if (!open || align === "full" || align.mode !== "fixed") {
+      return;
+    }
+
+    const width = align.width ?? DEFAULT_WIDTH;
+    updateFixedPosition(align.anchor, width);
+
+    const anchor = align.anchor;
+    if (!anchor) {
+      return;
+    }
+
+    const handleLayout = () => updateFixedPosition(anchor, width);
+    window.addEventListener("resize", handleLayout);
+    window.addEventListener("scroll", handleLayout, true);
+
+    return () => {
+      window.removeEventListener("resize", handleLayout);
+      window.removeEventListener("scroll", handleLayout, true);
+    };
+  });
+
   const positionStyle = $derived.by(() => {
     if (align === "full") {
       return "left: 0; right: 0;";
     }
 
-    const width = align.width ?? 256;
-    return `left: ${align.left}px; width: ${width}px;`;
+    if (align.mode === "absolute") {
+      const width = align.width ?? 256;
+      return `left: ${align.left}px; width: ${width}px;`;
+    }
+
+    return fixedStyle;
   });
+
+  const positionClass = $derived(
+    align !== "full" && align.mode === "fixed"
+      ? "fixed z-50 max-h-[min(20rem,50vh)]"
+      : align === "full"
+        ? "absolute inset-x-0 bottom-full z-20 mb-2 max-h-80"
+        : "absolute bottom-full z-20 mb-2 max-h-80",
+  );
 </script>
 
 {#if open}
   <div
-    class="absolute bottom-full z-20 mb-2 max-h-80 overflow-hidden rounded-lg border border-border/50 bg-popover text-popover-foreground shadow-none transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none motion-reduce:transform-none"
+    class={cn(COMPOSER_MENU_SHELL_CLASS, positionClass)}
     style={positionStyle}
     role="listbox"
+    tabindex={-1}
     aria-label={ariaLabel}
     onclick={(event) => event.stopPropagation()}
   >

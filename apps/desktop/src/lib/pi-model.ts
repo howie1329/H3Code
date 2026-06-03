@@ -63,8 +63,41 @@ export function isSameModel(a: PiModel | undefined, b: PiModel | undefined) {
   return Boolean(a.provider && b.provider && aId && bId && a.provider === b.provider && aId === bId);
 }
 
-export function modelSupportsThinking(model: PiModel | undefined) {
-  return model?.reasoning === true;
+export function findCatalogModel(model: PiModel | undefined, catalog: PiModel[]) {
+  if (!model) {
+    return undefined;
+  }
+
+  return catalog.find((entry) => isSameModel(entry, model));
+}
+
+/** Session model payloads from setModel may omit `reasoning`; fall back to the model catalog. */
+export function mergeModelWithCatalog(model: unknown, catalog: PiModel[]): PiModel | undefined {
+  const normalized = normalizeModel(model);
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const catalogEntry = findCatalogModel(normalized, catalog);
+
+  if (!catalogEntry) {
+    return normalized;
+  }
+
+  return {
+    ...normalized,
+    name: normalized.name ?? catalogEntry.name,
+    reasoning: normalized.reasoning === true || catalogEntry.reasoning === true,
+  };
+}
+
+export function modelSupportsThinking(model: PiModel | undefined, catalog: PiModel[] = []) {
+  if (model?.reasoning === true) {
+    return true;
+  }
+
+  return findCatalogModel(model, catalog)?.reasoning === true;
 }
 
 export function normalizeThinkingLevel(level: string | undefined): PiThinkingLevel {

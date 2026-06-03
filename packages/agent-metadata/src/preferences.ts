@@ -9,11 +9,23 @@ import {
   type IndexedSessionPreference,
 } from "./preferences-indexed-sessions.js";
 import {
+  clearSessionMessageCaches as clearSessionMessageCachesRows,
+  deleteSessionMessageCache as deleteSessionMessageCacheRow,
+  getSessionMessageCache as getSessionMessageCacheRow,
+  migrateSessionMessageCacheSchema,
+  upsertSessionMessageCache as upsertSessionMessageCacheRow,
+  touchSessionMessageCache as touchSessionMessageCacheRow,
+  type SessionMessageCacheEntry,
+  type SessionMessageCacheUpsert,
+} from "./session-message-cache.js";
+import {
   getRecentRepos as getRecentReposRows,
   migrateRecentReposSchema,
   migrateRepoSessionsSchema,
   type RecentRepoPreference,
 } from "./preferences-schema.js";
+
+export type { SessionMessageCacheEntry, SessionMessageCacheState, SessionMessageCacheUpsert } from "./session-message-cache.js";
 
 export type DesktopSettings = {
   sidebarOpen: boolean;
@@ -340,6 +352,7 @@ export function clearAllIndexedData() {
   try {
     db.exec("DELETE FROM repo_sessions");
     db.exec("DELETE FROM recent_repos");
+    clearSessionMessageCachesRows(db);
     deleteSetting(db, "lastSelectedRepoPath");
     deleteSetting(db, "lastSelectedSessionPath");
     db.exec("COMMIT");
@@ -357,6 +370,7 @@ export function removeIndexedSession(sessionPath: string, options: { removeWorkt
   const removeWorktreeMapping = options.removeWorktreeMapping ?? true;
 
   db.prepare("DELETE FROM repo_sessions WHERE session_path = ?").run(sessionPath);
+  deleteSessionMessageCacheRow(db, sessionPath);
 
   if (removeWorktreeMapping) {
     db.prepare("DELETE FROM session_worktrees WHERE session_path = ?").run(sessionPath);
@@ -450,8 +464,31 @@ function getDatabase() {
 
   migrateRecentReposSchema(database);
   migrateRepoSessionsSchema(database);
+  migrateSessionMessageCacheSchema(database);
 
   return database;
+}
+
+export function getSessionMessageCache(sessionPath: string) {
+  return getSessionMessageCacheRow(getDatabase(), sessionPath);
+}
+
+export function upsertSessionMessageCache(input: SessionMessageCacheUpsert) {
+  const db = getDatabase();
+  ensureRepoStub(db, input.repoPath);
+  upsertSessionMessageCacheRow(db, input);
+}
+
+export function touchSessionMessageCache(sessionPath: string) {
+  touchSessionMessageCacheRow(getDatabase(), sessionPath);
+}
+
+export function deleteSessionMessageCache(sessionPath: string) {
+  deleteSessionMessageCacheRow(getDatabase(), sessionPath);
+}
+
+export function clearSessionMessageCaches() {
+  clearSessionMessageCachesRows(getDatabase());
 }
 
 function getDatabasePath() {

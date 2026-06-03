@@ -10,18 +10,28 @@
   } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
 
-  import ComposerModelMenuPanel from "$lib/components/desktop/ComposerModelMenuPanel.svelte";
-  import ComposerThinkingMenuPanel from "$lib/components/desktop/ComposerThinkingMenuPanel.svelte";
-  import ModelSelector from "$lib/components/desktop/ModelSelector.svelte";
+  import {
+    SESSION_SETTINGS_STATIC_LABEL_CLASS,
+  } from "$lib/components/desktop/composer-menu.js";
+  import SessionSettingsMenu from "$lib/components/desktop/SessionSettingsMenu.svelte";
+  import SessionSettingsTrigger from "$lib/components/desktop/SessionSettingsTrigger.svelte";
   import SlashCommandMenu from "$lib/components/desktop/SlashCommandMenu.svelte";
-  import ThinkingLevelSelector from "$lib/components/desktop/ThinkingLevelSelector.svelte";
+  import {
+    WORKSPACE_COLUMN_INSET_CLASS,
+    WORKSPACE_COLUMN_MAX_W_CLASS,
+  } from "$lib/components/desktop/workspace-column.js";
   import { desktopState } from "$lib/desktop-state.svelte";
-  import { isSameModel, normalizeThinkingLevel, PI_THINKING_LEVELS } from "$lib/pi-model.js";
+  import {
+    getModelLabel,
+    isSameModel,
+    modelSupportsThinking,
+    normalizeThinkingLevel,
+    PI_THINKING_LEVELS,
+  } from "$lib/pi-model.js";
   import { filterSlashCommands, getActiveSlashToken, replaceSlashToken, type SlashToken } from "$lib/slash-commands";
   import {
     PromptInput,
     PromptInputBody,
-    PromptInputHeader,
     PromptInputSubmit,
     PromptInputTextarea,
     PromptInputToolbar,
@@ -30,22 +40,18 @@
   } from "$lib/components/ai-elements/prompt-input/index.js";
   import { cn } from "$lib/utils.js";
 
-  type ComposerMenu = "none" | "slash" | "model" | "thinking";
+  type ComposerMenu = "none" | "slash" | "settings";
 
   let { floating = false }: { floating?: boolean } = $props();
 
   let wrapperRef = $state<HTMLDivElement | null>(null);
   let textareaRef = $state<HTMLTextAreaElement | null>(null);
-  let modelAnchor = $state<HTMLElement | null>(null);
-  let thinkingAnchor = $state<HTMLElement | null>(null);
+  let settingsAnchor = $state<HTMLElement | null>(null);
   let slashToken = $state<SlashToken | null>(null);
   let dismissedTokenKey = $state<string | undefined>();
   let activeMenu = $state<ComposerMenu>("none");
   let slashHighlightedIndex = $state(0);
-  let modelHighlightedIndex = $state(0);
-  let thinkingHighlightedIndex = $state(0);
-  let modelMenuLeft = $state(0);
-  let thinkingMenuLeft = $state(0);
+  let settingsHighlightedIndex = $state(0);
 
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
@@ -70,10 +76,23 @@
       !desktopState.slashCommandsLoading,
   );
   const selectorsDisabled = $derived(!desktopState.canChangeSessionSettings || !desktopState.canUseSession);
-  const modelSelectorDisabled = $derived(selectorsDisabled || !desktopState.supportsModelPicker);
+  const settingsDisabled = $derived(selectorsDisabled);
   const currentModel = $derived(desktopState.sessionState?.model);
   const flatModels = $derived(desktopState.availableModels);
-  const currentThinkingLevel = $derived(normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel));
+  const supportsThinking = $derived(modelSupportsThinking(currentModel, flatModels));
+  const hasMultipleModels = $derived(flatModels.length > 1);
+  const showSessionSettings = $derived(
+    showSessionControls &&
+      (desktopState.supportsModelPicker || supportsThinking) &&
+      (desktopState.modelsLoading || hasMultipleModels || supportsThinking),
+  );
+  const showStaticSessionLabel = $derived(
+    showSessionControls && !showSessionSettings && !desktopState.modelsLoading,
+  );
+  const staticSessionLabel = $derived(getModelLabel(currentModel));
+  const settingsItemCount = $derived(
+    flatModels.length + (supportsThinking ? PI_THINKING_LEVELS.length : 0),
+  );
 
   const promptPlaceholder = $derived.by(() => {
     if (desktopState.canUseSession) {
@@ -100,35 +119,17 @@
     return showSlashHint ? `${base} · / for commands` : base;
   });
 
-  const composerMeta = $derived.by(() => {
+  const submitTitle = $derived.by(() => {
+    if (isRunning) {
+      return "Stop run";
+    }
+
     if (desktopState.isSendingPrompt) {
-      return { showDot: true, dotClass: "size-1.5 shrink-0 animate-pulse rounded-full bg-primary", text: "Sending…" };
+      return "Sending prompt";
     }
 
-    const phase = desktopState.composerPhaseLine;
-
-    if (phase) {
-      const showDot = phase.tone === "working" || phase.tone === "warning" || phase.tone === "error";
-      const dotClass =
-        phase.tone === "error"
-          ? "size-1.5 shrink-0 rounded-full bg-destructive"
-          : phase.tone === "warning"
-            ? "size-1.5 shrink-0 animate-pulse rounded-full bg-amber-500"
-            : phase.tone === "working"
-              ? "size-1.5 shrink-0 animate-pulse rounded-full bg-primary"
-              : "size-1.5 shrink-0 rounded-full bg-muted-foreground/60";
-
-      return { showDot, dotClass, text: phase.text };
-    }
-
-    if (desktopState.isBusy) {
-      return { showDot: false, dotClass: "", text: "Busy…" };
-    }
-
-    return { showDot: false, dotClass: "", text: "" };
+    return "Send prompt";
   });
-
-  const showStatusLine = $derived(Boolean(composerMeta.text));
 
   $effect(() => {
     if (slashHighlightedIndex >= filteredCommands.length) {
@@ -137,26 +138,8 @@
   });
 
   $effect(() => {
-    if (modelHighlightedIndex >= flatModels.length) {
-      modelHighlightedIndex = 0;
-    }
-  });
-
-  $effect(() => {
-    if (thinkingHighlightedIndex >= PI_THINKING_LEVELS.length) {
-      thinkingHighlightedIndex = 0;
-    }
-  });
-
-  $effect(() => {
-    if (activeMenu === "model") {
-      updateMenuPosition(modelAnchor, (left) => (modelMenuLeft = left));
-    }
-  });
-
-  $effect(() => {
-    if (activeMenu === "thinking") {
-      updateMenuPosition(thinkingAnchor, (left) => (thinkingMenuLeft = left));
+    if (settingsHighlightedIndex >= settingsItemCount) {
+      settingsHighlightedIndex = 0;
     }
   });
 
@@ -178,63 +161,40 @@
     };
   });
 
-  function updateMenuPosition(anchor: HTMLElement | null, setLeft: (left: number) => void) {
-    if (!anchor || !wrapperRef) {
-      return;
-    }
-
-    const wrapperRect = wrapperRef.getBoundingClientRect();
-    const anchorRect = anchor.getBoundingClientRect();
-    setLeft(anchorRect.left - wrapperRect.left);
-  }
-
   function closeMenus() {
     activeMenu = "none";
   }
 
-  function openMenu(menu: ComposerMenu) {
-    if (menu === "slash") {
-      activeMenu = "slash";
+  function initialSettingsHighlightIndex() {
+    const modelIndex = flatModels.findIndex((entry) => isSameModel(entry, currentModel));
+
+    if (modelIndex >= 0) {
+      return modelIndex;
+    }
+
+    if (supportsThinking) {
+      const level = normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel);
+      return flatModels.length + Math.max(0, PI_THINKING_LEVELS.indexOf(level));
+    }
+
+    return 0;
+  }
+
+  function toggleSettingsMenu() {
+    if (settingsDisabled) {
       return;
     }
 
-    if (selectorsDisabled) {
+    if (activeMenu === "settings") {
+      closeMenus();
       return;
     }
 
     slashToken = null;
     dismissedTokenKey = undefined;
-
-    if (menu === "model") {
-      activeMenu = "model";
-      const currentIndex = flatModels.findIndex((entry) => isSameModel(entry, currentModel));
-      modelHighlightedIndex = currentIndex >= 0 ? currentIndex : 0;
-      void desktopState.ensureAvailableModels();
-      return;
-    }
-
-    if (menu === "thinking") {
-      activeMenu = "thinking";
-      thinkingHighlightedIndex = PI_THINKING_LEVELS.indexOf(currentThinkingLevel);
-    }
-  }
-
-  function toggleModelMenu() {
-    if (activeMenu === "model") {
-      closeMenus();
-      return;
-    }
-
-    openMenu("model");
-  }
-
-  function toggleThinkingMenu() {
-    if (activeMenu === "thinking") {
-      closeMenus();
-      return;
-    }
-
-    openMenu("thinking");
+    activeMenu = "settings";
+    settingsHighlightedIndex = initialSettingsHighlightIndex();
+    void desktopState.ensureAvailableModels();
   }
 
   function syncSlashToken() {
@@ -298,53 +258,22 @@
       return;
     }
 
-    if (activeMenu === "model" && flatModels.length > 0) {
+    if (activeMenu === "settings" && settingsItemCount > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        modelHighlightedIndex = (modelHighlightedIndex + 1) % flatModels.length;
+        settingsHighlightedIndex = (settingsHighlightedIndex + 1) % settingsItemCount;
         return;
       }
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        modelHighlightedIndex = (modelHighlightedIndex - 1 + flatModels.length) % flatModels.length;
+        settingsHighlightedIndex = (settingsHighlightedIndex - 1 + settingsItemCount) % settingsItemCount;
         return;
       }
 
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        const model = flatModels[modelHighlightedIndex];
-
-        if (model) {
-          void selectModel(model);
-        }
-
-        return;
-      }
-    }
-
-    if (activeMenu === "thinking") {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        thinkingHighlightedIndex = (thinkingHighlightedIndex + 1) % PI_THINKING_LEVELS.length;
-        return;
-      }
-
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        thinkingHighlightedIndex =
-          (thinkingHighlightedIndex - 1 + PI_THINKING_LEVELS.length) % PI_THINKING_LEVELS.length;
-        return;
-      }
-
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        const level = PI_THINKING_LEVELS[thinkingHighlightedIndex];
-
-        if (level) {
-          void selectThinkingLevel(level);
-        }
-
+        void selectSettingsItem(settingsHighlightedIndex);
         return;
       }
     }
@@ -415,11 +344,33 @@
   async function selectModel(model: PiModel) {
     closeMenus();
     await desktopState.setModel(model.provider, model.id);
+    await tick();
+    textareaRef?.focus();
   }
 
   async function selectThinkingLevel(level: PiThinkingLevel) {
     closeMenus();
     await desktopState.setThinkingLevel(level);
+    await tick();
+    textareaRef?.focus();
+  }
+
+  async function selectSettingsItem(index: number) {
+    if (index < flatModels.length) {
+      const model = flatModels[index];
+
+      if (model) {
+        await selectModel(model);
+      }
+
+      return;
+    }
+
+    const level = PI_THINKING_LEVELS[index - flatModels.length];
+
+    if (level) {
+      await selectThinkingLevel(level);
+    }
   }
 
   function getNotificationIcon(type: "info" | "warning" | "error") {
@@ -464,13 +415,19 @@
 <div
   class={cn(
     floating
-      ? "pointer-events-none bg-[linear-gradient(to_top,var(--background)_55%,transparent)] px-6 pt-10 pb-4"
-      : "border-t border-border/50 px-6 py-1.5",
+      ? cn(
+          "pointer-events-none bg-[linear-gradient(to_top,var(--background)_60%,transparent)] pt-8 pb-3",
+          WORKSPACE_COLUMN_INSET_CLASS,
+        )
+      : cn("border-t border-border/50 py-1.5", WORKSPACE_COLUMN_INSET_CLASS),
   )}
 >
   <div
     bind:this={wrapperRef}
-    class={cn("relative mx-auto w-full", floating ? "pointer-events-auto max-w-[46rem]" : "max-w-3xl")}
+    class={cn(
+      "relative mx-auto w-full",
+      floating ? cn("pointer-events-auto", WORKSPACE_COLUMN_MAX_W_CLASS) : WORKSPACE_COLUMN_MAX_W_CLASS,
+    )}
   >
     {#if desktopState.sessionNotification}
       {@const notification = desktopState.sessionNotification}
@@ -509,21 +466,14 @@
       />
     {/if}
 
-    <ComposerModelMenuPanel
-      open={activeMenu === "model"}
-      menuLeft={modelMenuLeft}
-      {modelHighlightedIndex}
+    <SessionSettingsMenu
+      open={activeMenu === "settings"}
+      anchor={settingsAnchor}
+      highlightedIndex={settingsHighlightedIndex}
+      onHighlight={(index) => (settingsHighlightedIndex = index)}
       onSelectModel={(model) => selectModel(model)}
-      onHighlightModel={(index) => (modelHighlightedIndex = index)}
-      onRetryModels={retryModels}
-    />
-
-    <ComposerThinkingMenuPanel
-      open={activeMenu === "thinking"}
-      menuLeft={thinkingMenuLeft}
-      {thinkingHighlightedIndex}
       onSelectThinkingLevel={(level) => selectThinkingLevel(level)}
-      onHighlightThinking={(index) => (thinkingHighlightedIndex = index)}
+      onRetryModels={retryModels}
     />
 
     <PromptInput
@@ -533,20 +483,8 @@
         closeMenus();
         desktopState.handlePromptSubmit(message, event);
       }}
-      class={cn(
-        "w-full",
-        floating && "rounded-xl border-border/50 bg-background/95 backdrop-blur-sm",
-      )}
+      class="w-full"
     >
-      {#if showStatusLine}
-        <PromptInputHeader class="gap-2 border-b border-border/50 px-2.5 py-1.5 text-[11px] leading-tight text-muted-foreground">
-          {#if composerMeta.showDot}
-            <span class={composerMeta.dotClass} aria-hidden="true"></span>
-          {/if}
-          <span class="min-w-0 truncate">{composerMeta.text}</span>
-        </PromptInputHeader>
-      {/if}
-
       <PromptInputBody>
         <label for="prompt" class="sr-only">Prompt</label>
         <PromptInputTextarea
@@ -570,23 +508,19 @@
       <PromptInputToolbar>
         <PromptInputTools>
           {#if showSessionControls}
-            <div class="flex shrink-0 items-center gap-0.5" role="group" aria-label="Prompt settings">
-              {#if desktopState.supportsModelPicker}
-                <ModelSelector
-                  open={activeMenu === "model"}
-                  disabled={modelSelectorDisabled}
-                  variant="inline"
-                  bind:anchor={modelAnchor}
-                  onToggle={toggleModelMenu}
+            <div class="flex min-w-0 shrink items-center" role="group" aria-label="Session settings">
+              {#if showStaticSessionLabel}
+                <span class={SESSION_SETTINGS_STATIC_LABEL_CLASS} title={staticSessionLabel}>
+                  {staticSessionLabel}
+                </span>
+              {:else if showSessionSettings}
+                <SessionSettingsTrigger
+                  open={activeMenu === "settings"}
+                  disabled={settingsDisabled}
+                  bind:anchor={settingsAnchor}
+                  onToggle={toggleSettingsMenu}
                 />
               {/if}
-              <ThinkingLevelSelector
-                open={activeMenu === "thinking"}
-                disabled={selectorsDisabled}
-                variant="inline"
-                bind:anchor={thinkingAnchor}
-                onToggle={toggleThinkingMenu}
-              />
             </div>
           {/if}
         </PromptInputTools>
@@ -597,7 +531,7 @@
           size="icon"
           data-prompt-input-submit
           class="shrink-0"
-          title={isRunning ? "Stop run" : "Send prompt"}
+          title={submitTitle}
           disabled={!isRunning && !desktopState.canSubmit}
           onStop={() => desktopState.handleAbort()}
         >

@@ -3,7 +3,7 @@ import { goto } from "$app/navigation";
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
 import { extractSessionMetadata } from "$lib/components/desktop/transcript-normalize.js";
 import { formatMessageRole, formatMessageText } from "$lib/message-format.js";
-import { normalizeThinkingLevel } from "$lib/pi-model.js";
+import { mergeModelWithCatalog, normalizeThinkingLevel } from "$lib/pi-model.js";
 import type { SessionDomainEvent } from "$lib/pi-session/domain-events.js";
 import type { SessionActivity, SessionReadModel } from "$lib/pi-session/read-model.js";
 import {
@@ -22,6 +22,20 @@ import type { ProviderCapabilities } from "@h3code/agent-core";
 import { getDesktopAgentApi } from "$lib/desktop-agent-api.js";
 import { getDesktopShellApi } from "$lib/desktop-shell-api.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
+import {
+  clearSessionCache,
+  deleteCachedSession,
+  getCachedSession,
+  setCachedSession,
+  type SessionCacheEntry,
+  type SessionCacheMap,
+} from "$lib/session-cache.js";
+import {
+  loadSessionSqlCache,
+  removeSessionSqlCache,
+  saveSessionSqlCache,
+  type SessionSqlCacheState,
+} from "$lib/session-sql-cache.js";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -56,14 +70,6 @@ const defaultDesktopSettings: DesktopSettings = {
 };
 
 export const LANDING_ADD_REPO_VALUE = "__add_repository__";
-
-type OptimisticUserMessage = {
-  id: string;
-  role: "user";
-  content: string;
-  timestamp: number;
-  optimistic: true;
-};
 
 type AgentSessionEvent = SessionDomainEvent & {
   agentId?: string;
@@ -104,10 +110,15 @@ class DesktopState {
   modelsLoaded = $state(false);
   modelsSessionKey = $state<string | undefined>();
   sessionReadModel = $state<SessionReadModel>(createInitialSessionReadModel());
+  sessionCaches = $state<SessionCacheMap>({});
+  sessionCacheSyncing = $state(false);
+  isSwitchingSession = $state(false);
+  sqlCachePersistTimer: ReturnType<typeof setTimeout> | undefined;
+  reconciledSessionPath = $state<string | undefined>();
+  switchGeneration = 0;
   agentReadModels = $state<Record<string, SessionReadModel>>({});
   agentStatuses = $state<Record<string, PiStatus>>({});
   extensionUiRequestsByAgent = $state<Record<string, PiExtensionUiRequest>>({});
-  pendingUserMessages = $state<OptimisticUserMessage[]>([]);
   piStatus = $state<PiStatus>({ state: "disconnected" });
   isBusy = $state(false);
   isSendingPrompt = $state(false);
@@ -123,7 +134,18 @@ class DesktopState {
 
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
-  canSubmit = $derived(this.canUseSession && !this.isBusy && !this.isSendingPrompt && this.promptValue.trim().length > 0);
+  isSessionReconciled = $derived(
+    Boolean(this.selectedSessionPath) &&
+      this.selectedSessionPath === this.reconciledSessionPath &&
+      !this.isSwitchingSession,
+  );
+  canSubmit = $derived(
+    this.canUseSession &&
+      this.isSessionReconciled &&
+      !this.isBusy &&
+      !this.isSendingPrompt &&
+      this.promptValue.trim().length > 0,
+  );
   hasActiveWorkspaceSession = $derived(
     Boolean(this.selectedSessionPath || this.sessionState?.sessionFile),
   );
@@ -139,7 +161,12 @@ class DesktopState {
   );
   isAgentRunning = $derived(this.sessionReadModel.isAgentRunning);
   canChangeSessionSettings = $derived(
-    this.canUseSession && !this.isBusy && !this.isSendingPrompt && !this.isAgentRunning && !this.sessionState?.isStreaming,
+    this.canUseSession &&
+      this.isSessionReconciled &&
+      !this.isBusy &&
+      !this.isSendingPrompt &&
+      !this.isAgentRunning &&
+      !this.sessionState?.isStreaming,
   );
   activity = $derived(
     this.sessionReadModel.activities.slice(0, 8).map((item: SessionActivity) => ({
@@ -147,7 +174,7 @@ class DesktopState {
       detail: item.detail,
     })),
   );
-  transcriptMessages = $derived(selectTranscriptMessages(this.sessionReadModel, this.pendingUserMessages));
+  transcriptMessages = $derived(selectTranscriptMessages(this.sessionReadModel));
   composerPhaseLine = $derived(composerPhase(this.sessionReadModel));
   statusStripLines = $derived(selectStatusStripLines(this.sessionReadModel));
   sessionNotification = $derived(latestNotification(this.sessionReadModel));
@@ -362,6 +389,11 @@ class DesktopState {
   ) {
     const { navigateToWorkspace = true } = options;
     this.errorMessage = undefined;
+
+    if (selectedSessionPath) {
+      await this.applySqlCacheIfPresent(selectedSessionPath, nextRepoPath);
+    }
+
     const result = await this.getAgentApi().connectRepo(nextRepoPath, selectedSessionPath);
     this.syncProviderCapabilities();
 
@@ -389,9 +421,12 @@ class DesktopState {
       result.messages ?? [],
     );
     this.storeActiveAgentReadModel();
-    this.resetTransientTranscript();
-    await this.refreshSessionStats();
-    await this.refreshSessionDiff();
+    this.reconciledSessionPath = this.selectedSessionPath;
+    this.sessionCacheSyncing = false;
+    this.cacheCurrentSession();
+    void this.persistSessionSqlCacheImmediate();
+    void this.refreshSessionStats();
+    void this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
 
     if (navigateToWorkspace) {
@@ -405,6 +440,11 @@ class DesktopState {
     this.worktreePath = undefined;
     this.sessions = [];
     this.selectedSessionPath = undefined;
+    this.reconciledSessionPath = undefined;
+    this.isSwitchingSession = false;
+    this.sessionCacheSyncing = false;
+    this.cancelSqlCachePersist();
+    this.sessionCaches = clearSessionCache();
     this.sessionState = undefined;
     this.sessionStats = null;
     this.piStatus = { state: "disconnected" };
@@ -412,7 +452,6 @@ class DesktopState {
     this.resetSlashCommands();
     this.resetModels();
     this.resetSessionReadModel();
-    this.resetTransientTranscript();
     this.promptValue = "";
   }
 
@@ -447,21 +486,56 @@ class DesktopState {
       return;
     }
 
-    if (sessionPath === this.selectedSessionPath) {
+    if (sessionPath === this.selectedSessionPath && this.isSessionReconciled) {
       return;
     }
 
-    await this.withBusy(async () => {
-      this.errorMessage = undefined;
+    this.cacheCurrentSession();
+    this.switchGeneration += 1;
+    const generation = this.switchGeneration;
+
+    this.errorMessage = undefined;
+    this.selectedSessionPath = sessionPath;
+
+    const cached = getCachedSession(this.sessionCaches, sessionPath);
+
+    if (cached) {
+      this.sessionCaches = setCachedSession(this.sessionCaches, {
+        ...cached,
+        lastAccessedAt: Date.now(),
+      });
+      this.applyCachedSession(cached);
+    } else {
+      const sqlApplied = await this.applySqlCacheIfPresent(sessionPath, repoPath);
+
+      if (!sqlApplied) {
+        this.sessionReadModel = createInitialSessionReadModel();
+        this.sessionState = undefined;
+        this.sessionStats = null;
+        this.resetSessionDiff();
+        this.resetSlashCommands();
+        this.resetModels();
+      }
+    }
+
+    this.isSwitchingSession = true;
+    void this.reconcileSessionSwitch(sessionPath, generation);
+  }
+
+  async reconcileSessionSwitch(sessionPath: string, generation: number) {
+    try {
       const result = await this.getAgentApi().switchSession(sessionPath);
+
+      if (generation !== this.switchGeneration) {
+        return;
+      }
+
       this.activeAgentId = result.agentId;
       this.repoPath = result.repoPath ?? this.repoPath;
       this.worktreePath = result.worktreePath;
       this.syncActiveAgentStatus();
       this.selectedSessionPath = sessionPath;
       this.sessionState = result.state;
-      this.sessionStats = null;
-      this.resetSessionDiff();
       this.resetSlashCommands();
       this.resetModels();
       this.sessionReadModel = hydrateFromSnapshot(
@@ -469,15 +543,23 @@ class DesktopState {
         result.state,
         result.messages,
       );
+      this.reconciledSessionPath = sessionPath;
+      this.sessionCacheSyncing = false;
       this.storeActiveAgentReadModel();
-      this.resetTransientTranscript();
-      if (this.repoPath) {
-        await this.loadRepoSessions(this.repoPath);
-      }
-      await this.refreshSessionStats();
-      await this.refreshSessionDiff();
+      this.cacheCurrentSession();
+      void this.persistSessionSqlCacheImmediate();
+      void this.refreshSessionStats();
+      void this.refreshSessionDiff();
       void this.ensureAvailableModels(true);
-    });
+    } catch (error) {
+      if (generation === this.switchGeneration) {
+        this.errorMessage = getErrorMessage(error);
+      }
+    } finally {
+      if (generation === this.switchGeneration) {
+        this.isSwitchingSession = false;
+      }
+    }
   }
 
   async createNewSessionForRepo(repoPath: string) {
@@ -499,7 +581,10 @@ class DesktopState {
       result.messages,
     );
     this.storeActiveAgentReadModel();
-    this.resetTransientTranscript();
+    this.reconciledSessionPath = this.selectedSessionPath;
+    this.sessionCacheSyncing = false;
+    this.cacheCurrentSession();
+    void this.persistSessionSqlCacheImmediate();
     this.sessions = await this.getAgentApi().listSessions();
     this.repos = upsertRepo(this.repos, repoPath, {
       expanded: true,
@@ -556,8 +641,6 @@ class DesktopState {
     }
 
     const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
-    const optimisticMessage = createOptimisticUserMessage(text);
-    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
     this.isSendingPrompt = true;
 
     try {
@@ -571,9 +654,6 @@ class DesktopState {
 
       this.promptValue = "";
     } catch (error) {
-      this.pendingUserMessages = this.pendingUserMessages.filter(
-        (pendingMessage) => pendingMessage.id !== optimisticMessage.id,
-      );
       this.errorMessage = getErrorMessage(error);
       throw error;
     } finally {
@@ -610,7 +690,6 @@ class DesktopState {
         this.resetSessionDiff();
         this.resetSlashCommands();
         this.resetSessionReadModel();
-        this.resetTransientTranscript();
       }
 
     });
@@ -625,6 +704,8 @@ class DesktopState {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
       const deletingActiveSession = sessionPath === this.selectedSessionPath || sessionPath === this.sessionState?.sessionFile;
+      this.sessionCaches = deleteCachedSession(this.sessionCaches, sessionPath);
+      void removeSessionSqlCache(sessionPath);
       const sessions = await this.getAgentApi().deleteSession(repoPath, sessionPath);
       this.repos = upsertRepo(this.repos, repoPath, {
         sessions,
@@ -644,7 +725,6 @@ class DesktopState {
         this.resetSessionDiff();
         this.resetSlashCommands();
         this.resetSessionReadModel();
-        this.resetTransientTranscript();
         await this.enterLanding({ repoPath });
       }
 
@@ -656,8 +736,6 @@ class DesktopState {
       return;
     }
 
-    const optimisticMessage = createOptimisticUserMessage(text);
-    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
     this.isSendingPrompt = true;
 
     try {
@@ -665,7 +743,6 @@ class DesktopState {
       await this.getAgentApi().sendSteer(text);
       this.promptValue = "";
     } catch (error) {
-      this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
       this.errorMessage = getErrorMessage(error);
     } finally {
       this.isSendingPrompt = false;
@@ -693,7 +770,6 @@ class DesktopState {
       this.errorMessage = undefined;
       await this.getAgentApi().abort();
       await this.refreshActiveSessionData();
-      this.resetTransientTranscript();
     });
   }
 
@@ -717,7 +793,6 @@ class DesktopState {
   }
 
   applySessionSnapshot(result: { state: PiSessionState; messages: unknown[] }) {
-    this.pendingUserMessages = [];
     this.sessionState = result.state;
 
     if (result.state.sessionFile) {
@@ -725,6 +800,7 @@ class DesktopState {
     }
 
     this.sessionReadModel = hydrateFromSnapshot(this.sessionReadModel, result.state, result.messages);
+    this.reconciledSessionPath = this.selectedSessionPath ?? result.state.sessionFile;
     this.storeActiveAgentReadModel();
   }
 
@@ -962,6 +1038,17 @@ class DesktopState {
       this.availableModels = models;
       this.modelsLoaded = true;
       this.modelsSessionKey = sessionKey;
+
+      if (this.sessionState?.model) {
+        const sessionModel = mergeModelWithCatalog(this.sessionState.model, models);
+
+        if (sessionModel && sessionModel.reasoning !== this.sessionState.model.reasoning) {
+          this.sessionState = {
+            ...this.sessionState,
+            model: sessionModel,
+          };
+        }
+      }
     } catch (error) {
       this.modelsError = getErrorMessage(error);
       this.modelsLoaded = false;
@@ -985,11 +1072,12 @@ class DesktopState {
 
     try {
       const model = await this.getAgentApi().setModel(provider, modelId);
+      const sessionModel = mergeModelWithCatalog(model, this.availableModels);
 
-      if (this.sessionState) {
+      if (this.sessionState && sessionModel) {
         this.sessionState = {
           ...this.sessionState,
-          model,
+          model: sessionModel,
         };
       }
 
@@ -1261,6 +1349,8 @@ class DesktopState {
     if (this.sessionReadModel.needsRunHousekeeping) {
       void this.reconcileRunEnded();
     }
+
+    this.cacheCurrentSession();
   }
 
   async reconcileRunEnded() {
@@ -1272,8 +1362,6 @@ class DesktopState {
     this.reconcileInFlight = true;
 
     try {
-      this.pendingUserMessages = [];
-
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
       await this.syncSidebarSessionsForActiveRepo();
@@ -1326,10 +1414,6 @@ class DesktopState {
     this.clearExtensionUiRequest();
   }
 
-  resetTransientTranscript() {
-    this.pendingUserMessages = [];
-  }
-
   resetSessionReadModel() {
     this.sessionReadModel = createInitialSessionReadModel();
     this.storeActiveAgentReadModel();
@@ -1344,6 +1428,148 @@ class DesktopState {
       ...this.agentReadModels,
       [this.activeAgentId]: this.sessionReadModel,
     };
+
+    this.cacheCurrentSession();
+  }
+
+  cacheCurrentSession() {
+    const sessionPath = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+
+    if (!sessionPath || !this.sessionState) {
+      return;
+    }
+
+    this.sessionCaches = setCachedSession(this.sessionCaches, {
+      sessionPath,
+      sessionReadModel: this.sessionReadModel,
+      sessionState: this.sessionState,
+      worktreePath: this.worktreePath,
+      sessionStats: this.sessionStats,
+      sessionDiff: this.hasSessionDiff ? this.sessionDiff : undefined,
+      lastAccessedAt: Date.now(),
+    });
+    this.schedulePersistSessionSqlCache();
+  }
+
+  async applySqlCacheIfPresent(sessionPath: string, repoPath: string): Promise<boolean> {
+    const entry = await loadSessionSqlCache(sessionPath);
+
+    if (!entry || entry.messages.length === 0) {
+      return false;
+    }
+
+    const state = this.sqlCacheStateToPiSessionState(entry.sessionState, sessionPath, entry.messageCount);
+    this.sessionState = state;
+    this.sessionReadModel = hydrateFromSnapshot(createInitialSessionReadModel(), state, entry.messages);
+    this.sessionCacheSyncing = entry.syncStatus !== undefined && entry.syncStatus !== "fresh";
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+    return true;
+  }
+
+  sqlCacheStateToPiSessionState(
+    cached: SessionSqlCacheState | undefined,
+    sessionPath: string,
+    messageCount: number,
+  ): PiSessionState {
+    const sessionId = cached?.sessionId ?? sessionPathToId(sessionPath);
+
+    return {
+      thinkingLevel: "off",
+      isStreaming: cached?.isStreaming ?? false,
+      isCompacting: cached?.isCompacting ?? false,
+      steeringMode: "one-at-a-time",
+      followUpMode: "one-at-a-time",
+      sessionFile: cached?.sessionFile ?? sessionPath,
+      sessionId,
+      autoCompactionEnabled: true,
+      messageCount,
+      pendingMessageCount: 0,
+    };
+  }
+
+  cancelSqlCachePersist() {
+    if (this.sqlCachePersistTimer === undefined) {
+      return;
+    }
+
+    clearTimeout(this.sqlCachePersistTimer);
+    this.sqlCachePersistTimer = undefined;
+  }
+
+  schedulePersistSessionSqlCache() {
+    if (!this.repoPath || !this.sessionState) {
+      return;
+    }
+
+    if (this.sessionReadModel.isAgentRunning || this.sessionReadModel.phase === "running") {
+      return;
+    }
+
+    this.cancelSqlCachePersist();
+    this.sqlCachePersistTimer = setTimeout(() => {
+      this.sqlCachePersistTimer = undefined;
+      void this.persistSessionSqlCacheImmediate();
+    }, 500);
+  }
+
+  async persistSessionSqlCacheImmediate() {
+    const sessionPath = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+    const repoPath = this.repoPath;
+
+    if (!sessionPath || !repoPath || !this.sessionState) {
+      return;
+    }
+
+    if (this.sessionReadModel.isAgentRunning || this.sessionReadModel.phase === "running") {
+      return;
+    }
+
+    if (this.sessionReadModel.messages.length === 0) {
+      return;
+    }
+
+    await saveSessionSqlCache({
+      sessionPath,
+      repoPath,
+      messages: this.sessionReadModel.messages,
+      sessionState: {
+        isStreaming: this.sessionState.isStreaming,
+        isCompacting: this.sessionState.isCompacting,
+        sessionFile: this.sessionState.sessionFile,
+        sessionId: this.sessionState.sessionId,
+      },
+      messageCount: this.sessionReadModel.messages.length,
+      syncStatus: "fresh",
+    });
+  }
+
+  applyCachedSession(entry: SessionCacheEntry) {
+    if (!entry) {
+      return;
+    }
+
+    this.sessionReadModel = entry.sessionReadModel;
+    this.sessionState = entry.sessionState;
+    this.worktreePath = entry.worktreePath;
+
+    if (entry.sessionStats !== undefined) {
+      this.sessionStats = entry.sessionStats;
+    } else {
+      this.sessionStats = null;
+    }
+
+    if (entry.sessionDiff) {
+      this.sessionDiff = entry.sessionDiff;
+      this.sessionDiffLoading = false;
+      this.sessionDiffError = undefined;
+    } else {
+      this.resetSessionDiff();
+    }
+
+    this.resetSlashCommands();
+    this.resetModels();
   }
 
   syncActiveAgentStatus() {
@@ -1506,18 +1732,13 @@ function createSessionRowStatus(kind: SessionRowStatusKind): SessionRowStatus {
   }
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function sessionPathToId(sessionPath: string) {
+  const base = sessionPath.split(/[/\\]/).pop() ?? sessionPath;
+  return base.replace(/\.jsonl$/i, "");
 }
 
-function createOptimisticUserMessage(content: string): OptimisticUserMessage {
-  return {
-    id: `optimistic-user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    role: "user",
-    content,
-    timestamp: Date.now(),
-    optimistic: true,
-  };
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function formatDate(value: string) {

@@ -10,7 +10,7 @@
 	// indexing
 </script>
 
-<div class={cn("flex min-h-9 items-center justify-between border-t border-border/50 px-2.5 py-1.5", className)} {...props}>
+<div class={cn("flex min-h-8 items-center justify-between border-t border-border/50 px-2.5 py-1", className)} {...props}>
 	{#if children}
 		{@render children()}
 	{/if}

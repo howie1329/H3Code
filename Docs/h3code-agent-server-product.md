@@ -37,10 +37,10 @@ H3Code owns:
 - Local Agent Server orchestration.
 - Workspace/repo context.
 - Provider registry and capability-gated controls.
-- SQLite metadata index for discovery, not transcripts.
+- SQLite metadata index for discovery and a non-canonical session message display cache.
 - Git diff, worktree inventory, and desktop preferences.
 
-H3Code must not become the canonical transcript store. It can cache display state and index metadata for discovery, but provider-native sessions and messages remain provider-owned.
+H3Code must not become the canonical transcript store. It can cache display state (including SQLite message blobs for instant UI paint) and index metadata for discovery, but provider-native sessions and messages remain provider-owned. The desktop reconciles cached transcripts against Pi in the background.
 
 ## Current Implementation State
 
@@ -85,7 +85,7 @@ Cursor should be mapped through its supported SDK or API surface. Any weaker fea
 ## Non-Goals
 
 - Cloud sync, accounts, teams, or remote multi-user deployment.
-- H3Code-owned transcript or message persistence.
+- H3Code-owned canonical transcript or message persistence (display cache is allowed).
 - Forcing Codex or Cursor into PI-shaped parity.
 - Full-text transcript indexing in SQLite.
 - Provider SDK or wire-format types leaking into the UI.
