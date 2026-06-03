@@ -101,48 +101,64 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 
 ### Identity & tenancy
 - **Solo accounts only** for MVP.
-- **Auth: email/password + GitHub link.** GitHub link grants repo access; email/password is the primary credential.
+- **Auth: email/password + GitHub link** via **Clerk** (recommended) with its official Convex integration; Convex Auth is the no-extra-vendor alternative. GitHub *login* (Clerk) is distinct from the GitHub *App* used for repo/PR work.
 
 ### Git integration
 - **GitHub only** via a **GitHub App** for MVP.
 - Git output: agent works on a **branch and opens a pull request** for review.
 
 ### Persistence
-- Cloud SaaS **owns session/transcript/diff persistence** in a server-side database, a deliberate departure from the desktop boundary ("providers own transcripts"), because cross-device history requires it. Provider-native history remains the upstream source of truth where applicable; our store is the durable, queryable cross-device record.
+- Cloud SaaS **owns session/transcript/diff persistence** in **Convex** (its document database), a deliberate departure from the desktop boundary ("providers own transcripts"), because cross-device history requires it. Provider-native history remains the upstream source of truth where applicable; our Convex store is the durable, queryable, **reactively-synced** cross-device record. No separate SQL database or ORM is used.
 
 ### Billing
 - **Usage-based billing from MVP** (Stripe): meter **compute-minutes** and, for managed inference, **tokens**. BYO-key users billed for platform/compute only.
 
 ### Major Modules (interfaces hide complexity; designed as deep modules)
-1. **`agent-core` (reused):** provider-neutral protocol — sessions, runs, messages, capabilities, multi-provider contract. Interface essentially unchanged.
-2. **Sandbox Orchestrator:** `acquire(repo, session) → Sandbox`, `suspend`, `resume`, `destroy`. Hides Daytona API, warm-pool management, hibernation, and lifecycle state machine. Backend swappable (Daytona / Vercel Sandbox).
-3. **Provider Runtime Adapter:** runs the multi-provider agent loop inside the sandbox and bridges its native stream to the H3Code protocol. Hides PI/Codex/Cursor differences. Reuses `agent-core` contracts.
-4. **Realtime Gateway:** authenticated WebSocket fan-out (client ⇄ session). Hides reconnection, backpressure, and multi-device session synchronization.
-5. **Git/GitHub Service:** `cloneInto(sandbox)`, `diff`, `commit`, `openPR`. Hides GitHub App auth, branch naming, and PR creation.
-6. **Identity & Billing:** auth/accounts, key vault (managed + BYO), usage metering (`meter(event)`), Stripe usage-based billing.
-7. **Session Store:** durable persistence of sessions, transcripts, and diffs for cross-device history.
-8. **Notification Service:** `notify(user, event)` over Web Push + in-app.
+
+Convex absorbs the realtime, persistence, scheduling, and orchestration-trigger responsibilities, so the module set is reshaped accordingly. **Architectural rule: Convex orchestrates and persists; it does not host the agent loop. The agent runs in the Daytona sandbox and streams results back into Convex.**
+
+1. **`agent-core` (reused):** provider-neutral protocol — sessions, runs, messages, capabilities, multi-provider contract. Interface essentially unchanged; shared types used by client, Convex functions, and the in-sandbox adapter.
+2. **Sandbox Orchestrator (Convex actions + Daytona client):** `acquire(repo, session) → Sandbox`, `suspend`, `resume`, `destroy`. Convex actions drive lifecycle; hides Daytona API, warm-pool management, hibernation, and the lifecycle state machine. Backend swappable (Daytona / Vercel Sandbox fallback).
+3. **Provider Runtime Adapter (in-sandbox):** runs the multi-provider agent loop *inside* the sandbox, maps the provider's native stream to H3Code protocol messages, and **persists coalesced (~150–250ms debounced) chunks to Convex via HTTP**. Subscribes to a Convex "control" query to react to steer/abort. Hides PI/Codex/Cursor differences; reuses `agent-core` contracts.
+4. **Realtime Sync (Convex reactive queries):** replaces a hand-rolled WebSocket gateway. Multi-device session synchronization, fan-out, and reconnection are provided by Convex subscriptions over its managed WebSocket. The only custom surface is the schema and the query/mutation functions for messages, runs, and control signals.
+5. **Git/GitHub Service:** `cloneInto(sandbox)`, `diff`, `commit`, `openPR`. Hides GitHub App installation auth, branch naming, and PR creation. Invoked from Convex actions / in-sandbox steps.
+6. **Identity & Billing:** Clerk (or Convex Auth) for accounts; key vault (managed + BYO) stored server-side; usage metering (`meter(event)`) written to Convex; Stripe usage-based billing driven by Convex actions/cron.
+7. **Session Store (Convex tables):** durable, reactively-synced persistence of sessions, transcripts, diffs, and usage. Just Convex schema + functions — no separate database.
+8. **Notification Service:** `notify(user, event)` over Web Push (VAPID) + in-app; subscriptions stored in Convex, dispatched from Convex functions on run-lifecycle events.
 
 ### Proposed stack
-- Frontend/PWA: SvelteKit 2 + Svelte 5, Tailwind v4, shadcn-svelte, existing design system; Vercel AI SDK + Streamdown + Shiki for transcript rendering.
-- Backend orchestration: Node.js service exposing the H3Code WebSocket protocol (reusing `agent-core`), plus HTTP for auth/billing/GitHub webhooks.
-- Sandboxes: Daytona (primary), Vercel Sandbox (fallback).
-- Realtime: WebSocket.
-- Data: server-side relational DB (sessions, transcripts, diffs, users, usage); object storage for large artifacts as needed.
-- Auth: email/password + GitHub App OAuth link.
-- Billing: Stripe usage-based.
-- Notifications: Web Push (VAPID) + in-app.
+- **Frontend/PWA:** SvelteKit 2 + Svelte 5, Tailwind v4, shadcn-svelte, existing design system; `convex-svelte` client; Vercel AI SDK + Streamdown + Shiki for transcript rendering. `@vite-pwa/sveltekit` for installability/offline shell. **Hosted on Vercel.**
+- **Backend:** **Convex** — document database, reactive queries (realtime sync), mutations/actions (orchestration triggers, GitHub, Stripe), HTTP actions (webhooks + sandbox chunk ingestion), scheduler/cron. Reuses `agent-core` types. No separate Node service, SQL database, ORM, or custom WebSocket server.
+- **Sandboxes:** **Daytona** (primary) running the agent + in-sandbox Provider Runtime Adapter; **Vercel Sandbox** as a swappable fallback behind the orchestrator interface.
+- **Realtime:** Convex reactive subscriptions (no custom gateway).
+- **Auth:** **Clerk** (recommended) with Convex integration, or Convex Auth. Email/password + GitHub login. Separate GitHub App for repo/PR work.
+- **Billing:** Stripe usage-based (metered from Convex).
+- **Notifications:** Web Push (VAPID) + in-app, dispatched from Convex.
+
+### Deployment topology
+```txt
+SvelteKit PWA (Vercel)
+  │  Convex client (reactive queries + mutations over Convex WSS)
+  ▼
+Convex (DB, reactive sync, actions, HTTP actions, cron)
+  │  action: acquire/resume/suspend         ▲  HTTP: batched chunk writes
+  ▼                                          │
+Daytona sandbox  ── runs agent + Provider Runtime Adapter ──┘
+  ├─► GitHub App (clone, diff, commit, PR)
+  └─► provider runtime (managed inference or BYO keys)
+Convex ─► Stripe (usage billing)   Convex ─► Web Push (notifications)
+```
 
 ## Testing Decisions
 
-A good test verifies **external, observable behavior through a module's public interface**, not internal implementation details. Tests should treat each deep module as a black box, drive it through its documented interface, and assert on outputs and state transitions a caller would observe. They must not assert on private structure, exact internal call sequences, or provider-specific shapes that the protocol is designed to hide. Prior art: the existing Node tests for `@h3code/agent-server` (`npm run test --workspace @h3code/agent-server`) and the package-level checks across the monorepo.
+A good test verifies **external, observable behavior through a module's public interface**, not internal implementation details. Tests should treat each deep module as a black box, drive it through its documented interface, and assert on outputs and state transitions a caller would observe. They must not assert on private structure, exact internal call sequences, or provider-specific shapes that the protocol is designed to hide. Prior art: the existing Node tests for `@h3code/agent-server` (`npm run test --workspace @h3code/agent-server`); for Convex functions, use `convex-test` with Vitest.
 
 Modules to be tested in the MVP:
 
-- **Sandbox Orchestrator:** lifecycle state machine — acquire → active → suspend → resume → destroy, including resume-with-state and idle hibernation transitions. Backend mocked behind the interface.
-- **Provider Runtime Adapter:** mapping of a provider's native event stream into H3Code protocol messages (run lifecycle, streaming assistant output, tool blocks, abort/steer). Provider mocked; assert protocol output.
-- **Realtime Gateway:** multi-device synchronization — two clients on one session receive consistent, ordered state; reconnection resumes correctly.
-- **Session Store:** persistence round-trips — sessions, transcripts, and diffs save and reload faithfully; resume returns prior state.
+- **Sandbox Orchestrator:** lifecycle state machine — acquire → active → suspend → resume → destroy, including resume-with-state and idle hibernation transitions. Daytona client mocked behind the interface; Convex actions tested with `convex-test`.
+- **Provider Runtime Adapter:** mapping of a provider's native event stream into H3Code protocol messages (run lifecycle, streaming assistant output, tool blocks, abort/steer), plus correct chunk coalescing/debounce before persistence. Provider mocked; assert protocol output and batched writes.
+- **Realtime Sync (Convex functions):** message/run/control query+mutation behavior — two subscribers to one session observe consistent, ordered state; control writes (steer/abort) are visible to the in-sandbox subscriber. Tested with `convex-test`.
+- **Session Store (Convex schema + functions):** persistence round-trips — sessions, transcripts, and diffs save and reload faithfully; resume returns prior state.
 
 Modules **not** prioritized for tests in MVP (manual/integration verification instead): Git/GitHub Service, Identity & Billing, Notification Service.
 
@@ -160,7 +176,7 @@ Modules **not** prioritized for tests in MVP (manual/integration verification in
 ## Further Notes
 
 ### Suggested MVP boundary
-Sign in (email/password) → link GitHub (GitHub App) → pick repo + branch → orchestrator provisions a warm Daytona sandbox and clones the repo → interactive multi-provider session over WebSocket (stream, steer, abort, follow-up) with managed inference by default → review diffs (read-only) → agent commits to a branch and opens a PR → sessions/transcripts/diffs persisted for cross-device resume → idle hibernation → web-push on run completion → usage-based billing (compute-minutes + managed tokens).
+Sign in via Clerk (email/password) → link GitHub (GitHub App) → pick repo + branch → Convex action provisions a warm Daytona sandbox and clones the repo → interactive multi-provider session, with the in-sandbox agent streaming coalesced chunks into Convex and all devices syncing via reactive queries (stream, steer, abort, follow-up) with managed inference by default → review diffs (read-only) → agent commits to a branch and opens a PR → sessions/transcripts/diffs persisted in Convex for cross-device resume → idle hibernation → web-push on run completion → usage-based billing (compute-minutes + managed tokens).
 
 ### Future versions (post-MVP)
 - Full in-browser Monaco editor with manual editing and inline approvals.
@@ -173,6 +189,8 @@ Sign in (email/password) → link GitHub (GitHub App) → pick repo + branch →
 
 ### Key risks / open questions to revisit
 - Daytona cost and cold-resume latency vs. the warm-experience target; validate hybrid lifecycle economics against usage-based pricing.
-- Running the multi-provider loop *inside* the sandbox vs. in the orchestrator with the sandbox as a filesystem/exec target — affects the Provider Runtime Adapter boundary.
+- **Convex streaming cost/throughput:** per-token writes are infeasible — the in-sandbox adapter must coalesce chunks (~150–250ms) before persisting. Validate write volume and bandwidth against Convex pricing under realistic transcripts.
+- **Convex function limits:** actions are short-lived (~minutes), so the long-running agent loop must live in the sandbox, with Convex only orchestrating and persisting. Confirm the control-channel pattern (sandbox subscribing to a Convex control query) meets steer/abort latency expectations.
 - Web Push reliability on iOS PWAs (requires installed PWA; historically constrained).
-- Secure secret handling for managed and BYO keys inside ephemeral sandboxes.
+- Secure secret handling for managed and BYO keys inside ephemeral sandboxes; where the GitHub App installation token and provider keys are injected.
+- Clerk vs Convex Auth: vendor cost/lock-in vs. single-system simplicity — decide before building auth.
