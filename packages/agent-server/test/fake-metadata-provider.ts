@@ -1,12 +1,15 @@
 import type {
   AgentProvider,
   ConnectContext,
+  NewSessionOptions,
   ProviderCapabilities,
   ProviderCommand,
   ProviderConnection,
   ProviderModel,
   ProviderQueueMode,
+  ProviderUiResponse,
   SessionDomainEvent,
+  SessionRef,
   SessionSnapshot,
 } from "@h3code/agent-core";
 
@@ -52,6 +55,22 @@ export class FakeMetadataProvider implements AgentProvider {
   async abort(_connection: ProviderConnection): Promise<void> {}
 
   async sendMessage(_connection: ProviderConnection): Promise<void> {}
+
+  async setModel(_connection: ProviderConnection, _model: unknown): Promise<void> {}
+
+  async setThinkingLevel(_connection: ProviderConnection, _level: string): Promise<void> {}
+
+  async respondToUiRequest(_connection: ProviderConnection, _response: ProviderUiResponse): Promise<void> {}
+
+  async switchSession(connection: ProviderConnection, sessionRef: SessionRef): Promise<SessionSnapshot> {
+    connection.sessionRef = sessionRef;
+    return this.getSnapshot(connection);
+  }
+
+  async createSession(connection: ProviderConnection, _options?: NewSessionOptions): Promise<SessionSnapshot> {
+    connection.sessionRef = "fake-metadata-session";
+    return this.getSnapshot(connection);
+  }
 
   subscribe(_connection: ProviderConnection, _onEvent: (event: SessionDomainEvent) => void): () => void {
     return () => {};

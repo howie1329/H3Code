@@ -7,6 +7,7 @@ import type {
   SessionSummary,
   WorkspaceDiffSummary,
 } from "@h3code/agent-core";
+import { deletePiSessionForRepo, listPiSessionsForRepo } from "@h3code/pi-provider";
 import {
   clearAllIndexedData,
   getPreferences,
@@ -16,8 +17,6 @@ import {
 } from "@h3code/agent-metadata";
 import type { ConnectionManager } from "../connection-manager.js";
 import { getWorkspaceDiff } from "./git-diff.js";
-import { deleteSessionForRepo } from "./session-delete.js";
-import { listSessionsForRepo } from "./session-discovery.js";
 
 export class PlatformService {
   constructor(private readonly connections?: ConnectionManager) {}
@@ -57,7 +56,7 @@ export class PlatformService {
 
     const repoPath = input.repoPath;
 
-    const sessions = await deleteSessionForRepo({
+    const sessions = await deletePiSessionForRepo({
       repoPath,
       sessionRef: input.sessionRef,
       findConnectionIdForSession,
@@ -90,7 +89,7 @@ export class PlatformService {
     providerId?: ProviderId;
     markRecent?: boolean;
   }): Promise<SessionSummary[]> {
-    return listSessionsForRepo({
+    return listPiSessionsForRepo({
       repoPath: input.repoPath,
       providerId: input.providerId ?? "pi",
       markRecent: input.markRecent,

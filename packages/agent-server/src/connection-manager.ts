@@ -78,111 +78,56 @@ export class ConnectionManager {
 
   async respondToUiRequest(connectionId: ConnectionId, response: ProviderUiResponse) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.respondToUiRequest) {
-      throw new AgentServerError("unsupported_command", "Provider does not support UI responses.");
-    }
-
     await managed.provider.respondToUiRequest(managed.connection, response);
   }
 
   async setModel(connectionId: ConnectionId, model: unknown) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.setModel) {
-      throw new AgentServerError("unsupported_command", "Provider does not support model changes.");
-    }
-
     await managed.provider.setModel(managed.connection, model);
   }
 
   async setThinkingLevel(connectionId: ConnectionId, level: string) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.setThinkingLevel) {
-      throw new AgentServerError("unsupported_command", "Provider does not support thinking level changes.");
-    }
-
     await managed.provider.setThinkingLevel(managed.connection, level);
   }
 
   async getSnapshot(connectionId: ConnectionId) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.getSnapshot) {
-      throw new AgentServerError("unsupported_command", "Provider does not support session snapshots.");
-    }
-
     return managed.provider.getSnapshot(managed.connection);
   }
 
   async switchSession(connectionId: ConnectionId, sessionRef: SessionRef) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.switchSession) {
-      throw new AgentServerError("unsupported_command", "Provider does not support switching sessions.");
-    }
-
     return managed.provider.switchSession(managed.connection, sessionRef);
   }
 
   async createSession(connectionId: ConnectionId, options?: NewSessionOptions) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.createSession) {
-      throw new AgentServerError("unsupported_command", "Provider does not support creating sessions.");
-    }
-
     return managed.provider.createSession(managed.connection, options);
   }
 
   async listCommands(connectionId: ConnectionId) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.listCommands) {
-      throw new AgentServerError("unsupported_command", "Provider does not support command listing.");
-    }
-
     return managed.provider.listCommands(managed.connection);
   }
 
   async listModels(connectionId: ConnectionId) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.listModels) {
-      throw new AgentServerError("unsupported_command", "Provider does not support model listing.");
-    }
-
     return managed.provider.listModels(managed.connection);
   }
 
   async setSteeringMode(connectionId: ConnectionId, mode: ProviderQueueMode) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.setSteeringMode) {
-      throw new AgentServerError("unsupported_command", "Provider does not support steering mode changes.");
-    }
-
     await managed.provider.setSteeringMode(managed.connection, mode);
   }
 
   async setFollowUpMode(connectionId: ConnectionId, mode: ProviderQueueMode) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.setFollowUpMode) {
-      throw new AgentServerError("unsupported_command", "Provider does not support follow-up mode changes.");
-    }
-
     await managed.provider.setFollowUpMode(managed.connection, mode);
   }
 
   async setAutoCompaction(connectionId: ConnectionId, enabled: boolean) {
     const managed = this.require(connectionId);
-
-    if (!managed.provider.setAutoCompaction) {
-      throw new AgentServerError("unsupported_command", "Provider does not support compaction settings.");
-    }
-
     await managed.provider.setAutoCompaction(managed.connection, enabled);
   }
 

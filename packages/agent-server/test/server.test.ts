@@ -5,10 +5,10 @@ import path from "node:path";
 import { test } from "node:test";
 import type { ServerToClientMessage } from "@h3code/agent-core";
 import WebSocket from "ws";
-import { NoopProvider } from "../src/noop-provider.js";
 import { startAgentServer } from "../src/index.js";
 import { FakeMetadataProvider } from "./fake-metadata-provider.js";
 import { FakeUiProvider } from "./fake-ui-provider.js";
+import { NoopProvider } from "./noop-provider.js";
 
 async function startTestServer(dataDir?: string) {
   const resolvedDataDir = dataDir ?? (await mkdtemp(path.join(tmpdir(), "h3code-agent-server-")));

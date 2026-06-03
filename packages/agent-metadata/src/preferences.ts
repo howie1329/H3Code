@@ -1,10 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
-import path from "node:path";
 
-import type { SessionInfo } from "@earendil-works/pi-coding-agent";
-
-import { getConfiguredDataDir } from "./config.js";
+import { closeDatabase, getDatabase, getDatabasePath } from "./database.js";
 import {
+  getIndexedSessionsForRepo as getIndexedSessionsForRepoRows,
   getIndexedSessions,
   type IndexedSessionPreference,
 } from "./preferences-indexed-sessions.js";
@@ -12,7 +10,6 @@ import {
   clearSessionMessageCaches as clearSessionMessageCachesRows,
   deleteSessionMessageCache as deleteSessionMessageCacheRow,
   getSessionMessageCache as getSessionMessageCacheRow,
-  migrateSessionMessageCacheSchema,
   upsertSessionMessageCache as upsertSessionMessageCacheRow,
   touchSessionMessageCache as touchSessionMessageCacheRow,
   type SessionMessageCacheEntry,
@@ -20,8 +17,6 @@ import {
 } from "./session-message-cache.js";
 import {
   getRecentRepos as getRecentReposRows,
-  migrateRecentReposSchema,
-  migrateRepoSessionsSchema,
   type RecentRepoPreference,
 } from "./preferences-schema.js";
 
@@ -45,6 +40,16 @@ export type SessionWorktreePreference = {
   sessionName?: string;
 };
 
+export type RepoSessionRowInput = {
+  path: string;
+  id: string;
+  name?: string;
+  created: string;
+  modified: string;
+  messageCount: number;
+  firstMessage: string;
+};
+
 export type DesktopPreferences = {
   recentRepos: RecentRepoPreference[];
   indexedSessions: IndexedSessionPreference[];
@@ -63,9 +68,6 @@ const defaultDesktopSettings: DesktopSettings = {
   preferDiffPanel: false,
   autoConnectOnLaunch: false,
 };
-
-let database: DatabaseSync | undefined;
-let databasePath: string | undefined;
 
 export function getPreferences(): DesktopPreferences {
   const db = getDatabase();
@@ -135,33 +137,22 @@ function ensureRepoStub(db: DatabaseSync, repoPath: string) {
   `).run(repoPath, name, now, now);
 }
 
-export function recordRepoSessions(repoPath: string, sessions: SessionInfo[]) {
+export function recordRepoSessions(repoPath: string, sessions: RepoSessionRowInput[]) {
   recordRepoSessionRows(
     repoPath,
     sessions.map((session) => ({
       path: session.path,
       id: session.id,
       name: session.name,
-      created: session.created.toISOString(),
-      modified: session.modified.toISOString(),
+      created: session.created,
+      modified: session.modified,
       messageCount: session.messageCount,
       firstMessage: session.firstMessage,
     })),
   );
 }
 
-export function recordRepoSessionRows(
-  repoPath: string,
-  sessions: Array<{
-    path: string;
-    id: string;
-    name?: string;
-    created: string;
-    modified: string;
-    messageCount: number;
-    firstMessage: string;
-  }>,
-) {
+export function recordRepoSessionRows(repoPath: string, sessions: RepoSessionRowInput[]) {
   const db = getDatabase();
   const now = new Date().toISOString();
 
@@ -265,6 +256,10 @@ export function getSessionWorktree(sessionPath: string) {
     repoPath: String(row.repoPath),
     worktreePath: String(row.worktreePath),
   };
+}
+
+export function getIndexedSessionsForRepo(repoPath: string) {
+  return getIndexedSessionsForRepoRows(getDatabase(), repoPath);
 }
 
 export function getRepoWorktrees(repoPath: string) {
@@ -405,68 +400,7 @@ export function revealPreferencesDatabase() {
 }
 
 export function closePreferencesDatabase() {
-  database?.close();
-  database = undefined;
-  databasePath = undefined;
-}
-
-function getDatabase() {
-  if (database) {
-    return database;
-  }
-
-  database = new DatabaseSync(getDatabasePath());
-  database.exec("PRAGMA foreign_keys = ON");
-  database.exec("PRAGMA journal_mode = WAL");
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS recent_repos (
-      path TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      added_at TEXT NOT NULL,
-      last_opened_at TEXT NOT NULL,
-      last_session_path TEXT,
-      sessions_indexed_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS repo_sessions (
-      session_path TEXT PRIMARY KEY,
-      repo_path TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      name TEXT,
-      created_at TEXT NOT NULL,
-      modified_at TEXT NOT NULL,
-      last_opened_at TEXT,
-      message_count INTEGER NOT NULL DEFAULT 0,
-      first_message TEXT NOT NULL DEFAULT '',
-      indexed_at TEXT NOT NULL,
-      FOREIGN KEY(repo_path) REFERENCES recent_repos(path) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS repo_sessions_repo_modified_idx
-      ON repo_sessions(repo_path, modified_at DESC);
-
-    CREATE TABLE IF NOT EXISTS session_worktrees (
-      session_path TEXT PRIMARY KEY,
-      repo_path TEXT NOT NULL,
-      worktree_path TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY(repo_path) REFERENCES recent_repos(path) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS session_worktrees_repo_idx
-      ON session_worktrees(repo_path);
-  `);
-
-  migrateRecentReposSchema(database);
-  migrateRepoSessionsSchema(database);
-  migrateSessionMessageCacheSchema(database);
-
-  return database;
+  closeDatabase();
 }
 
 export function getSessionMessageCache(sessionPath: string) {
@@ -489,11 +423,6 @@ export function deleteSessionMessageCache(sessionPath: string) {
 
 export function clearSessionMessageCaches() {
   clearSessionMessageCachesRows(getDatabase());
-}
-
-function getDatabasePath() {
-  databasePath ??= path.join(getConfiguredDataDir(), "h3code.sqlite");
-  return databasePath;
 }
 
 function getRecentRepos(db: DatabaseSync): RecentRepoPreference[] {

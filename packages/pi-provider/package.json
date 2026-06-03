@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@h3code/agent-core": "*",
+    "@h3code/agent-metadata": "*",
     "@earendil-works/pi-coding-agent": "^0.75.4"
   },
   "devDependencies": {
