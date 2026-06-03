@@ -3,10 +3,17 @@ import type {
   ConnectContext,
   MessageInput,
   ProviderCapabilities,
+  ProviderCommand,
   ProviderConnection,
+  ProviderModel,
+  ProviderQueueMode,
+  ProviderUiResponse,
+  NewSessionOptions,
   SessionDomainEvent,
   SessionSnapshot,
+  SessionRef,
 } from "@h3code/agent-core";
+import { AgentServerError } from "../src/errors.js";
 
 const noopCapabilities: ProviderCapabilities = {
   sessions: {
@@ -85,6 +92,46 @@ export class NoopProvider implements AgentProvider {
     });
   }
 
+  async setModel(): Promise<void> {
+    throw unsupported("Noop provider does not support model changes.");
+  }
+
+  async setThinkingLevel(): Promise<void> {
+    throw unsupported("Noop provider does not support thinking level changes.");
+  }
+
+  async listCommands(): Promise<ProviderCommand[]> {
+    throw unsupported("Noop provider does not support command listing.");
+  }
+
+  async listModels(): Promise<ProviderModel[]> {
+    throw unsupported("Noop provider does not support model listing.");
+  }
+
+  async setSteeringMode(_connection: ProviderConnection, _mode: ProviderQueueMode): Promise<void> {
+    throw unsupported("Noop provider does not support steering mode changes.");
+  }
+
+  async setFollowUpMode(_connection: ProviderConnection, _mode: ProviderQueueMode): Promise<void> {
+    throw unsupported("Noop provider does not support follow-up mode changes.");
+  }
+
+  async setAutoCompaction(): Promise<void> {
+    throw unsupported("Noop provider does not support compaction settings.");
+  }
+
+  async respondToUiRequest(_connection: ProviderConnection, _response: ProviderUiResponse): Promise<void> {
+    throw unsupported("Noop provider does not support UI responses.");
+  }
+
+  async switchSession(_connection: ProviderConnection, _sessionRef: SessionRef): Promise<SessionSnapshot> {
+    throw unsupported("Noop provider does not support switching sessions.");
+  }
+
+  async createSession(_connection: ProviderConnection, _options?: NewSessionOptions): Promise<SessionSnapshot> {
+    throw unsupported("Noop provider does not support creating sessions.");
+  }
+
   async getSnapshot(connection: ProviderConnection): Promise<SessionSnapshot> {
     return {
       summary: {
@@ -120,4 +167,8 @@ export class NoopProvider implements AgentProvider {
       listener(event);
     }
   }
+}
+
+function unsupported(message: string) {
+  return new AgentServerError("unsupported_command", message);
 }

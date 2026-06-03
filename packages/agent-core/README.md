@@ -9,8 +9,8 @@ It is intentionally small and type-focused. It does not run providers, open sock
 - Provider-neutral IDs and status types.
 - Session, run, message, tool, approval, and workspace diff shapes.
 - UI to Agent Server WebSocket message unions.
-- Provider capability flags.
-- The `AgentProvider` interface used by the Agent Server.
+- Provider capability flags used as UI metadata.
+- The explicit `AgentProvider` interface used by the Agent Server.
 
 ## Does Not Own
 
@@ -21,6 +21,10 @@ It is intentionally small and type-focused. It does not run providers, open sock
 - Cursor SDK client code.
 - SQLite preferences or metadata indexing.
 - Transcript persistence.
+
+## Provider Contract
+
+`AgentProvider` is intentionally explicit: providers registered with the Agent Server implement the current H3Code session, run, metadata, queue, compaction, and extension UI operations directly. Capability flags describe what the UI should show; they are not the runtime dispatch contract.
 
 ## Checks
 

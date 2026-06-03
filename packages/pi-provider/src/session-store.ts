@@ -1,11 +1,16 @@
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
-import type { ConnectionId, ProviderId, SessionSummary } from "@h3code/agent-core";
+import type { ConnectionId, ProviderId, SessionRef, SessionSummary } from "@h3code/agent-core";
 import {
-  getPreferences,
+  getIndexedSessionsForRepo,
   getRepoWorktrees,
+  getSessionWorktree,
   recordRepoSessionRows,
   recordRepoUsage,
+  removeIndexedSession,
+  type IndexedSessionPreference,
 } from "@h3code/agent-metadata";
 
 type DiscoveredSession = {
@@ -20,19 +25,28 @@ type DiscoveredSession = {
   firstMessage: string;
 };
 
-export type SessionDiscoveryOptions = {
+export type PiSessionDiscoveryOptions = {
   repoPath: string;
   providerId?: ProviderId;
   markRecent?: boolean;
   liveConnections?: ReadonlyMap<string, ConnectionId>;
 };
 
-export async function listSessionsForRepo(options: SessionDiscoveryOptions): Promise<SessionSummary[]> {
-  const { repoPath, markRecent = false, providerId = "pi", liveConnections } = options;
+export type DeletePiSessionInput = {
+  repoPath: string;
+  sessionRef: SessionRef;
+  disconnect?: (connectionId: ConnectionId) => Promise<void>;
+  findConnectionIdForSession?: (sessionRef: SessionRef) => ConnectionId | undefined;
+  liveConnections?: ReadonlyMap<string, ConnectionId>;
+};
 
+export async function listPiSessionsForRepo(options: PiSessionDiscoveryOptions): Promise<SessionSummary[]> {
+  const { repoPath, markRecent = false, providerId = "pi", liveConnections } = options;
+  const indexedSessions = getIndexedSessionsForRepo(repoPath);
   const discovered = includeIndexedSessionsForRepo(
     repoPath,
     await listAllSessionsForLogicalRepo(repoPath),
+    indexedSessions,
   );
 
   if (markRecent) {
@@ -52,8 +66,35 @@ export async function listSessionsForRepo(options: SessionDiscoveryOptions): Pro
     })),
   );
 
-  const sorted = sortSessionsForRepoByIndexedRecency(repoPath, discovered);
+  const sorted = sortSessionsForRepoByIndexedRecency(discovered, indexedSessions);
   return sorted.map((session) => toSessionSummary(session, providerId, liveConnections));
+}
+
+export async function deletePiSessionForRepo(input: DeletePiSessionInput) {
+  const { repoPath, sessionRef } = input;
+  const sessionWorktree = getSessionWorktree(sessionRef);
+  const sessionCwd = sessionWorktree?.worktreePath ?? repoPath;
+  const sessions = await SessionManager.list(sessionCwd);
+  const session = sessions.find((item) => item.path === sessionRef);
+
+  if (!session) {
+    throw new Error("Session does not belong to this repo.");
+  }
+
+  const connectionId = input.findConnectionIdForSession?.(sessionRef);
+
+  if (connectionId && input.disconnect) {
+    await input.disconnect(connectionId);
+  }
+
+  await deleteSessionFile(sessionRef);
+  removeIndexedSession(sessionRef, { removeWorktreeMapping: Boolean(sessionWorktree) });
+
+  return listPiSessionsForRepo({
+    repoPath,
+    markRecent: true,
+    liveConnections: input.liveConnections,
+  });
 }
 
 async function listAllSessionsForLogicalRepo(repoPath: string): Promise<DiscoveredSession[]> {
@@ -79,10 +120,14 @@ async function listAllSessionsForLogicalRepo(repoPath: string): Promise<Discover
   return [...sessionsByPath.values()].sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified));
 }
 
-function includeIndexedSessionsForRepo(repoPath: string, sessions: DiscoveredSession[]) {
+function includeIndexedSessionsForRepo(
+  repoPath: string,
+  sessions: DiscoveredSession[],
+  indexedSessions: IndexedSessionPreference[],
+) {
   const sessionsByPath = new Map(sessions.map((session) => [session.path, session]));
 
-  for (const session of getPreferences().indexedSessions) {
+  for (const session of indexedSessions) {
     if (session.repoPath !== repoPath || sessionsByPath.has(session.path) || !existsSync(session.path)) {
       continue;
     }
@@ -103,12 +148,11 @@ function includeIndexedSessionsForRepo(repoPath: string, sessions: DiscoveredSes
   return [...sessionsByPath.values()];
 }
 
-function sortSessionsForRepoByIndexedRecency(repoPath: string, sessions: DiscoveredSession[]) {
-  const indexedOrderByPath = new Map(
-    getPreferences().indexedSessions
-      .filter((session) => session.repoPath === repoPath)
-      .map((session, index) => [session.path, index]),
-  );
+function sortSessionsForRepoByIndexedRecency(
+  sessions: DiscoveredSession[],
+  indexedSessions: IndexedSessionPreference[],
+) {
+  const indexedOrderByPath = new Map(indexedSessions.map((session, index) => [session.path, index]));
 
   return [...sessions].sort((a, b) => {
     const aIndex = indexedOrderByPath.get(a.path) ?? Number.MAX_SAFE_INTEGER;
@@ -155,4 +199,15 @@ function toSessionSummary(
     messageCount: session.messageCount,
     liveConnectionId,
   };
+}
+
+async function deleteSessionFile(sessionPath: string): Promise<void> {
+  const trashArgs = sessionPath.startsWith("-") ? ["--", sessionPath] : [sessionPath];
+  const trashResult = spawnSync("trash", trashArgs, { encoding: "utf-8" });
+
+  if (trashResult.status === 0 || !existsSync(sessionPath)) {
+    return;
+  }
+
+  await unlink(sessionPath);
 }

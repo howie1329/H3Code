@@ -44,7 +44,7 @@ Svelte renderer
 
 Electron main supervises the Agent Server, native dialogs, and shell affordances (folder picker, reveal in Finder). H3Code stores **session-list metadata** (recent repos, indexed session summaries, UI toggles) in local SQLite (`h3code.sqlite` under Electron user data), not transcripts or messages.
 
-`@h3code/agent-core` owns the H3Code protocol and provider contracts. `@h3code/agent-server` owns the local Node/WebSocket server, connection manager, provider registry, and platform services.
+`@h3code/agent-core` owns the H3Code protocol and provider contracts. `@h3code/agent-server` owns the local Node/WebSocket server, connection manager, provider registry, and platform command orchestration. Provider-specific SDK behavior, including PI session discovery and deletion, lives in provider packages.
 
 ## Key Desktop Files
 
@@ -68,7 +68,7 @@ Electron main supervises the Agent Server, native dialogs, and shell affordances
 | `packages/agent-server/src/ws-router.ts` | WebSocket command routing |
 | `packages/agent-server/src/connection-manager.ts` | Connection ID to provider connection lifecycle |
 | `packages/agent-server/src/platform/` | Platform session delete, git diff, preferences |
-| `packages/pi-provider/src/` | In-process PI SDK provider (`PiAgentProvider`) |
+| `packages/pi-provider/src/` | In-process PI SDK provider (`PiAgentProvider`) and PI session helpers |
 
 ### Agent Server protocol (v1)
 

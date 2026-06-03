@@ -8,6 +8,7 @@ It owns the PI SDK runtime path and includes the `PiAgentProvider` adapter used 
 
 - PI SDK runtime creation with `createAgentSessionRuntime()`.
 - Persistent PI session targets through `SessionManager`.
+- PI session discovery and deletion helpers used by Agent Server platform commands.
 - Prompt, steer, follow-up, abort, session switching, and new-session flows.
 - PI SDK event mapping into H3Code session domain events.
 - Agent Core compatibility through `PiAgentProvider`.
@@ -21,6 +22,10 @@ It owns the PI SDK runtime path and includes the `PiAgentProvider` adapter used 
 - Worktree creation or cleanup.
 - Git diff collection.
 - SQLite preferences, recents, or sidebar metadata.
+
+## Session Helpers
+
+`listPiSessionsForRepo` and `deletePiSessionForRepo` keep PI SDK session-file behavior in this package while still recording plain metadata rows through `@h3code/agent-metadata`. Agent Server calls these helpers for PI-backed platform session commands.
 
 ## Checks
 

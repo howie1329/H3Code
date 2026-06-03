@@ -5,6 +5,7 @@ import type {
   ResourceLoader,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import type { SessionDomainEvent } from "@h3code/agent-core";
 
 export type PiProviderSessionMode = "create" | "open" | "continueRecent";
 export type PiProviderThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -146,61 +147,15 @@ export type PiProviderUiResponse =
   | { requestId: string; kind: "confirm"; accepted: boolean; canceled?: boolean }
   | { requestId: string; kind: "input" | "editor"; value?: string; canceled?: boolean };
 
+type CoreCompatiblePiProviderEvent = Exclude<
+  SessionDomainEvent,
+  Extract<SessionDomainEvent, { type: "session.changed" | "extension.ui.request" }>
+>;
+
 export type PiProviderEvent =
-  | { type: "run.started"; occurredAt: number }
-  | { type: "run.ended"; messages?: unknown[]; willRetry?: boolean; occurredAt: number }
-  | { type: "run.failed"; errorMessage: string; occurredAt: number }
-  | { type: "turn.started"; occurredAt: number }
-  | { type: "turn.completed"; message?: unknown; toolResults?: unknown[]; occurredAt: number }
-  | {
-      type: "message.streaming";
-      phase: "start" | "update" | "end";
-      message?: unknown;
-      deltaType?: string;
-      errorMessage?: string;
-      occurredAt: number;
-    }
-  | {
-      type: "tool.updated";
-      phase: "start" | "update" | "end";
-      toolCallId: string;
-      toolName: string;
-      args?: unknown;
-      content?: unknown;
-      isError?: boolean;
-      errorText?: string;
-      occurredAt: number;
-    }
-  | { type: "queue.updated"; steering: readonly string[]; followUp: readonly string[]; occurredAt: number }
-  | {
-      type: "compaction.updated";
-      phase: "start" | "end";
-      reason?: string;
-      aborted?: boolean;
-      willRetry?: boolean;
-      errorMessage?: string;
-      result?: unknown;
-      occurredAt: number;
-    }
-  | {
-      type: "retry.updated";
-      phase: "start" | "end";
-      attempt?: number;
-      maxAttempts?: number;
-      delayMs?: number;
-      success?: boolean;
-      errorMessage?: string;
-      occurredAt: number;
-    }
+  | CoreCompatiblePiProviderEvent
   | { type: "session.changed"; snapshot: PiProviderSnapshot; occurredAt: number }
-  | { type: "session.cancelled"; operation: "new" | "switch" | "fork" | "import"; occurredAt: number }
-  | { type: "extension.error"; message: string; extensionPath?: string; event?: string; occurredAt: number }
-  | { type: "extension.status"; statusKey: string; statusText?: string; occurredAt: number }
-  | { type: "extension.notify"; message: string; notifyType: "info" | "warning" | "error"; occurredAt: number }
-  | { type: "extension.widget"; widgetKey: string; widgetLines?: string[]; title?: string; occurredAt: number }
-  | { type: "extension.ui.request"; request: PiProviderUiRequest; occurredAt: number }
-  | { type: "extension.ui.resolved"; requestId: string; occurredAt: number }
-  | { type: "provider.diagnostic"; level: "info" | "warning" | "error"; message: string; detail?: unknown; occurredAt: number };
+  | { type: "extension.ui.request"; request: PiProviderUiRequest; occurredAt: number };
 
 export type PiProviderEventListener = (event: PiProviderEvent) => void;
 

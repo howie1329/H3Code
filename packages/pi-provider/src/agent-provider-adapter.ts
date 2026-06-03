@@ -167,28 +167,6 @@ export class PiAgentProvider implements AgentProvider {
     return mapSnapshot(this.id, piConnection.repoPath, result.snapshot);
   }
 
-  async forkSession(
-    connection: ProviderConnection,
-    entryId: string,
-    position?: "before" | "at",
-  ): Promise<SessionSnapshot> {
-    const piConnection = getPiConnection(connection);
-    const result = await piConnection.provider.fork(entryId, position);
-    piConnection.sessionRef = result.snapshot.sessionFile ?? result.snapshot.sessionId;
-    return mapSnapshot(this.id, piConnection.repoPath, result.snapshot);
-  }
-
-  async importSession(
-    connection: ProviderConnection,
-    inputPath: string,
-    cwdOverride?: string,
-  ): Promise<SessionSnapshot> {
-    const piConnection = getPiConnection(connection);
-    const result = await piConnection.provider.importFromJsonl(inputPath, cwdOverride);
-    piConnection.sessionRef = result.snapshot.sessionFile ?? result.snapshot.sessionId;
-    return mapSnapshot(this.id, piConnection.repoPath, result.snapshot);
-  }
-
   async getSnapshot(connection: ProviderConnection): Promise<SessionSnapshot> {
     const piConnection = getPiConnection(connection);
     return mapSnapshot(this.id, piConnection.repoPath, piConnection.provider.snapshot());
@@ -318,9 +296,19 @@ function mapSendSource(source: MessageInput["source"]): PiProviderSendSource | u
 }
 
 function getPiConnection(connection: ProviderConnection): PiAgentConnection {
-  if (!("provider" in connection) || !(connection.provider instanceof PiSdkProvider)) {
+  if (!isPiAgentConnection(connection)) {
     throw new Error("Invalid PI provider connection.");
   }
 
-  return connection as PiAgentConnection;
+  return connection;
+}
+
+function isPiAgentConnection(connection: ProviderConnection): connection is PiAgentConnection {
+  const candidate = connection as Partial<PiAgentConnection>;
+  return (
+    candidate.providerId === "pi" &&
+    typeof candidate.repoPath === "string" &&
+    typeof candidate.provider?.dispose === "function" &&
+    typeof candidate.provider?.snapshot === "function"
+  );
 }
