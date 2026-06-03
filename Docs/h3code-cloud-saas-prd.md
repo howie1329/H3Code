@@ -101,10 +101,11 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 
 ### Identity & tenancy
 - **Solo accounts only** for MVP.
-- **Auth: email/password + GitHub link** via **Clerk** (recommended) with its official Convex integration; Convex Auth is the no-extra-vendor alternative. GitHub *login* (Clerk) is distinct from the GitHub *App* used for repo/PR work.
+- **Auth: Clerk** (email/password) with its official Convex integration.
+- **Repo access: Clerk's GitHub social connection** (OAuth) with `repo` scope. Clerk stores and refreshes the GitHub OAuth token; the sandbox clones/pushes using that token, so git activity is attributed to the real developer. This collapses GitHub integration into Clerk config for the MVP.
 
 ### Git integration
-- **GitHub only** via a **GitHub App** for MVP.
+- **GitHub only** for MVP, via **Clerk's GitHub OAuth token** (`repo` scope). A dedicated **GitHub App** is deferred to a later version, for when bot identity, fine-grained per-repo permissions, webhooks, or higher rate limits are needed.
 - Git output: agent works on a **branch and opens a pull request** for review.
 
 ### Persistence
@@ -121,8 +122,8 @@ Convex absorbs the realtime, persistence, scheduling, and orchestration-trigger 
 2. **Sandbox Orchestrator (Convex actions + Daytona client):** `acquire(repo, session) → Sandbox`, `suspend`, `resume`, `destroy`. Convex actions drive lifecycle; hides Daytona API, warm-pool management, hibernation, and the lifecycle state machine. Backend swappable (Daytona / Vercel Sandbox fallback).
 3. **Provider Runtime Adapter (in-sandbox):** runs the multi-provider agent loop *inside* the sandbox, maps the provider's native stream to H3Code protocol messages, and **persists coalesced (~150–250ms debounced) chunks to Convex via HTTP**. Subscribes to a Convex "control" query to react to steer/abort. Hides PI/Codex/Cursor differences; reuses `agent-core` contracts.
 4. **Realtime Sync (Convex reactive queries):** replaces a hand-rolled WebSocket gateway. Multi-device session synchronization, fan-out, and reconnection are provided by Convex subscriptions over its managed WebSocket. The only custom surface is the schema and the query/mutation functions for messages, runs, and control signals.
-5. **Git/GitHub Service:** `cloneInto(sandbox)`, `diff`, `commit`, `openPR`. Hides GitHub App installation auth, branch naming, and PR creation. Invoked from Convex actions / in-sandbox steps.
-6. **Identity & Billing:** Clerk (or Convex Auth) for accounts; key vault (managed + BYO) stored server-side; usage metering (`meter(event)`) written to Convex; Stripe usage-based billing driven by Convex actions/cron.
+5. **Git/GitHub Service:** `cloneInto(sandbox)`, `diff`, `commit`, `openPR`. Uses the Clerk-provided GitHub OAuth token (MVP); hides branch naming and PR creation. Invoked from Convex actions / in-sandbox steps. Auth source is swappable to a GitHub App later.
+6. **Identity & Billing:** **Clerk** for accounts + GitHub OAuth; key vault (managed + BYO provider keys) stored server-side; usage metering (`meter(event)`) written to Convex; Stripe usage-based billing driven by Convex actions/cron.
 7. **Session Store (Convex tables):** durable, reactively-synced persistence of sessions, transcripts, diffs, and usage. Just Convex schema + functions — no separate database.
 8. **Notification Service:** `notify(user, event)` over Web Push (VAPID) + in-app; subscriptions stored in Convex, dispatched from Convex functions on run-lifecycle events.
 
@@ -131,7 +132,7 @@ Convex absorbs the realtime, persistence, scheduling, and orchestration-trigger 
 - **Backend:** **Convex** — document database, reactive queries (realtime sync), mutations/actions (orchestration triggers, GitHub, Stripe), HTTP actions (webhooks + sandbox chunk ingestion), scheduler/cron. Reuses `agent-core` types. No separate Node service, SQL database, ORM, or custom WebSocket server.
 - **Sandboxes:** **Daytona** (primary) running the agent + in-sandbox Provider Runtime Adapter; **Vercel Sandbox** as a swappable fallback behind the orchestrator interface.
 - **Realtime:** Convex reactive subscriptions (no custom gateway).
-- **Auth:** **Clerk** (recommended) with Convex integration, or Convex Auth. Email/password + GitHub login. Separate GitHub App for repo/PR work.
+- **Auth:** **Clerk** with Convex integration — email/password login plus a **GitHub social connection** (`repo` scope) that provides the OAuth token used for clone/PR work. GitHub App deferred.
 - **Billing:** Stripe usage-based (metered from Convex).
 - **Notifications:** Web Push (VAPID) + in-app, dispatched from Convex.
 
@@ -144,7 +145,7 @@ Convex (DB, reactive sync, actions, HTTP actions, cron)
   │  action: acquire/resume/suspend         ▲  HTTP: batched chunk writes
   ▼                                          │
 Daytona sandbox  ── runs agent + Provider Runtime Adapter ──┘
-  ├─► GitHub App (clone, diff, commit, PR)
+  ├─► GitHub (clone, diff, commit, PR) via Clerk OAuth token
   └─► provider runtime (managed inference or BYO keys)
 Convex ─► Stripe (usage billing)   Convex ─► Web Push (notifications)
 ```
@@ -176,7 +177,7 @@ Modules **not** prioritized for tests in MVP (manual/integration verification in
 ## Further Notes
 
 ### Suggested MVP boundary
-Sign in via Clerk (email/password) → link GitHub (GitHub App) → pick repo + branch → Convex action provisions a warm Daytona sandbox and clones the repo → interactive multi-provider session, with the in-sandbox agent streaming coalesced chunks into Convex and all devices syncing via reactive queries (stream, steer, abort, follow-up) with managed inference by default → review diffs (read-only) → agent commits to a branch and opens a PR → sessions/transcripts/diffs persisted in Convex for cross-device resume → idle hibernation → web-push on run completion → usage-based billing (compute-minutes + managed tokens).
+Sign in via Clerk (email/password) → connect GitHub (Clerk OAuth, `repo` scope) → pick repo + branch → Convex action provisions a warm Daytona sandbox and clones the repo → interactive multi-provider session, with the in-sandbox agent streaming coalesced chunks into Convex and all devices syncing via reactive queries (stream, steer, abort, follow-up) with managed inference by default → review diffs (read-only) → agent commits to a branch and opens a PR → sessions/transcripts/diffs persisted in Convex for cross-device resume → idle hibernation → web-push on run completion → usage-based billing (compute-minutes + managed tokens).
 
 ### Future versions (post-MVP)
 - Full in-browser Monaco editor with manual editing and inline approvals.
@@ -192,5 +193,6 @@ Sign in via Clerk (email/password) → link GitHub (GitHub App) → pick repo + 
 - **Convex streaming cost/throughput:** per-token writes are infeasible — the in-sandbox adapter must coalesce chunks (~150–250ms) before persisting. Validate write volume and bandwidth against Convex pricing under realistic transcripts.
 - **Convex function limits:** actions are short-lived (~minutes), so the long-running agent loop must live in the sandbox, with Convex only orchestrating and persisting. Confirm the control-channel pattern (sandbox subscribing to a Convex control query) meets steer/abort latency expectations.
 - Web Push reliability on iOS PWAs (requires installed PWA; historically constrained).
-- Secure secret handling for managed and BYO keys inside ephemeral sandboxes; where the GitHub App installation token and provider keys are injected.
-- Clerk vs Convex Auth: vendor cost/lock-in vs. single-system simplicity — decide before building auth.
+- Secure secret handling for managed and BYO keys inside ephemeral sandboxes; where the GitHub OAuth token and provider keys are injected, and how/when they are refreshed for long-running pushes.
+- Confirm Clerk exposes the GitHub OAuth access token with `repo` scope on the chosen plan (the assumption this MVP path depends on).
+- Inference reselling ToS: verify Anthropic/OpenAI terms permit the managed-markup model, or rely on BYO keys.
