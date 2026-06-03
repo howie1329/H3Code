@@ -3,7 +3,19 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".svelte-kit/**", "build/**", "dist/**"]
+      "env": [
+        "CONVEX_DEPLOYMENT",
+        "VITE_CLERK_PUBLISHABLE_KEY",
+        "VITE_CONVEX_SITE_URL",
+        "VITE_CONVEX_URL"
+      ],
+      "outputs": [
+        ".svelte-kit/**",
+        ".vercel/output/**",
+        ".output/**",
+        "build/**",
+        "dist/**"
+      ]
     },
     "check": {
       "dependsOn": ["^check"]
