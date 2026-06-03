@@ -1,7 +1,16 @@
 # PRD: H3Code Cloud — SaaS Coding Agent Workbench
 
 > Status: Draft for review. Not yet filed as a GitHub issue.
-> Scope: A standalone, cloud-hosted SaaS. Independent of the Electron desktop app. Accessible from any device (laptop, desktop, mobile) through a single SvelteKit PWA.
+> Scope: Cloud MVP — hosted agent workbench (PWA). Broader product context lives in sibling docs (some decisions here may lag those docs; prefer platform vision for stack/client direction).
+
+### Related documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [h3code-platform-vision.md](./h3code-platform-vision.md) | Product map: local + cloud, Cursor parity, phased roadmap, decisions |
+| [h3code-unified-client.md](./h3code-unified-client.md) | One TanStack app: `runtime` desktop \| cloud, Electron + Vercel |
+| [h3code-desktop-evolution.md](./h3code-desktop-evolution.md) | Local workbench evolution (in-process host, harness)—not cloud MVP |
+| [h3code-convex-schema.md](./h3code-convex-schema.md) | Convex tables, indexes, write/read paths |
 
 ## Problem Statement
 
