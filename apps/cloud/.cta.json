@@ -1,0 +1,20 @@
+{
+  "projectName": "cloud",
+  "mode": "file-router",
+  "typescript": true,
+  "packageManager": "npm",
+  "includeExamples": false,
+  "tailwind": true,
+  "addOnOptions": {},
+  "envVarValues": {
+    "VITE_CLERK_PUBLISHABLE_KEY": "pk_test_Y3VkZGx5LXNjdWxwaW4tNTEuY2xlcmsuYWNjb3VudHMuZGV2JA",
+    "CONVEX_DEPLOYMENT": "original-crow-67",
+    "VITE_CONVEX_URL": "https://tidy-bulldog-919.convex.cloud"
+  },
+  "git": false,
+  "install": true,
+  "routerOnly": false,
+  "version": 1,
+  "framework": "react",
+  "chosenAddOns": ["eslint", "nitro", "clerk", "convex", "shadcn"]
+}
