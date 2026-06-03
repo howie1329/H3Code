@@ -7,7 +7,14 @@ import {
   startAgentServerProcess,
   stopAgentServerProcess,
 } from "./agent-server-lifecycle.js";
-import { closePreferencesDatabase, revealPreferencesDatabase } from "./preferences.js";
+import {
+  closePreferencesDatabase,
+  deleteSessionMessageCache,
+  getSessionMessageCache,
+  revealPreferencesDatabase,
+  upsertSessionMessageCache,
+  type SessionMessageCacheUpsert,
+} from "./preferences.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -91,6 +98,30 @@ ipcMain.handle("preferences:reveal-database", () => {
   const databasePath = revealPreferencesDatabase();
   shell.showItemInFolder(databasePath);
   return databasePath;
+});
+
+ipcMain.handle("session-cache:get", (_event, sessionPath: string) => {
+  if (typeof sessionPath !== "string" || sessionPath.length === 0) {
+    return undefined;
+  }
+
+  return getSessionMessageCache(sessionPath);
+});
+
+ipcMain.handle("session-cache:upsert", (_event, input: SessionMessageCacheUpsert) => {
+  if (!input || typeof input.sessionPath !== "string" || typeof input.repoPath !== "string") {
+    throw new Error("session-cache:upsert requires sessionPath and repoPath.");
+  }
+
+  upsertSessionMessageCache(input);
+});
+
+ipcMain.handle("session-cache:delete", (_event, sessionPath: string) => {
+  if (typeof sessionPath !== "string" || sessionPath.length === 0) {
+    return;
+  }
+
+  deleteSessionMessageCache(sessionPath);
 });
 
 app.whenReady().then(async () => {

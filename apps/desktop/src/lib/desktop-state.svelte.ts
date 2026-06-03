@@ -30,6 +30,12 @@ import {
   type SessionCacheEntry,
   type SessionCacheMap,
 } from "$lib/session-cache.js";
+import {
+  loadSessionSqlCache,
+  removeSessionSqlCache,
+  saveSessionSqlCache,
+  type SessionSqlCacheState,
+} from "$lib/session-sql-cache.js";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -64,14 +70,6 @@ const defaultDesktopSettings: DesktopSettings = {
 };
 
 export const LANDING_ADD_REPO_VALUE = "__add_repository__";
-
-type OptimisticUserMessage = {
-  id: string;
-  role: "user";
-  content: string;
-  timestamp: number;
-  optimistic: true;
-};
 
 type AgentSessionEvent = SessionDomainEvent & {
   agentId?: string;
@@ -113,13 +111,14 @@ class DesktopState {
   modelsSessionKey = $state<string | undefined>();
   sessionReadModel = $state<SessionReadModel>(createInitialSessionReadModel());
   sessionCaches = $state<SessionCacheMap>({});
+  sessionCacheSyncing = $state(false);
   isSwitchingSession = $state(false);
+  sqlCachePersistTimer: ReturnType<typeof setTimeout> | undefined;
   reconciledSessionPath = $state<string | undefined>();
   switchGeneration = 0;
   agentReadModels = $state<Record<string, SessionReadModel>>({});
   agentStatuses = $state<Record<string, PiStatus>>({});
   extensionUiRequestsByAgent = $state<Record<string, PiExtensionUiRequest>>({});
-  pendingUserMessages = $state<OptimisticUserMessage[]>([]);
   piStatus = $state<PiStatus>({ state: "disconnected" });
   isBusy = $state(false);
   isSendingPrompt = $state(false);
@@ -175,7 +174,7 @@ class DesktopState {
       detail: item.detail,
     })),
   );
-  transcriptMessages = $derived(selectTranscriptMessages(this.sessionReadModel, this.pendingUserMessages));
+  transcriptMessages = $derived(selectTranscriptMessages(this.sessionReadModel));
   composerPhaseLine = $derived(composerPhase(this.sessionReadModel));
   statusStripLines = $derived(selectStatusStripLines(this.sessionReadModel));
   sessionNotification = $derived(latestNotification(this.sessionReadModel));
@@ -390,6 +389,11 @@ class DesktopState {
   ) {
     const { navigateToWorkspace = true } = options;
     this.errorMessage = undefined;
+
+    if (selectedSessionPath) {
+      await this.applySqlCacheIfPresent(selectedSessionPath, nextRepoPath);
+    }
+
     const result = await this.getAgentApi().connectRepo(nextRepoPath, selectedSessionPath);
     this.syncProviderCapabilities();
 
@@ -417,9 +421,10 @@ class DesktopState {
       result.messages ?? [],
     );
     this.storeActiveAgentReadModel();
-    this.resetTransientTranscript();
     this.reconciledSessionPath = this.selectedSessionPath;
+    this.sessionCacheSyncing = false;
     this.cacheCurrentSession();
+    void this.persistSessionSqlCacheImmediate();
     void this.refreshSessionStats();
     void this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
@@ -437,6 +442,8 @@ class DesktopState {
     this.selectedSessionPath = undefined;
     this.reconciledSessionPath = undefined;
     this.isSwitchingSession = false;
+    this.sessionCacheSyncing = false;
+    this.cancelSqlCachePersist();
     this.sessionCaches = clearSessionCache();
     this.sessionState = undefined;
     this.sessionStats = null;
@@ -445,7 +452,6 @@ class DesktopState {
     this.resetSlashCommands();
     this.resetModels();
     this.resetSessionReadModel();
-    this.resetTransientTranscript();
     this.promptValue = "";
   }
 
@@ -500,13 +506,16 @@ class DesktopState {
       });
       this.applyCachedSession(cached);
     } else {
-      this.sessionReadModel = createInitialSessionReadModel();
-      this.sessionState = undefined;
-      this.sessionStats = null;
-      this.resetSessionDiff();
-      this.resetSlashCommands();
-      this.resetModels();
-      this.resetTransientTranscript();
+      const sqlApplied = await this.applySqlCacheIfPresent(sessionPath, repoPath);
+
+      if (!sqlApplied) {
+        this.sessionReadModel = createInitialSessionReadModel();
+        this.sessionState = undefined;
+        this.sessionStats = null;
+        this.resetSessionDiff();
+        this.resetSlashCommands();
+        this.resetModels();
+      }
     }
 
     this.isSwitchingSession = true;
@@ -535,10 +544,10 @@ class DesktopState {
         result.messages,
       );
       this.reconciledSessionPath = sessionPath;
+      this.sessionCacheSyncing = false;
       this.storeActiveAgentReadModel();
       this.cacheCurrentSession();
-      this.resetTransientTranscript();
-
+      void this.persistSessionSqlCacheImmediate();
       void this.refreshSessionStats();
       void this.refreshSessionDiff();
       void this.ensureAvailableModels(true);
@@ -572,9 +581,10 @@ class DesktopState {
       result.messages,
     );
     this.storeActiveAgentReadModel();
-    this.resetTransientTranscript();
     this.reconciledSessionPath = this.selectedSessionPath;
+    this.sessionCacheSyncing = false;
     this.cacheCurrentSession();
+    void this.persistSessionSqlCacheImmediate();
     this.sessions = await this.getAgentApi().listSessions();
     this.repos = upsertRepo(this.repos, repoPath, {
       expanded: true,
@@ -631,8 +641,6 @@ class DesktopState {
     }
 
     const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
-    const optimisticMessage = createOptimisticUserMessage(text);
-    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
     this.isSendingPrompt = true;
 
     try {
@@ -646,9 +654,6 @@ class DesktopState {
 
       this.promptValue = "";
     } catch (error) {
-      this.pendingUserMessages = this.pendingUserMessages.filter(
-        (pendingMessage) => pendingMessage.id !== optimisticMessage.id,
-      );
       this.errorMessage = getErrorMessage(error);
       throw error;
     } finally {
@@ -685,7 +690,6 @@ class DesktopState {
         this.resetSessionDiff();
         this.resetSlashCommands();
         this.resetSessionReadModel();
-        this.resetTransientTranscript();
       }
 
     });
@@ -701,6 +705,7 @@ class DesktopState {
       this.errorMessage = undefined;
       const deletingActiveSession = sessionPath === this.selectedSessionPath || sessionPath === this.sessionState?.sessionFile;
       this.sessionCaches = deleteCachedSession(this.sessionCaches, sessionPath);
+      void removeSessionSqlCache(sessionPath);
       const sessions = await this.getAgentApi().deleteSession(repoPath, sessionPath);
       this.repos = upsertRepo(this.repos, repoPath, {
         sessions,
@@ -720,7 +725,6 @@ class DesktopState {
         this.resetSessionDiff();
         this.resetSlashCommands();
         this.resetSessionReadModel();
-        this.resetTransientTranscript();
         await this.enterLanding({ repoPath });
       }
 
@@ -732,8 +736,6 @@ class DesktopState {
       return;
     }
 
-    const optimisticMessage = createOptimisticUserMessage(text);
-    this.pendingUserMessages = [...this.pendingUserMessages, optimisticMessage];
     this.isSendingPrompt = true;
 
     try {
@@ -741,7 +743,6 @@ class DesktopState {
       await this.getAgentApi().sendSteer(text);
       this.promptValue = "";
     } catch (error) {
-      this.pendingUserMessages = this.pendingUserMessages.filter((pendingMessage) => pendingMessage.id !== optimisticMessage.id);
       this.errorMessage = getErrorMessage(error);
     } finally {
       this.isSendingPrompt = false;
@@ -769,7 +770,6 @@ class DesktopState {
       this.errorMessage = undefined;
       await this.getAgentApi().abort();
       await this.refreshActiveSessionData();
-      this.resetTransientTranscript();
     });
   }
 
@@ -793,7 +793,6 @@ class DesktopState {
   }
 
   applySessionSnapshot(result: { state: PiSessionState; messages: unknown[] }) {
-    this.pendingUserMessages = [];
     this.sessionState = result.state;
 
     if (result.state.sessionFile) {
@@ -1363,8 +1362,6 @@ class DesktopState {
     this.reconcileInFlight = true;
 
     try {
-      this.pendingUserMessages = [];
-
       await this.refreshSessionStats();
       await this.refreshSessionDiff();
       await this.syncSidebarSessionsForActiveRepo();
@@ -1417,10 +1414,6 @@ class DesktopState {
     this.clearExtensionUiRequest();
   }
 
-  resetTransientTranscript() {
-    this.pendingUserMessages = [];
-  }
-
   resetSessionReadModel() {
     this.sessionReadModel = createInitialSessionReadModel();
     this.storeActiveAgentReadModel();
@@ -1455,6 +1448,101 @@ class DesktopState {
       sessionDiff: this.hasSessionDiff ? this.sessionDiff : undefined,
       lastAccessedAt: Date.now(),
     });
+    this.schedulePersistSessionSqlCache();
+  }
+
+  async applySqlCacheIfPresent(sessionPath: string, repoPath: string): Promise<boolean> {
+    const entry = await loadSessionSqlCache(sessionPath);
+
+    if (!entry || entry.messages.length === 0) {
+      return false;
+    }
+
+    const state = this.sqlCacheStateToPiSessionState(entry.sessionState, sessionPath, entry.messageCount);
+    this.sessionState = state;
+    this.sessionReadModel = hydrateFromSnapshot(createInitialSessionReadModel(), state, entry.messages);
+    this.sessionCacheSyncing = entry.syncStatus !== undefined && entry.syncStatus !== "fresh";
+    this.resetSessionDiff();
+    this.resetSlashCommands();
+    this.resetModels();
+    return true;
+  }
+
+  sqlCacheStateToPiSessionState(
+    cached: SessionSqlCacheState | undefined,
+    sessionPath: string,
+    messageCount: number,
+  ): PiSessionState {
+    const sessionId = cached?.sessionId ?? sessionPathToId(sessionPath);
+
+    return {
+      thinkingLevel: "off",
+      isStreaming: cached?.isStreaming ?? false,
+      isCompacting: cached?.isCompacting ?? false,
+      steeringMode: "one-at-a-time",
+      followUpMode: "one-at-a-time",
+      sessionFile: cached?.sessionFile ?? sessionPath,
+      sessionId,
+      autoCompactionEnabled: true,
+      messageCount,
+      pendingMessageCount: 0,
+    };
+  }
+
+  cancelSqlCachePersist() {
+    if (this.sqlCachePersistTimer === undefined) {
+      return;
+    }
+
+    clearTimeout(this.sqlCachePersistTimer);
+    this.sqlCachePersistTimer = undefined;
+  }
+
+  schedulePersistSessionSqlCache() {
+    if (!this.repoPath || !this.sessionState) {
+      return;
+    }
+
+    if (this.sessionReadModel.isAgentRunning || this.sessionReadModel.phase === "running") {
+      return;
+    }
+
+    this.cancelSqlCachePersist();
+    this.sqlCachePersistTimer = setTimeout(() => {
+      this.sqlCachePersistTimer = undefined;
+      void this.persistSessionSqlCacheImmediate();
+    }, 500);
+  }
+
+  async persistSessionSqlCacheImmediate() {
+    const sessionPath = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+    const repoPath = this.repoPath;
+
+    if (!sessionPath || !repoPath || !this.sessionState) {
+      return;
+    }
+
+    if (this.sessionReadModel.isAgentRunning || this.sessionReadModel.phase === "running") {
+      return;
+    }
+
+    if (this.sessionReadModel.messages.length === 0) {
+      return;
+    }
+
+    await saveSessionSqlCache({
+      sessionPath,
+      repoPath,
+      messages: this.sessionReadModel.messages,
+      sessionState: {
+        isStreaming: this.sessionState.isStreaming,
+        isCompacting: this.sessionState.isCompacting,
+        sessionFile: this.sessionState.sessionFile,
+        sessionId: this.sessionState.sessionId,
+      },
+      messageCount: this.sessionReadModel.messages.length,
+      syncStatus: "fresh",
+    });
   }
 
   applyCachedSession(entry: SessionCacheEntry) {
@@ -1482,7 +1570,6 @@ class DesktopState {
 
     this.resetSlashCommands();
     this.resetModels();
-    this.resetTransientTranscript();
   }
 
   syncActiveAgentStatus() {
@@ -1645,18 +1732,13 @@ function createSessionRowStatus(kind: SessionRowStatusKind): SessionRowStatus {
   }
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function sessionPathToId(sessionPath: string) {
+  const base = sessionPath.split(/[/\\]/).pop() ?? sessionPath;
+  return base.replace(/\.jsonl$/i, "");
 }
 
-function createOptimisticUserMessage(content: string): OptimisticUserMessage {
-  return {
-    id: `optimistic-user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    role: "user",
-    content,
-    timestamp: Date.now(),
-    optimistic: true,
-  };
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function formatDate(value: string) {

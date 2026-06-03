@@ -17,6 +17,7 @@ export function migrateRepoSessionsSchema(db) {
         db.exec("ALTER TABLE repo_sessions ADD COLUMN last_opened_at TEXT");
     }
 }
+export { migrateSessionMessageCacheSchema } from "./session-message-cache.js";
 export function getRecentRepos(db, limit) {
     return db.prepare(`
     SELECT
