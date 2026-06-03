@@ -1,0 +1,20 @@
+{
+  "projectName": "cloud",
+  "mode": "file-router",
+  "typescript": true,
+  "packageManager": "npm",
+  "includeExamples": false,
+  "tailwind": true,
+  "addOnOptions": {},
+  "envVarValues": {
+    "VITE_CLERK_PUBLISHABLE_KEY": "",
+    "CONVEX_DEPLOYMENT": "",
+    "VITE_CONVEX_URL": ""
+  },
+  "git": false,
+  "install": true,
+  "routerOnly": false,
+  "version": 1,
+  "framework": "react",
+  "chosenAddOns": ["eslint", "nitro", "clerk", "convex", "shadcn"]
+}
