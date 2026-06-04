@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { AlertCircleIcon, ArrowUpIcon, FolderPlusIcon } from 'lucide-react'
 
 import {
@@ -14,6 +14,7 @@ import {
 } from '#/components/ai-elements/prompt-input.tsx'
 import { LandingRepoSelector } from '#/components/workspace/LandingRepoSelector.tsx'
 import { Button } from '#/components/ui/button.tsx'
+import { Kbd } from '#/components/ui/kbd.tsx'
 import { Skeleton } from '#/components/ui/skeleton.tsx'
 import {
   DEMO_REPOSITORIES,
@@ -22,11 +23,30 @@ import {
 } from '#/lib/demo-repositories.ts'
 import { cn } from '#/lib/utils.ts'
 
-/** Landing-only composer: hairline border, flat canvas (no ghost-card shadow). */
+const landingStackClass = cn(
+  'relative w-full max-w-2xl',
+  'animate-in fade-in-0 slide-in-from-bottom-1 duration-150 ease-out motion-reduce:animate-none motion-reduce:opacity-100',
+)
+
+/** Landing-only composer: hairline border, flat canvas, operator focus ring. */
 const landingPromptInputClass = cn(
   'w-full',
-  '[&_[data-slot=input-group]]:border-border [&_[data-slot=input-group]]:bg-background [&_[data-slot=input-group]]:shadow-none',
+  '[&_[data-slot=input-group]]:rounded-md [&_[data-slot=input-group]]:border-border [&_[data-slot=input-group]]:bg-background [&_[data-slot=input-group]]:shadow-none',
   'dark:[&_[data-slot=input-group]]:bg-background',
+  '[&_[data-slot=input-group]:has([data-slot=input-group-control]:focus-visible)]:ring-2',
+  '[&_[data-slot=input-group]:has([data-slot=input-group-control]:focus-visible)]:ring-ring/30',
+  '[&_[data-slot=input-group]:has([data-slot=input-group-control]:disabled)]:opacity-60',
+)
+
+const landingTextareaClass = cn(
+  'min-h-16 px-3 py-2.5 text-xs leading-normal text-foreground md:text-xs',
+  'placeholder:text-foreground/55',
+)
+
+const landingSubmitClass = cn(
+  'size-7 rounded-md p-0 active:translate-y-px',
+  'focus-visible:ring-2 focus-visible:ring-ring/30',
+  '[&_svg]:size-3.5',
 )
 
 type WorkspaceLandingProps = {
@@ -39,6 +59,8 @@ export function WorkspaceLanding({
   isLoadingWorkspace = false,
   repositories = DEMO_REPOSITORIES,
 }: WorkspaceLandingProps) {
+  const enterHintId = useId()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [prompt, setPrompt] = useState('')
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | undefined>(
     () => getDefaultDemoRepositoryId(repositories),
@@ -67,7 +89,7 @@ export function WorkspaceLanding({
     [composerDisabled, prompt],
   )
 
-  const showEnterHint = hasSelectedRepository && !isLoadingWorkspace
+  const showEnterHint = hasSelectedRepository && !isLoadingWorkspace && hasRepositories
 
   const placeholder = useMemo(() => {
     if (isLoadingWorkspace) {
@@ -95,10 +117,7 @@ export function WorkspaceLanding({
       return
     }
 
-    const textarea = document.getElementById('workspace-landing-prompt')
-    if (textarea instanceof HTMLTextAreaElement) {
-      textarea.focus()
-    }
+    textareaRef.current?.focus()
   }, [composerDisabled, isLoadingWorkspace])
 
   useEffect(() => {
@@ -148,17 +167,12 @@ export function WorkspaceLanding({
 
   return (
     <main
-      className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-10"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6"
       aria-label="Start session"
     >
-      <div
-        className={cn(
-          'relative w-full max-w-2xl',
-          'animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none motion-reduce:opacity-100',
-        )}
-      >
+      <div className={landingStackClass}>
         <div className="mb-7 text-center">
-          <h1 className="text-balance text-xl font-semibold leading-tight text-foreground">
+          <h1 className="text-balance text-xl font-semibold leading-tight tracking-tight text-foreground">
             What should Pi work on?
           </h1>
         </div>
@@ -185,7 +199,7 @@ export function WorkspaceLanding({
               <div className="mb-5 flex flex-col items-center gap-2 text-center">
                 <Button
                   type="button"
-                  className="h-7 gap-1.5 text-xs"
+                  className="h-7 gap-1.5 text-xs active:translate-y-px"
                   disabled={isSubmitting}
                   onClick={handleAddRepository}
                 >
@@ -204,17 +218,19 @@ export function WorkspaceLanding({
                   Prompt
                 </label>
                 <PromptInputTextarea
+                  ref={textareaRef}
                   id="workspace-landing-prompt"
-                  className="min-h-16 text-xs leading-normal md:text-xs"
+                  className={landingTextareaClass}
                   value={prompt}
                   onChange={(event) => setPrompt(event.currentTarget.value)}
                   placeholder={placeholder}
                   title="Enter to start session and send"
                   disabled={composerDisabled}
+                  aria-describedby={showEnterHint ? enterHintId : undefined}
                 />
               </PromptInputBody>
 
-              <PromptInputFooter>
+              <PromptInputFooter className="gap-1.5">
                 <PromptInputTools>
                   <LandingRepoSelector
                     repositories={repositories}
@@ -225,7 +241,7 @@ export function WorkspaceLanding({
                 </PromptInputTools>
 
                 <PromptInputSubmit
-                  className="size-7 rounded-md p-0 [&_svg]:size-3.5"
+                  className={landingSubmitClass}
                   variant={canSubmit ? 'default' : 'ghost'}
                   disabled={!canSubmit}
                   status={isSubmitting ? 'submitted' : undefined}
@@ -237,10 +253,11 @@ export function WorkspaceLanding({
             </PromptInput>
 
             {showEnterHint ? (
-              <p className="mt-3.5 text-center text-[11px] leading-tight text-muted-foreground">
-                <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-xs bg-muted px-1 font-sans text-[0.625rem] font-medium text-muted-foreground">
-                  Enter
-                </kbd>
+              <p
+                id={enterHintId}
+                className="mt-3.5 text-center text-[11px] leading-tight text-muted-foreground"
+              >
+                <Kbd>Enter</Kbd>
                 <span className="px-1">starts session</span>
               </p>
             ) : null}
