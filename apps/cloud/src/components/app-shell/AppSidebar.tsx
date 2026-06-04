@@ -47,14 +47,14 @@ const DEMO_REPOSITORIES = [
   { id: 'repo-3', name: 'Repository 3', defaultOpen: false },
 ] as const
 
-const toolbarIconSize = 'size-2.5 shrink-0'
+const toolbarIconSize = 'size-3.5 shrink-0'
+const menuIconSize = 'size-3 shrink-0'
 
 const toolbarButtonClass =
   'size-7 shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring'
 
-const menuIconSize = 'size-2.5 shrink-0'
-
-const menuButtonClass = 'h-7 gap-1.5 px-2 text-[11px] font-normal'
+const menuButtonClass = 'h-7 gap-1.5 px-2 text-[12px] font-normal leading-snug'
+const menuMetaClass = 'text-[11px] leading-snug text-muted-foreground'
 
 function useIconRail() {
   const { state, isMobile } = useSidebar()
@@ -103,7 +103,7 @@ function NewSessionToolbarButton({ iconRail }: { iconRail: boolean }) {
       variant="ghost"
       className={cn(
         toolbarButtonClass,
-        'ml-auto h-7 max-w-full items-center gap-1.5 px-2 text-[11px] font-medium',
+        'ml-auto h-7 max-w-full items-center gap-1.5 px-2 text-[12px] font-medium',
       )}
       aria-label="New session"
       title="New session"
@@ -216,15 +216,13 @@ function RepositoryCollapsible({
         <CollapsibleContent>
           <SidebarMenuSub className="mx-0 gap-0.5 border-0 px-0 py-0.5 pl-5">
             <SidebarMenuSubItem>
-              <p className="px-2 py-1 text-[11px] leading-snug text-muted-foreground">
-                No sessions yet
-              </p>
+              <p className={cn('px-2 py-1', menuMetaClass)}>No sessions yet</p>
             </SidebarMenuSubItem>
             <SidebarMenuSubItem>
               <SidebarMenuSubButton
                 asChild
                 size="sm"
-                className="h-7 px-2 text-[11px] text-foreground"
+                className="h-7 px-2 text-[12px] text-foreground"
               >
                 <button
                   type="button"
@@ -276,7 +274,7 @@ export function AppSidebar() {
             aria-label="Repositories"
             className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-2 pb-2"
           >
-            <p className="pt-3 pb-1.5 text-[11px] font-medium text-muted-foreground">
+            <p className={cn('pt-3 pb-1.5 font-medium', menuMetaClass)}>
               Repositories
             </p>
             <SidebarMenu className="gap-0.5">
@@ -322,7 +320,7 @@ export function AppSidebar() {
                   className={cn(menuButtonClass, 'text-muted-foreground')}
                 >
                   <Link to="/app/settings">
-                    <SettingsIcon className={toolbarIconSize} />
+                    <SettingsIcon className={menuIconSize} />
                     <span>Settings</span>
                   </Link>
                 </SidebarMenuButton>
