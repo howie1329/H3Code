@@ -12,6 +12,7 @@ import {
   SunIcon,
 } from 'lucide-react'
 
+import { useTheme } from '#/components/theme-provider.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import {
   Collapsible,
@@ -114,6 +115,8 @@ function SidebarUserName() {
 }
 
 export function AppSidebar() {
+  const { resolvedTheme, toggleTheme } = useTheme()
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="shrink-0 border-b border-sidebar-border p-2">
@@ -186,8 +189,17 @@ export function AppSidebar() {
               variant="ghost"
               size="icon-sm"
               className={cn(sidebarIconButtonClass, 'relative')}
-              aria-label="Toggle theme"
-              title="Toggle theme"
+              aria-label={
+                resolvedTheme === 'dark'
+                  ? 'Switch to light mode'
+                  : 'Switch to dark mode'
+              }
+              title={
+                resolvedTheme === 'dark'
+                  ? 'Switch to light mode'
+                  : 'Switch to dark mode'
+              }
+              onClick={toggleTheme}
             >
               <SunIcon className="scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
               <MoonIcon className="absolute scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
