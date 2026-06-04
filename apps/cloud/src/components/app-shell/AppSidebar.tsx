@@ -39,13 +39,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '#/components/ui/tooltip.tsx'
+import { DEMO_REPOSITORIES } from '#/lib/demo-repositories.ts'
 import { cn } from '#/lib/utils.ts'
-
-const DEMO_REPOSITORIES = [
-  { id: 'repo-1', name: 'Repository 1', defaultOpen: true },
-  { id: 'repo-2', name: 'Repository 2', defaultOpen: false },
-  { id: 'repo-3', name: 'Repository 3', defaultOpen: false },
-] as const
 
 const toolbarIconSize = 'size-3 shrink-0'
 const menuIconSize = 'size-3 shrink-0'
