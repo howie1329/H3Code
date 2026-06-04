@@ -47,7 +47,7 @@ const DEMO_REPOSITORIES = [
   { id: 'repo-3', name: 'Repository 3', defaultOpen: false },
 ] as const
 
-const toolbarIconSize = 'size-3.5 shrink-0'
+const toolbarIconSize = 'size-3 shrink-0'
 const menuIconSize = 'size-3 shrink-0'
 
 const toolbarButtonClass =
