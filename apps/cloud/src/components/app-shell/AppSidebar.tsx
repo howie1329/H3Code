@@ -56,6 +56,11 @@ const menuIconSize = 'size-2.5 shrink-0'
 
 const menuButtonClass = 'h-7 gap-1.5 px-2 text-[11px] font-normal'
 
+function useIconRail() {
+  const { state, isMobile } = useSidebar()
+  return state === 'collapsed' && !isMobile
+}
+
 function SidebarCollapseTrigger() {
   const { toggleSidebar } = useSidebar()
 
@@ -74,14 +79,12 @@ function SidebarCollapseTrigger() {
   )
 }
 
-function NewSessionToolbarButton() {
-  const { state, isMobile } = useSidebar()
-  const collapsed = state === 'collapsed' && !isMobile
+function NewSessionToolbarButton({ iconRail }: { iconRail: boolean }) {
   const onNewSession = () => {
     // New session — wired in a later pass
   }
 
-  if (collapsed) {
+  if (iconRail) {
     return (
       <SidebarToolbarAction
         label="New session"
@@ -115,15 +118,20 @@ function NewSessionToolbarButton() {
 function SidebarToolbarAction({
   label,
   className,
+  asChild = false,
   children,
   ...props
-}: React.ComponentProps<typeof Button> & { label: string }) {
-  const { state, isMobile } = useSidebar()
+}: React.ComponentProps<typeof Button> & {
+  label: string
+  asChild?: boolean
+}) {
+  const iconRail = useIconRail()
   const button = (
     <Button
       type="button"
       variant="ghost"
       size="icon-xs"
+      asChild={asChild}
       className={cn(toolbarButtonClass, className)}
       {...props}
     >
@@ -131,7 +139,7 @@ function SidebarToolbarAction({
     </Button>
   )
 
-  if (state === 'collapsed' && !isMobile) {
+  if (iconRail) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
@@ -143,6 +151,35 @@ function SidebarToolbarAction({
   }
 
   return button
+}
+
+function ThemeToggleButton() {
+  const { resolvedTheme, toggleTheme } = useTheme()
+  const themeToggleLabel =
+    resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+
+  return (
+    <SidebarToolbarAction
+      label={themeToggleLabel}
+      className="relative shrink-0"
+      aria-label={themeToggleLabel}
+      title={themeToggleLabel}
+      onClick={toggleTheme}
+    >
+      <SunIcon
+        className={cn(
+          toolbarIconSize,
+          'scale-100 rotate-0 transition-all motion-reduce:transition-none dark:scale-0 dark:-rotate-90',
+        )}
+      />
+      <MoonIcon
+        className={cn(
+          toolbarIconSize,
+          'absolute scale-0 rotate-90 transition-all motion-reduce:transition-none dark:scale-100 dark:rotate-0',
+        )}
+      />
+    </SidebarToolbarAction>
+  )
 }
 
 function RepositoryCollapsible({
@@ -165,9 +202,13 @@ function RepositoryCollapsible({
             aria-expanded={open}
           >
             {open ? (
-              <ChevronDownIcon className={cn(menuIconSize, 'text-muted-foreground')} />
+              <ChevronDownIcon
+                className={cn(menuIconSize, 'text-muted-foreground')}
+              />
             ) : (
-              <ChevronRightIcon className={cn(menuIconSize, 'text-muted-foreground')} />
+              <ChevronRightIcon
+                className={cn(menuIconSize, 'text-muted-foreground')}
+              />
             )}
             <span className="truncate">{name}</span>
           </SidebarMenuButton>
@@ -180,14 +221,20 @@ function RepositoryCollapsible({
               </p>
             </SidebarMenuSubItem>
             <SidebarMenuSubItem>
-              <SidebarMenuSubButton asChild size="sm" className="h-7 px-2 text-[11px] text-foreground">
+              <SidebarMenuSubButton
+                asChild
+                size="sm"
+                className="h-7 px-2 text-[11px] text-foreground"
+              >
                 <button
                   type="button"
                   onClick={() => {
                     // Start session — wired in a later pass
                   }}
                 >
-                  <PlusIcon className={cn(menuIconSize, 'text-muted-foreground')} />
+                  <PlusIcon
+                    className={cn(menuIconSize, 'text-muted-foreground')}
+                  />
                   <span>Start session</span>
                 </button>
               </SidebarMenuSubButton>
@@ -200,14 +247,17 @@ function RepositoryCollapsible({
 }
 
 export function AppSidebar() {
-  const { resolvedTheme, toggleTheme } = useTheme()
-  const themeToggleLabel =
-    resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+  const iconRail = useIconRail()
 
   return (
     <Sidebar collapsible="icon" className="border-border">
       <SidebarHeader className="gap-0 border-b border-border/60 p-0">
-        <div className="flex h-10 items-center gap-0.5 px-2">
+        <div
+          className={cn(
+            'flex w-full min-w-0 items-center gap-0.5 px-2',
+            iconRail ? 'flex-col py-2' : 'h-10',
+          )}
+        >
           <SidebarCollapseTrigger />
           <SidebarToolbarAction
             label="Search"
@@ -216,68 +266,71 @@ export function AppSidebar() {
           >
             <SearchIcon className={toolbarIconSize} />
           </SidebarToolbarAction>
-          <NewSessionToolbarButton />
+          <NewSessionToolbarButton iconRail={iconRail} />
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="min-h-0 flex-1 gap-0 overflow-hidden">
-        <nav
-          aria-label="Repositories"
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-2 pb-2"
-        >
-          <p className="pt-3 pb-1.5 text-[11px] font-medium text-muted-foreground">
-            Repositories
-          </p>
-          <SidebarMenu className="gap-0.5">
-            {DEMO_REPOSITORIES.map((repo) => (
-              <RepositoryCollapsible
-                key={repo.id}
-                name={repo.name}
-                defaultOpen={repo.defaultOpen}
-              />
-            ))}
-          </SidebarMenu>
-        </nav>
+      <SidebarContent className="min-h-0 flex-1 gap-0 overflow-x-hidden overflow-y-hidden">
+        {!iconRail ? (
+          <nav
+            aria-label="Repositories"
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-2 pb-2"
+          >
+            <p className="pt-3 pb-1.5 text-[11px] font-medium text-muted-foreground">
+              Repositories
+            </p>
+            <SidebarMenu className="gap-0.5">
+              {DEMO_REPOSITORIES.map((repo) => (
+                <RepositoryCollapsible
+                  key={repo.id}
+                  name={repo.name}
+                  defaultOpen={repo.defaultOpen}
+                />
+              ))}
+            </SidebarMenu>
+          </nav>
+        ) : null}
       </SidebarContent>
 
-      <SidebarFooter className="gap-1 border-t border-border/60 p-0 px-2 py-2">
-        <div className="flex items-center gap-0.5">
-          <SidebarMenu className="min-w-0 flex-1">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                size="sm"
-                tooltip="Settings"
-                className={cn(menuButtonClass, 'text-muted-foreground')}
+      <SidebarFooter
+        className={cn(
+          'shrink-0 gap-1 border-t border-border/60 p-0',
+          iconRail ? 'px-1 py-2' : 'px-2 py-2',
+        )}
+      >
+        {iconRail ? (
+          <div className="flex flex-col items-center gap-1">
+            <SidebarToolbarAction label="Settings" asChild>
+              <Link
+                to="/app/settings"
+                aria-label="Settings"
+                title="Settings"
               >
-                <Link to="/app/settings">
-                  <SettingsIcon className={toolbarIconSize} />
-                  <span>Settings</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-          <SidebarToolbarAction
-            label={themeToggleLabel}
-            className="relative shrink-0"
-            aria-label={themeToggleLabel}
-            title={themeToggleLabel}
-            onClick={toggleTheme}
-          >
-            <SunIcon
-              className={cn(
-                toolbarIconSize,
-                'scale-100 rotate-0 transition-all motion-reduce:transition-none dark:scale-0 dark:-rotate-90',
-              )}
-            />
-            <MoonIcon
-              className={cn(
-                toolbarIconSize,
-                'absolute scale-0 rotate-90 transition-all motion-reduce:transition-none dark:scale-100 dark:rotate-0',
-              )}
-            />
-          </SidebarToolbarAction>
-        </div>
+                <SettingsIcon className={toolbarIconSize} />
+              </Link>
+            </SidebarToolbarAction>
+            <ThemeToggleButton />
+          </div>
+        ) : (
+          <div className="flex items-center gap-0.5">
+            <SidebarMenu className="min-w-0 flex-1">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  size="sm"
+                  tooltip="Settings"
+                  className={cn(menuButtonClass, 'text-muted-foreground')}
+                >
+                  <Link to="/app/settings">
+                    <SettingsIcon className={toolbarIconSize} />
+                    <span>Settings</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+            <ThemeToggleButton />
+          </div>
+        )}
       </SidebarFooter>
 
       <SidebarRail />
