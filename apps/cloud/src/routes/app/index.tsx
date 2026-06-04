@@ -14,7 +14,7 @@ function WorkspaceLanding() {
       <Link
         to="/app/sessions/$sessionId"
         params={{ sessionId: 'demo' }}
-        className="text-sm underline underline-offset-4 hover:text-foreground"
+        className="text-sm text-primary underline-offset-4 hover:underline"
       >
         Open demo session
       </Link>

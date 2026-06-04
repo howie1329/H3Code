@@ -11,15 +11,15 @@ export function AppSidebar() {
     typeof params.sessionId === 'string' ? params.sessionId : undefined
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r bg-muted/30">
-      <div className="border-b p-4">
+    <aside className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="border-b border-sidebar-border p-4">
         <p className="text-sm font-semibold">H3Code Cloud</p>
       </div>
 
       <div className="flex flex-col gap-2 p-4">
         <button
           type="button"
-          className="rounded-md border border-dashed px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted/50"
+          className="rounded-md border border-dashed border-sidebar-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           onClick={() => {
             // Repo picker modal — wired in a later pass
           }}
@@ -37,9 +37,9 @@ export function AppSidebar() {
             key={session.id}
             to="/app/sessions/$sessionId"
             params={{ sessionId: session.id }}
-            className={`rounded-md px-3 py-2 text-sm hover:bg-muted/50 ${
+            className={`rounded-md px-3 py-2 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
               activeSessionId === session.id
-                ? 'bg-muted font-medium'
+                ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
                 : 'text-muted-foreground'
             }`}
           >
@@ -48,11 +48,14 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      <div className="border-t p-2">
+      <div className="border-t border-sidebar-border p-2">
         <Link
           to="/app/settings"
-          className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50"
-          activeProps={{ className: 'bg-muted font-medium text-foreground' }}
+          className="block rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          activeProps={{
+            className:
+              'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
+          }}
         >
           Settings
         </Link>

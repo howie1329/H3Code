@@ -43,7 +43,10 @@ function NotFound() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-8 text-center">
       <h1 className="text-2xl font-semibold">404</h1>
       <p className="text-muted-foreground">Page not found.</p>
-      <Link to="/" className="text-sm underline underline-offset-4">
+      <Link
+        to="/"
+        className="text-sm text-primary underline-offset-4 hover:underline"
+      >
         Back to sign in
       </Link>
     </div>
@@ -52,11 +55,11 @@ function NotFound() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="min-h-full">
       <head>
         <HeadContent />
       </head>
-      <body className="antialiased">
+      <body className="min-h-full bg-background font-sans text-foreground antialiased">
         <ClerkProvider>
           <ConvexProvider>
             {children}
