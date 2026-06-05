@@ -42,7 +42,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '#/components/ui/tooltip.tsx'
-import { DEMO_REPOSITORIES } from '#/lib/demo-repositories.ts'
+import { listMockRepositories, listMockSessions } from '#/lib/mock/index.ts'
+import type { MockSession } from '#/lib/mock/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 const sidebarInset = 'px-2'
@@ -79,6 +80,15 @@ function useIconRail() {
 function useIsSettingsRoute() {
   return useRouterState({
     select: (state) => state.location.pathname.startsWith('/app/settings'),
+  })
+}
+
+function useActiveSessionId() {
+  return useRouterState({
+    select: (state) => {
+      const match = /^\/app\/sessions\/([^/]+)/.exec(state.location.pathname)
+      return match?.[1]
+    },
   })
 }
 
@@ -205,11 +215,48 @@ function ThemeToggleButton() {
   )
 }
 
+function SessionSidebarLink({ session }: { session: MockSession }) {
+  const activeSessionId = useActiveSessionId()
+  const isActive = activeSessionId === session.id
+  const title = session.summary.title ?? session.id
+  const statusLabel = session.summary.status ?? 'idle'
+
+  return (
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton
+        asChild
+        size="sm"
+        isActive={isActive}
+        className={cn(
+          menuRowClass,
+          'h-auto min-h-7 flex-col items-start gap-0 py-1.5',
+          'text-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        )}
+      >
+        <Link
+          to="/app/sessions/$sessionId"
+          params={{ sessionId: session.id }}
+          title={title}
+        >
+          <span className="w-full truncate">{title}</span>
+          {(session.preview ?? statusLabel !== 'idle') ? (
+            <span className={cn('w-full truncate', metaClass)}>
+              {session.preview ?? statusLabel}
+            </span>
+          ) : null}
+        </Link>
+      </SidebarMenuSubButton>
+    </SidebarMenuSubItem>
+  )
+}
+
 function RepositoryCollapsible({
   name,
+  sessions,
   defaultOpen = false,
 }: {
   name: string
+  sessions: readonly MockSession[]
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = React.useState(defaultOpen)
@@ -225,18 +272,30 @@ function RepositoryCollapsible({
             aria-expanded={open}
           >
             {open ? (
-              <ChevronDownIcon className={cn(iconClass, 'text-muted-foreground')} aria-hidden />
+              <ChevronDownIcon
+                className={cn(iconClass, 'text-muted-foreground')}
+                aria-hidden
+              />
             ) : (
-              <ChevronRightIcon className={cn(iconClass, 'text-muted-foreground')} aria-hidden />
+              <ChevronRightIcon
+                className={cn(iconClass, 'text-muted-foreground')}
+                aria-hidden
+              />
             )}
             <span className="min-w-0 flex-1 truncate">{name}</span>
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <SidebarMenuSub className="mx-0 gap-0.5 border-0 px-0 py-0.5 pl-5">
-            <SidebarMenuSubItem>
-              <p className={cn('px-2 py-1', metaClass)}>No sessions yet</p>
-            </SidebarMenuSubItem>
+            {sessions.length === 0 ? (
+              <SidebarMenuSubItem>
+                <p className={cn('px-2 py-1', metaClass)}>No sessions yet</p>
+              </SidebarMenuSubItem>
+            ) : (
+              sessions.map((session) => (
+                <SessionSidebarLink key={session.id} session={session} />
+              ))
+            )}
             <SidebarMenuSubItem>
               <SidebarMenuSubButton
                 asChild
@@ -252,7 +311,10 @@ function RepositoryCollapsible({
                     // Start session — wired in a later pass
                   }}
                 >
-                  <PlusIcon className={cn(iconClass, 'text-muted-foreground')} aria-hidden />
+                  <PlusIcon
+                    className={cn(iconClass, 'text-muted-foreground')}
+                    aria-hidden
+                  />
                   <span>Start session</span>
                 </button>
               </SidebarMenuSubButton>
@@ -268,7 +330,9 @@ function RepositoriesEmptyState() {
   return (
     <div className="flex flex-col gap-3 py-6 pr-1">
       <div className="space-y-1">
-        <p className="text-xs font-medium text-sidebar-foreground">No repositories yet</p>
+        <p className="text-xs font-medium text-sidebar-foreground">
+          No repositories yet
+        </p>
         <p className={cn(metaClass, 'leading-relaxed')}>
           Connect a repository to browse Pi sessions and start work from here.
         </p>
@@ -291,13 +355,17 @@ function RepositoriesEmptyState() {
 export function AppSidebar() {
   const iconRail = useIconRail()
   const isSettingsActive = useIsSettingsRoute()
-  const repositories = DEMO_REPOSITORIES
+  const repositories = listMockRepositories()
   const hasRepositories = repositories.length > 0
 
   return (
     <Sidebar collapsible="icon" className="border-sidebar-border">
       <SidebarHeader
-        className={cn('shrink-0 gap-0 border-b border-sidebar-border/50 p-0', sidebarInset, 'py-1.5')}
+        className={cn(
+          'shrink-0 gap-0 border-b border-sidebar-border/50 p-0',
+          sidebarInset,
+          'py-1.5',
+        )}
       >
         <div
           className={cn(
@@ -306,7 +374,11 @@ export function AppSidebar() {
           )}
         >
           <SidebarCollapseTrigger />
-          <SidebarToolbarAction label="Search" aria-label="Search" title="Search">
+          <SidebarToolbarAction
+            label="Search"
+            aria-label="Search"
+            title="Search"
+          >
             <SearchIcon className={iconClass} aria-hidden />
           </SidebarToolbarAction>
           <NewSessionToolbarButton iconRail={iconRail} />
@@ -316,13 +388,23 @@ export function AppSidebar() {
       <SidebarContent className="min-h-0 flex-1 gap-0 overflow-hidden">
         {!iconRail ? (
           <SidebarGroup className="flex min-h-0 flex-1 flex-col p-0">
-            <div className={cn('flex h-7 shrink-0 items-center pt-2', sidebarInset)}>
-              <SidebarGroupLabel className={groupLabelClass}>Repositories</SidebarGroupLabel>
+            <div
+              className={cn(
+                'flex h-7 shrink-0 items-center pt-2',
+                sidebarInset,
+              )}
+            >
+              <SidebarGroupLabel className={groupLabelClass}>
+                Repositories
+              </SidebarGroupLabel>
             </div>
             <SidebarGroupContent className="flex min-h-0 flex-1 flex-col">
               <nav
                 aria-label="Repositories"
-                className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-2', sidebarInset)}
+                className={cn(
+                  'flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-2',
+                  sidebarInset,
+                )}
               >
                 {!hasRepositories ? (
                   <RepositoriesEmptyState />
@@ -332,6 +414,7 @@ export function AppSidebar() {
                       <RepositoryCollapsible
                         key={repo.id}
                         name={repo.name}
+                        sessions={listMockSessions(repo.id)}
                         defaultOpen={repo.defaultOpen}
                       />
                     ))}
@@ -367,7 +450,10 @@ export function AppSidebar() {
                   size="sm"
                   isActive={isSettingsActive}
                   tooltip="Settings"
-                  className={cn(menuRowClass, 'text-muted-foreground data-[active=true]:text-sidebar-accent-foreground')}
+                  className={cn(
+                    menuRowClass,
+                    'text-muted-foreground data-[active=true]:text-sidebar-accent-foreground',
+                  )}
                 >
                   <Link to="/app/settings">
                     <SettingsIcon className={iconClass} aria-hidden />

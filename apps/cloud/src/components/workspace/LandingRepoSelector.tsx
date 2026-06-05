@@ -7,7 +7,7 @@ import {
   PromptInputSelectTrigger,
   PromptInputSelectValue,
 } from '#/components/ai-elements/prompt-input.tsx'
-import type { DemoRepository } from '#/lib/demo-repositories.ts'
+import type { MockRepository } from '#/lib/mock/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 /** Matches AppSidebar menu rows (h-7, 12px label). */
@@ -21,7 +21,7 @@ const repoTriggerClass = cn(
 )
 
 type LandingRepoSelectorProps = {
-  repositories: readonly DemoRepository[]
+  repositories: readonly MockRepository[]
   value: string | undefined
   onValueChange: (repositoryId: string | undefined) => void
   disabled?: boolean

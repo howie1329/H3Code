@@ -17,10 +17,10 @@ import { Button } from '#/components/ui/button.tsx'
 import { Kbd } from '#/components/ui/kbd.tsx'
 import { Skeleton } from '#/components/ui/skeleton.tsx'
 import {
-  DEMO_REPOSITORIES,
-  getDefaultDemoRepositoryId,
-  type DemoRepository,
-} from '#/lib/demo-repositories.ts'
+  getDefaultMockRepositoryId,
+  listMockRepositories,
+} from '#/lib/mock/index.ts'
+import type { MockRepository } from '#/lib/mock/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 const landingStackClass = cn(
@@ -52,18 +52,18 @@ const landingSubmitClass = cn(
 type WorkspaceLandingProps = {
   /** When true, shows a composer-shaped skeleton (preferences / workspace bootstrap). */
   isLoadingWorkspace?: boolean
-  repositories?: readonly DemoRepository[]
+  repositories?: readonly MockRepository[]
 }
 
 export function WorkspaceLanding({
   isLoadingWorkspace = false,
-  repositories = DEMO_REPOSITORIES,
+  repositories = listMockRepositories(),
 }: WorkspaceLandingProps) {
   const enterHintId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [prompt, setPrompt] = useState('')
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | undefined>(
-    () => getDefaultDemoRepositoryId(repositories),
+    () => getDefaultMockRepositoryId(repositories),
   )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -135,7 +135,7 @@ export function WorkspaceLanding({
         return current
       }
 
-      return getDefaultDemoRepositoryId(repositories)
+      return getDefaultMockRepositoryId(repositories)
     })
   }, [hasRepositories, repositories])
 

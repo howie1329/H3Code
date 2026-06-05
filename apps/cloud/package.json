@@ -17,6 +17,7 @@
     "check": "prettier --check ."
   },
   "dependencies": {
+    "@h3code/agent-core": "*",
     "@clerk/clerk-react": "^5.61.3",
     "@convex-dev/react-query": "0.1.0",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
