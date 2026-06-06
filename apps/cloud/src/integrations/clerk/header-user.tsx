@@ -1,19 +1,30 @@
 import {
-  SignedIn,
+  Show,
   SignInButton,
-  SignedOut,
+  SignUpButton,
   UserButton,
-} from '@clerk/clerk-react'
+} from '@clerk/tanstack-react-start'
+
+import { Button } from '#/components/ui/button.tsx'
 
 export default function HeaderUser() {
   return (
     <>
-      <SignedIn>
+      <Show when="signed-in">
         <UserButton />
-      </SignedIn>
-      <SignedOut>
-        <SignInButton />
-      </SignedOut>
+      </Show>
+      <Show when="signed-out">
+        <div className="flex items-center gap-2">
+          <SignInButton mode="modal">
+            <Button variant="ghost" size="sm">
+              Sign in
+            </Button>
+          </SignInButton>
+          <SignUpButton mode="modal">
+            <Button size="sm">Sign up</Button>
+          </SignUpButton>
+        </div>
+      </Show>
     </>
   )
 }
