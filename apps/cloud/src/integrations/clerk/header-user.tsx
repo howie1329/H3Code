@@ -15,12 +15,12 @@ export default function HeaderUser() {
       </Show>
       <Show when="signed-out">
         <div className="flex items-center gap-2">
-          <SignInButton mode="modal">
+          <SignInButton mode="modal" fallbackRedirectUrl="/app">
             <Button variant="ghost" size="sm">
               Sign in
             </Button>
           </SignInButton>
-          <SignUpButton mode="modal">
+          <SignUpButton mode="modal" fallbackRedirectUrl="/app">
             <Button size="sm">Sign up</Button>
           </SignUpButton>
         </div>

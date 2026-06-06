@@ -5,5 +5,13 @@ export default function AppClerkProvider({
 }: {
   children: React.ReactNode
 }) {
-  return <ClerkProvider afterSignOutUrl="/">{children}</ClerkProvider>
+  return (
+    <ClerkProvider
+      afterSignOutUrl="/"
+      signInFallbackRedirectUrl="/app"
+      signUpFallbackRedirectUrl="/app"
+    >
+      {children}
+    </ClerkProvider>
+  )
 }

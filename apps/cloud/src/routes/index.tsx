@@ -13,10 +13,10 @@ function LoginPage() {
       <div className="w-full max-w-sm space-y-4 text-center">
         <h1 className="text-2xl font-semibold">H3Code Cloud</h1>
         <div className="flex items-center justify-center gap-2">
-          <SignInButton mode="modal">
+          <SignInButton mode="modal" fallbackRedirectUrl="/app">
             <Button variant="outline">Sign in</Button>
           </SignInButton>
-          <SignUpButton mode="modal">
+          <SignUpButton mode="modal" fallbackRedirectUrl="/app">
             <Button>Sign up</Button>
           </SignUpButton>
         </div>
