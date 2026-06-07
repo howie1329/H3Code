@@ -23,7 +23,7 @@
     "dev:web": "npm run dev --workspace @h3code/web"
   },
   "devDependencies": {
-    "thomas-agentkit": "^0.7.0",
+    "thomas-agentkit": "^0.9.0-alpha.1",
     "turbo": "^2.5.0"
   }
 }

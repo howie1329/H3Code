@@ -1,81 +1,42 @@
+# H3Code — Change Explanation
+
 <!-- agentkit:start change-explanation -->
-# Change Explanation Guide
+Use this when handing off completed work to a developer or reviewer.
 
-## Purpose
+## What to Include
 
-Use this guide when explaining completed work to the developer.
+1. **Summary** — One or two sentences on what changed and why.
+2. **Changed surfaces** — List files or areas touched (desktop UI, agent-server protocol, Convex schema, etc.).
+3. **Behavior change** — What users or agents will notice; include before/after when helpful.
+4. **Checks run** — Commands actually executed and their outcome.
+5. **Skipped checks** — Anything not run and why.
+6. **Risks and follow-ups** — Edge cases, tech debt, or planned hardening.
 
-The goal is to help the developer understand what changed, why it changed, how the implementation works, what was verified, and what deserves review attention.
+## Project-Specific Focus
 
-This is a reusable handoff guide. Do not create a new change-explanation file for every task unless the project explicitly asks for one.
+For **desktop** changes, call out:
 
-## Handoff Format
+- WebSocket protocol or `agent-client` impact
+- Provider-neutral vs PI-specific typing
+- Electron main vs renderer boundary
+- Transcript rendering, session cache, or metadata indexing
 
-### Summary
+For **packages** changes, call out:
 
-Briefly state the outcome in plain language. Focus on the behavior or capability delivered, not just the files edited.
+- Protocol or contract changes in `@h3code/agent-core`
+- Server routing, provider registry, or connection lifecycle in `@h3code/agent-server`
 
-### What Changed
+For **cloud** changes, call out:
 
-List the main files, modules, or areas changed.
+- Convex schema or function changes
+- Clerk auth or permission boundaries
+- TanStack Router/Start data loading impact
 
-For each important area, explain:
+For **UI** changes, include screenshots or short screen recordings when behavior is visual.
 
-- what changed
-- why it changed
-- how it fits existing project patterns
+## Tone
 
-### Key Decisions
-
-Explain notable implementation decisions.
-
-Include when relevant:
-
-- why this approach was chosen
-- alternatives considered
-- trade-offs or constraints
-- assumptions made because requirements were unclear
-
-### Verification
-
-List checks run, such as:
-
-- tests
-- lint
-- build/typecheck
-- manual QA
-- screenshots or visual checks for UI work
-
-If a relevant check was skipped, say why.
-
-### Risks Or Limitations
-
-Call out anything the developer should know before merging or shipping:
-
-- untested paths
-- migration concerns
-- UX edge cases
-- security or privacy considerations
-- performance concerns
-- follow-up cleanup
-
-### Suggested Review Focus
-
-Tell the developer where to focus review attention.
-
-Examples:
-
-- Review the validation path in `[path]`.
-- Confirm the empty/error states match product intent.
-- Check whether the authorization behavior matches policy.
-- Verify the new abstraction is worth keeping.
-
-## Style Rules
-
-- Be concise but specific.
-- Mention file paths clearly.
-- Explain reasoning, not only actions.
-- Do not hide uncertainty or skipped validation.
-- Do not claim tests passed unless they were run and passed.
-- Prefer bullets for scanability.
+- Plain language; explain decisions and trade-offs.
+- Distinguish facts from assumptions.
+- Do not dump raw diffs when a structured summary is enough.
 <!-- agentkit:end change-explanation -->

@@ -1,126 +1,95 @@
-# H3 Code Stack
+# H3Code — Stack Guidance
 
-Concise stack and architecture reference for agents and contributors. Operating rules live in `AGENTS.md`.
+<!-- agentkit:start stack -->
+Monorepo managed with npm workspaces and Turborepo. Primary product is the Electron desktop app; cloud and web apps are secondary surfaces sharing `@h3code/agent-core`.
 
-## Repository Layout
+## Workspace Layout
 
-```txt
-apps/
-  desktop/       # Electron + SvelteKit desktop app (@h3code/desktop)
-  web/           # SvelteKit marketing site (@h3code/web)
-packages/
-  agent-core/    # Provider-neutral H3Code protocol and provider contracts
-  agent-server/  # Local Node/WebSocket Agent Server skeleton
-docs/
-  h3code-agent-server-product.md
-  agent-server-architecture.html.html
-  h3code-desktop-mvp.md
-  SvelteKitShadcn.md
-  SvelteKitAiElements.md
-```
+| Path | Stack | Role |
+| --- | --- | --- |
+| `apps/desktop` | Electron, SvelteKit 2, Svelte 5, Vite, Tailwind 4, shadcn-svelte | Primary desktop workbench |
+| `apps/web` | SvelteKit, Vite, Tailwind 4, shadcn-svelte | Marketing site |
+| `apps/cloud` | TanStack React Start, React 19, Convex, Clerk, Tailwind 4, Vitest | Cloud SaaS path |
+| `apps/desktop-zero` | Zig | Experimental native shell |
+| `packages/agent-core` | TypeScript | Protocol, domain events, provider contracts |
+| `packages/agent-server` | Node, `ws`, TypeScript | Local WebSocket server |
+| `packages/agent-metadata` | TypeScript, SQLite | Local metadata and preferences |
+| `packages/pi-provider` | TypeScript | In-process PI SDK provider |
 
-Turborepo orchestrates workspace scripts from the repo root (`package.json` workspaces: `apps/*`, `packages/*`).
+## Architecture Boundaries
 
-## Product Boundary
-
-**Providers** own sessions, messages, tools, models, queueing, compaction, retry, auth, and runtime behavior. PI is the current working provider.
-
-**H3Code** owns the local desktop and server experience: UI, local orchestration, provider selection, repo/workspace context, metadata indexing, git/worktree services, connection diagnostics, and minimal preferences.
-
-H3Code does not own canonical transcripts or provider-native sessions.
-
-The web app (`apps/web`) is a marketing site, not the agent runtime.
-
-## Current Desktop Architecture
-
-The desktop app uses the local Agent Server over WebSocket:
+Desktop data flow:
 
 ```txt
-Svelte renderer
-  -> AgentClient (WebSocket)
-    -> @h3code/agent-server (localhost)
-      -> PiAgentProvider (@h3code/pi-provider, in-process PI SDK)
+Svelte renderer → AgentClient (WebSocket) → @h3code/agent-server → PiAgentProvider
 ```
 
-Electron main supervises the Agent Server, native dialogs, and shell affordances (folder picker, reveal in Finder). H3Code stores **session-list metadata** (recent repos, indexed session summaries, UI toggles) in local SQLite (`h3code.sqlite` under Electron user data), not transcripts or messages.
+- **Providers** own sessions, message history, tools, models, queueing, compaction, and retry.
+- **H3Code** owns desktop UI, local server orchestration, repo/workspace context, metadata indexing, and preferences.
+- Keep renderer types provider-neutral above the H3Code WebSocket protocol; avoid reintroducing PI-shaped types in the UI layer.
 
-`@h3code/agent-core` owns the H3Code protocol and provider contracts. `@h3code/agent-server` owns the local Node/WebSocket server, connection manager, provider registry, and platform command orchestration. Provider-specific SDK behavior, including PI session discovery and deletion, lives in provider packages.
+Cloud app (`apps/cloud`):
 
-## Key Desktop Files
+- Frontend in `apps/cloud/src/` (TanStack Router/Start, React).
+- Backend in `apps/cloud/convex/` (schema, auth config, functions).
+- Clerk handles auth; Convex handles data and server functions.
 
-| Path | Role |
-| --- | --- |
-| `apps/desktop/electron/main.ts` | Electron window, Agent Server lifecycle, native shell IPC |
-| `apps/desktop/electron/preferences.ts` | Metadata store bootstrap (`@h3code/agent-metadata`) |
-| `apps/desktop/electron/preload.ts` | Minimal renderer bridge (server URL, repo picker, reveal) |
-| `apps/desktop/src/lib/agent-client.ts` | WebSocket client for Agent Server protocol |
-| `apps/desktop/src/lib/desktop-agent-api.ts` | Renderer agent API over WebSocket |
-| `apps/desktop/src/lib/desktop-state.svelte.ts` | Central renderer state (repos, sessions, messages, status, activity) |
-| `apps/desktop/src/lib/components/desktop/` | Shell, sidebar, transcript, composer, context panel |
-| `apps/desktop/src/routes/` | SvelteKit routes (workspace, settings, root redirect) |
+## Source Conventions
 
-## Key Package Files
+**Desktop (`apps/desktop`)**
 
-| Path | Role |
-| --- | --- |
-| `packages/agent-core/src/` | Shared protocol, IDs, session/run/message types, provider capabilities, provider interface |
-| `packages/agent-server/src/server.ts` | Local HTTP/WebSocket server entrypoint |
-| `packages/agent-server/src/ws-router.ts` | WebSocket command routing |
-| `packages/agent-server/src/connection-manager.ts` | Connection ID to provider connection lifecycle |
-| `packages/agent-server/src/platform/` | Platform session delete, git diff, preferences |
-| `packages/pi-provider/src/` | In-process PI SDK provider (`PiAgentProvider`) and PI session helpers |
+- Routes: `apps/desktop/src/routes/`
+- Shared UI: `apps/desktop/src/lib/components/ui/` (shadcn-svelte)
+- Desktop features: `apps/desktop/src/lib/components/desktop/`
+- AI elements: `apps/desktop/src/lib/components/ai-elements/`
+- Agent transport: `apps/desktop/src/lib/agent-client.ts`, `agent-transport.ts`
+- Electron main: `apps/desktop/electron/`
 
-### Agent Server protocol (v1)
+**Web (`apps/web`)**
 
-Desktop renderer talks to `@h3code/agent-server` over WebSocket (`apps/desktop/src/lib/agent-client.ts`). Provider metadata and platform inventory use protocol v1 messages:
+- SvelteKit routes and components under `apps/web/src/`
 
-- **Provider:** `provider.commands.list`, `provider.models.list`, `provider.queue.set`, `provider.compaction.set`
-- **Platform:** `session.delete`, `workspace.diff` (on-demand reply + server push after `run.ended` / tool updates, ~300ms debounce)
-- **Capabilities:** `server.ready.providers[].capabilities.ui` gates slash commands, model picker, queue modes, and compaction in the renderer (see `desktop-state.svelte.ts` `supports*` flags)
+**Packages**
 
-## Frameworks And Libraries
+- Build with `tsc`; exports from `src/`, compiled output in `dist/`
+- `@h3code/agent-server` tests compile to `dist-test/` and run with Node's test runner
 
-| Layer | Technology |
-| --- | --- |
-| Desktop shell | Electron 39 |
-| UI framework | SvelteKit 2, Svelte 5 |
-| Language | TypeScript 5.9 |
-| Build | Vite 7, Turborepo |
-| Styling | Tailwind CSS v4, shadcn-svelte, Bits UI, Hugeicons |
-| Agent integration | Local Agent Server (Node.js HTTP + `ws`) + `@h3code/pi-provider` (PI SDK) |
-| Transcript UI | Vercel AI SDK (`ai`), Streamdown, Shiki |
-| Verification | `svelte-check`, TypeScript package checks, Node tests for `@h3code/agent-server` |
+## Validation
 
-## Local Development
+Root (all workspaces):
 
 ```bash
-npm install
-npm run dev              # all workspaces
-npm run dev:desktop      # desktop only
-npm run dev:web          # web only (port 5174)
 npm run check
 npm run lint
 npm run build
 ```
 
-Package checks:
+By surface:
 
 ```bash
-npm run check --workspace @h3code/agent-core
-npm run check --workspace @h3code/agent-server
+npm run dev:desktop          # desktop development
+npm run dev:web              # marketing site
+npm run dev:cloud            # cloud + convex dev
+npm run check:cloud          # cloud formatting/check
+npm run test --workspace @h3code/cloud   # cloud vitest
 npm run test --workspace @h3code/agent-server
 ```
 
-## Environment And External Tools
+Desktop targeted tests (from `apps/desktop` workspace):
 
-- `VITE_DEV_SERVER_URL` — desktop dev only; Electron loads the Vite dev server URL.
-- Model/API credentials — configured in PI Agent, not in H3Code `.env` files.
+```bash
+npm run test:pi-session --workspace @h3code/desktop
+npm run test:agent-lib --workspace @h3code/desktop
+npm run test:transcript-normalize --workspace @h3code/desktop
+npm run test:session-cache --workspace @h3code/desktop
+```
 
-## Further Reading
+Run checks for the narrowest workspace you touched before handoff.
 
-- [README.md](README.md) — product direction and current status
-- [docs/h3code-agent-server-product.md](docs/h3code-agent-server-product.md) — Agent Server product brief
-- [docs/agent-server-architecture.html.html](docs/agent-server-architecture.html.html) — Agent Server architecture reference
-- [docs/h3code-desktop-mvp.md](docs/h3code-desktop-mvp.md) — current PI desktop MVP brief
-- [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) — UI tokens, layout, and per-app paths
-- [docs/SvelteKitShadcn.md](docs/SvelteKitShadcn.md) — shadcn-svelte usage in this repo
+## Stack Notes
+
+- Package manager: npm (`packageManager: npm@11.11.0`).
+- UI styling: Tailwind CSS v4; desktop/web use shadcn-svelte and Bits UI.
+- Design tokens and component rules: see root `DESIGN.md`.
+- Config lists `preset: next`, but this repo has no Next.js app. Treat it as a multi-app fullstack monorepo (SvelteKit desktop/web, TanStack + Convex cloud).
+<!-- agentkit:end stack -->
