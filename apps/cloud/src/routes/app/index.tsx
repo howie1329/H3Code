@@ -7,7 +7,14 @@ import { api } from '../../../convex/_generated/api'
 import { WorkspaceLanding } from '#/components/workspace/WorkspaceLanding.tsx'
 import type { MockRepository } from '#/lib/mock/types.ts'
 
+type AppWorkspaceSearch = {
+  repo?: string
+}
+
 export const Route = createFileRoute('/app/')({
+  validateSearch: (search: Record<string, unknown>): AppWorkspaceSearch => ({
+    repo: typeof search.repo === 'string' ? search.repo : undefined,
+  }),
   head: () => ({
     meta: [{ title: 'New session · H3Code Cloud' }],
   }),
@@ -15,6 +22,7 @@ export const Route = createFileRoute('/app/')({
 })
 
 function AppWorkspaceLandingRoute() {
+  const { repo } = Route.useSearch()
   const githubState = useQuery(api.github.getConnection)
   const repositories = useMemo<MockRepository[]>(
     () =>
@@ -29,6 +37,7 @@ function AppWorkspaceLandingRoute() {
 
   return (
     <WorkspaceLanding
+      initialRepositoryId={repo}
       isLoadingWorkspace={githubState === undefined}
       repositories={repositories}
     />

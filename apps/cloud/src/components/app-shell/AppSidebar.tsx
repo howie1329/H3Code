@@ -111,19 +111,12 @@ function SidebarCollapseTrigger() {
 }
 
 function NewSessionToolbarButton({ iconRail }: { iconRail: boolean }) {
-  const onNewSession = () => {
-    // New session — wired in a later pass
-  }
-
   if (iconRail) {
     return (
-      <SidebarToolbarAction
-        label="New session"
-        aria-label="New session"
-        title="New session"
-        onClick={onNewSession}
-      >
-        <PlusIcon className={iconClass} aria-hidden />
+      <SidebarToolbarAction label="New session" asChild>
+        <Link to="/app" aria-label="New session" title="New session">
+          <PlusIcon className={iconClass} aria-hidden />
+        </Link>
       </SidebarToolbarAction>
     )
   }
@@ -138,10 +131,12 @@ function NewSessionToolbarButton({ iconRail }: { iconRail: boolean }) {
       )}
       aria-label="New session"
       title="New session"
-      onClick={onNewSession}
+      asChild
     >
-      <PlusIcon className={iconClass} aria-hidden />
-      <span className="truncate">New session</span>
+      <Link to="/app">
+        <PlusIcon className={iconClass} aria-hidden />
+        <span className="truncate">New session</span>
+      </Link>
     </Button>
   )
 }
@@ -251,10 +246,12 @@ function SessionSidebarLink({ session }: { session: MockSession }) {
 }
 
 function RepositoryCollapsible({
+  repositoryId,
   name,
   sessions,
   defaultOpen = false,
 }: {
+  repositoryId: string
   name: string
   sessions: readonly MockSession[]
   defaultOpen?: boolean
@@ -264,27 +261,43 @@ function RepositoryCollapsible({
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <SidebarMenuItem>
-        <CollapsibleTrigger asChild>
-          <SidebarMenuButton
-            size="sm"
-            tooltip={name}
-            className={menuRowClass}
-            aria-expanded={open}
+        <div className="flex w-full min-w-0 items-center gap-0.5">
+          <CollapsibleTrigger asChild>
+            <SidebarMenuButton
+              size="sm"
+              tooltip={name}
+              className={cn(menuRowClass, 'min-w-0 flex-1')}
+              aria-expanded={open}
+            >
+              {open ? (
+                <ChevronDownIcon
+                  className={cn(iconClass, 'text-muted-foreground')}
+                  aria-hidden
+                />
+              ) : (
+                <ChevronRightIcon
+                  className={cn(iconClass, 'text-muted-foreground')}
+                  aria-hidden
+                />
+              )}
+              <span className="min-w-0 flex-1 truncate">{name}</span>
+            </SidebarMenuButton>
+          </CollapsibleTrigger>
+          <SidebarToolbarAction
+            label={`New session in ${name}`}
+            asChild
+            className="shrink-0"
           >
-            {open ? (
-              <ChevronDownIcon
-                className={cn(iconClass, 'text-muted-foreground')}
-                aria-hidden
-              />
-            ) : (
-              <ChevronRightIcon
-                className={cn(iconClass, 'text-muted-foreground')}
-                aria-hidden
-              />
-            )}
-            <span className="min-w-0 flex-1 truncate">{name}</span>
-          </SidebarMenuButton>
-        </CollapsibleTrigger>
+            <Link
+              to="/app"
+              search={{ repo: repositoryId }}
+              aria-label={`New session in ${name}`}
+              title={`New session in ${name}`}
+            >
+              <PlusIcon className={iconClass} aria-hidden />
+            </Link>
+          </SidebarToolbarAction>
+        </div>
         <CollapsibleContent>
           <SidebarMenuSub className="mx-0 gap-0.5 border-0 px-0 py-0.5 pl-5">
             {sessions.length === 0 ? (
@@ -296,29 +309,6 @@ function RepositoryCollapsible({
                 <SessionSidebarLink key={session.id} session={session} />
               ))
             )}
-            <SidebarMenuSubItem>
-              <SidebarMenuSubButton
-                asChild
-                size="sm"
-                className={cn(
-                  menuRowClass,
-                  'text-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Start session — wired in a later pass
-                  }}
-                >
-                  <PlusIcon
-                    className={cn(iconClass, 'text-muted-foreground')}
-                    aria-hidden
-                  />
-                  <span>Start session</span>
-                </button>
-              </SidebarMenuSubButton>
-            </SidebarMenuSubItem>
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>
@@ -341,12 +331,12 @@ function RepositoriesEmptyState() {
         type="button"
         variant="outline"
         className="h-7 w-full justify-start gap-2 border-sidebar-border px-2 text-[11px] shadow-none active:translate-y-px motion-reduce:active:translate-y-0"
-        onClick={() => {
-          // Add repository — wired in a later pass
-        }}
+        asChild
       >
-        <PlusIcon className={iconClass} aria-hidden />
-        Add repository
+        <Link to="/app">
+          <PlusIcon className={iconClass} aria-hidden />
+          Add repository
+        </Link>
       </Button>
     </div>
   )
@@ -413,6 +403,7 @@ export function AppSidebar() {
                     {repositories.map((repo) => (
                       <RepositoryCollapsible
                         key={repo.id}
+                        repositoryId={repo.id}
                         name={repo.name}
                         sessions={listMockSessions(repo.id)}
                         defaultOpen={repo.defaultOpen}

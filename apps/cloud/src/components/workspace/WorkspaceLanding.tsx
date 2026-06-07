@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { AlertCircleIcon, ArrowUpIcon, FolderPlusIcon } from 'lucide-react'
 
 import {
@@ -52,13 +53,17 @@ const landingSubmitClass = cn(
 type WorkspaceLandingProps = {
   /** When true, shows a composer-shaped skeleton (preferences / workspace bootstrap). */
   isLoadingWorkspace?: boolean
+  /** Pre-select a repository from navigation (e.g. sidebar new-session link). */
+  initialRepositoryId?: string
   repositories?: readonly MockRepository[]
 }
 
 export function WorkspaceLanding({
   isLoadingWorkspace = false,
+  initialRepositoryId,
   repositories = listMockRepositories(),
 }: WorkspaceLandingProps) {
+  const navigate = useNavigate()
   const enterHintId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [prompt, setPrompt] = useState('')
@@ -139,8 +144,18 @@ export function WorkspaceLanding({
     })
   }, [hasRepositories, repositories])
 
+  useEffect(() => {
+    if (!initialRepositoryId || !hasRepositories) {
+      return
+    }
+
+    if (repositories.some((repo) => repo.id === initialRepositoryId)) {
+      setSelectedRepositoryId(initialRepositoryId)
+    }
+  }, [hasRepositories, initialRepositoryId, repositories])
+
   function handleAddRepository() {
-    // Repository connect flow — wired in a later pass.
+    void navigate({ to: '/app' })
   }
 
   async function handleSubmit(message: PromptInputMessage, event: FormEvent<HTMLFormElement>) {
