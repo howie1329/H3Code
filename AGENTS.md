@@ -1,7 +1,7 @@
 # H3Code — Agent Guidance
 
 <!-- agentkit:start agents -->
-H3Code is a local desktop workbench for coding agents: an Electron + SvelteKit UI that talks to a local Agent Server over WebSocket. PI Agent is the current provider; the Agent Server exposes one H3Code-owned protocol that can grow to support multiple providers.
+H3Code is a coding-agent platform with two active surfaces: a **desktop workbench** (Electron + SvelteKit + local Agent Server over WebSocket) and a **cloud workbench** (`apps/cloud`: TanStack React Start + Clerk + Convex). PI Agent is the current provider on desktop; `@h3code/agent-core` defines the provider-neutral protocol shared across surfaces.
 
 Read `STACK.md` before stack-specific changes. Read companion docs only when the task touches that area.
 
@@ -12,10 +12,10 @@ apps/
   desktop/        # Primary product — Electron + SvelteKit desktop workbench
   desktop-zero/   # Experimental Zig desktop shell
   web/            # SvelteKit marketing site
-  cloud/          # TanStack React Start + Convex + Clerk SaaS path
+  cloud/          # TanStack React Start + Clerk + Convex cloud workbench
 packages/
   agent-core/     # Provider-neutral H3Code protocol and contracts
-  agent-server/   # Local Node/WebSocket server
+  agent-server/   # Local Node/WebSocket server (desktop)
   agent-metadata/ # Local metadata, preferences, SQLite index
   pi-provider/    # In-process PI SDK provider
 docs/             # Product specs, architecture, implementation notes
@@ -26,6 +26,10 @@ Key product docs:
 
 - `docs/h3code-agent-server-product.md` — Agent Server product direction
 - `docs/h3code-desktop-mvp.md` — current desktop MVP boundary
+- `docs/h3code-cloud-saas-prd.md` — cloud SaaS scope and MVP boundary
+- `docs/h3code-convex-schema.md` — Convex data model for cloud sessions
+- `docs/h3code-unified-client.md` — shared client/runtime model (desktop vs cloud)
+- `docs/h3code-platform-vision.md` — platform-wide direction
 - `README.md` — repository overview and local development
 
 ## Commands
@@ -62,10 +66,12 @@ Desktop app also has targeted Node test scripts (`test:pi-session`, `test:agent-
 
 - Prefer existing repository patterns over generic generated patterns.
 - Keep changes scoped and reviewable; match the style of surrounding code.
-- H3Code owns the local experience; providers own sessions, transcripts, and runtime behavior. Do not persist provider-owned transcripts in H3Code.
+- **Desktop:** H3Code owns the local experience; providers own sessions, transcripts, and runtime behavior. Do not persist provider-owned transcripts in the desktop app.
+- **Cloud:** Convex owns durable session/transcript persistence for the cloud product (see `docs/h3code-cloud-saas-prd.md`). Clerk OAuth tokens and GitHub API access stay server-side only.
 - Do not change foundational architecture, schema, dependencies, or theme primitives without explicit approval.
 - Read relevant docs in `docs/` before large feature or boundary changes.
-- For UI work, follow `DESIGN.md` and existing shadcn-svelte / Bits UI patterns in `apps/desktop/src/lib/components/`.
+- For **desktop/web UI**, follow `DESIGN.md` and shadcn-svelte / Bits UI in `apps/desktop/src/lib/components/` or `apps/web/src/lib/components/`.
+- For **cloud UI**, use shadcn-compatible components in `apps/cloud/src/components/ui/`; add new components from `apps/cloud` (where `components.json` lives).
 
 ## Companion Docs
 

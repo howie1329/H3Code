@@ -9,14 +9,14 @@ Guidance for review, refactor, and maintainability. Commands live in `AGENTS.md`
 2. **Protocol neutrality** — Keep renderer and shared types aligned with `@h3code/agent-core`, not PI-specific shapes.
 3. **Scope discipline** — No drive-by refactors, unrelated formatting, or dependency churn.
 4. **Type safety** — Prefer explicit types at protocol boundaries; use `svelte-check` / `tsc` clean passes.
-5. **UI consistency** — Reuse shadcn-svelte primitives and patterns from `apps/desktop/src/lib/components/ui/`; follow `DESIGN.md` tokens.
+5. **UI consistency** — Reuse shadcn primitives: Svelte in `apps/desktop` / `apps/web`; React in `apps/cloud/src/components/ui/`. Follow `DESIGN.md` tokens.
 
 ## Patterns to Prefer
 
 - Existing component and module structure in the touched app or package.
 - Workspace-local utilities (`apps/desktop/src/lib/utils.ts`, package `src/` modules).
 - Small, reviewable commits of behavior with tests where behavior is non-obvious.
-- Node test runner for server/desktop unit tests; Vitest for cloud.
+- Node test runner for server/desktop unit tests; Vitest for cloud (`npm run test --workspace @h3code/cloud`).
 
 ## Patterns to Avoid
 

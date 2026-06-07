@@ -11,13 +11,12 @@ Use this rule as a repository guidance router for Cursor agents and composer wor
 
 ## Read When Relevant
 
+- `STACK.md`: monorepo layout, architecture boundaries, validation.
 - `CODE-QUALITY.md`: code quality, review, refactors, dependencies.
-- `WORKFLOWS.md`: planning, implementation, review, release.
 - `CHANGE-EXPLANATION.md`: final handoff and developer-facing explanation.
-- `DESIGN-SYSTEM.md`: UI, styling, layout, navigation, components.
-- `TESTING.md`: tests, fixtures, mocks, QA strategy.
-- `SECURITY-CHECKLIST.md`: auth, permissions, secrets, PII, data handling.
-- `STACK.md`: stack-specific rules when present.
+- `DESIGN.md`: UI, styling, layout, components (desktop product baseline; cloud uses parallel shadcn patterns).
+- `docs/SvelteKitShadcn.md`: SvelteKit + shadcn-svelte APIs for desktop/web.
+- `docs/h3code-cloud-saas-prd.md` and `docs/h3code-convex-schema.md`: cloud scope and data model.
 
 ## Cursor Behavior
 

@@ -9,7 +9,7 @@ Monorepo managed with npm workspaces and Turborepo. Primary product is the Elect
 | --- | --- | --- |
 | `apps/desktop` | Electron, SvelteKit 2, Svelte 5, Vite, Tailwind 4, shadcn-svelte | Primary desktop workbench |
 | `apps/web` | SvelteKit, Vite, Tailwind 4, shadcn-svelte | Marketing site |
-| `apps/cloud` | TanStack React Start, React 19, Convex, Clerk, Tailwind 4, Vitest | Cloud SaaS path |
+| `apps/cloud` | TanStack React Start, React 19, Convex, Clerk, Tailwind 4, Vitest | Cloud workbench (GitHub sync live; agent sessions planned) |
 | `apps/desktop-zero` | Zig | Experimental native shell |
 | `packages/agent-core` | TypeScript | Protocol, domain events, provider contracts |
 | `packages/agent-server` | Node, `ws`, TypeScript | Local WebSocket server |
@@ -30,9 +30,12 @@ Svelte renderer → AgentClient (WebSocket) → @h3code/agent-server → PiAgent
 
 Cloud app (`apps/cloud`):
 
-- Frontend in `apps/cloud/src/` (TanStack Router/Start, React).
-- Backend in `apps/cloud/convex/` (schema, auth config, functions).
-- Clerk handles auth; Convex handles data and server functions.
+- Frontend in `apps/cloud/src/` (TanStack Router/Start, React 19).
+- Backend in `apps/cloud/convex/` (`auth.config.ts`, `schema.ts`, `github.ts`, `users.ts`).
+- Auth: `@clerk/tanstack-react-start` + `ConvexProviderWithClerk`; JWT validated via `CLERK_JWT_ISSUER_DOMAIN` in Convex env.
+- GitHub (MVP): Clerk OAuth token retrieved server-side in `src/integrations/github/server.ts`; repos synced to Convex via `github.syncRepositories`.
+- Convex tables today: `users`, `githubConnections`, `githubRepositories`. Agent `sessions` / runs / messages are planned — see `docs/h3code-convex-schema.md`.
+- Env template: `apps/cloud/.env.example` (`VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, `VITE_CONVEX_URL`).
 
 ## Source Conventions
 
@@ -48,6 +51,14 @@ Cloud app (`apps/cloud`):
 **Web (`apps/web`)**
 
 - SvelteKit routes and components under `apps/web/src/`
+
+**Cloud (`apps/cloud`)**
+
+- Routes: `apps/cloud/src/routes/` (`/sign-in`, `/app`, `/app/settings`, `/app/sessions/$sessionId`)
+- Integrations: `apps/cloud/src/integrations/clerk/`, `convex/`, `github/`
+- Shared UI: `apps/cloud/src/components/ui/` (shadcn-compatible)
+- AI elements: `apps/cloud/src/components/ai-elements/`
+- App shell: `apps/cloud/src/components/app-shell/`, `workspace/`
 
 **Packages**
 

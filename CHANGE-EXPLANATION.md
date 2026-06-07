@@ -29,8 +29,9 @@ For **packages** changes, call out:
 For **cloud** changes, call out:
 
 - Convex schema or function changes
-- Clerk auth or permission boundaries
-- TanStack Router/Start data loading impact
+- Clerk auth or permission boundaries (never expose OAuth tokens to the client)
+- GitHub sync or repository listing behavior
+- TanStack Router/Start data loading and server-fn impact
 
 For **UI** changes, include screenshots or short screen recordings when behavior is visual.
 
