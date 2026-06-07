@@ -7,6 +7,12 @@
       "skillPath": "skills/ai-elements/SKILL.md",
       "computedHash": "7e81acdd3028bb68aa4387b2bd083c5812a50e2be1bea08c76994dcfb8f6a3d3"
     },
+    "daytona": {
+      "source": "daytona/skills",
+      "sourceType": "github",
+      "skillPath": "skills/daytona/SKILL.md",
+      "computedHash": "203853b35501e0059874505e9992a2011438854f3e1f2396baa71d41cd0f40a8"
+    },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",
