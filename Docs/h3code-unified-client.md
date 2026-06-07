@@ -187,7 +187,7 @@ Register the implementation in a root provider:
 
 1. Clerk sign-in + GitHub connection (`repo` scope).
 2. List repos (Convex action + GitHub API via Clerk token).
-3. `createSession` mutation → `execution: "cloud"`, provision Daytona (action).
+3. `createSession` mutation → `execution: "cloud"`, status `provisioning`, schedule provision action → **one Daytona sandbox per session** (clone repo, session `workBranch` when git workflow lands).
 4. Sandbox adapter writes coalesced chunks → Convex; UI subscribes.
 5. Steer/abort → control mutation; sandbox subscribes to control query.
 
