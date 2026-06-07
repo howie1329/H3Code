@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   piExtensionUiResponseToProvider,
+  providerUiToPiRequest,
   sessionSummaryToPiSessionSummary,
   snapshotToPiSessionState,
 } from "./agent-adapters.js";
@@ -81,6 +82,46 @@ describe("agent-adapters", () => {
         cancelled: true,
       }),
       { requestId: "input-1", kind: "input", canceled: true },
+    );
+  });
+
+  it("round-trips custom extension UI requests and responses", () => {
+    const request = providerUiToPiRequest("agent-1", {
+      id: "custom-1",
+      kind: "custom",
+      componentId: "rpiv:ask-user:prompt",
+      payload: { questions: [{ question: "Go?", header: "Plan", options: [] }] },
+      overlay: { anchor: "bottom-center", width: "100%" },
+    });
+
+    assert.deepEqual(request, {
+      type: "extension_ui_request",
+      id: "custom-1",
+      agentId: "agent-1",
+      method: "custom",
+      componentId: "rpiv:ask-user:prompt",
+      payload: { questions: [{ question: "Go?", header: "Plan", options: [] }] },
+      overlay: { anchor: "bottom-center", width: "100%" },
+    });
+
+    assert.deepEqual(
+      piExtensionUiResponseToProvider({
+        type: "extension_ui_response",
+        id: "custom-1",
+        method: "custom",
+        value: { answers: [], cancelled: false },
+      }),
+      { requestId: "custom-1", kind: "custom", value: { answers: [], cancelled: false } },
+    );
+
+    assert.deepEqual(
+      piExtensionUiResponseToProvider({
+        type: "extension_ui_response",
+        id: "custom-1",
+        method: "custom",
+        cancelled: true,
+      }),
+      { requestId: "custom-1", kind: "custom", canceled: true },
     );
   });
 });

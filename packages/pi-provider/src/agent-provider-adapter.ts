@@ -277,6 +277,14 @@ function mapUiRequest(request: PiProviderUiRequest): ProviderUiRequest {
         message: request.message,
         value: request.value,
       };
+    case "custom":
+      return {
+        id: request.id,
+        kind: "custom",
+        componentId: request.componentId ?? "unknown",
+        payload: request.payload ?? null,
+        overlay: request.overlay,
+      };
   }
 }
 

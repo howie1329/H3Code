@@ -148,10 +148,30 @@ export function providerUiToPiRequest(connectionId: ConnectionId, request: Provi
         title: request.title,
         prefill: request.value,
       };
+    case "custom":
+      return {
+        ...base,
+        method: "custom",
+        componentId: request.componentId,
+        payload: request.payload,
+        overlay: request.overlay,
+      };
   }
 }
 
 export function piExtensionUiResponseToProvider(response: PiExtensionUiResponse): ProviderUiResponse {
+  if (response.method === "custom") {
+    if ("cancelled" in response && response.cancelled) {
+      return { requestId: response.id, kind: "custom", canceled: true };
+    }
+
+    return {
+      requestId: response.id,
+      kind: "custom",
+      value: "value" in response ? response.value : undefined,
+    };
+  }
+
   if ("cancelled" in response && response.cancelled) {
     return response.method === "select"
       ? { requestId: response.id, kind: "select", canceled: true }

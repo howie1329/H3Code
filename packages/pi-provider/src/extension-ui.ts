@@ -1,4 +1,5 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { CustomUiCorrelation } from "./custom-ui-correlation.js";
 import type { PiProviderEvent, PiProviderUiRequest, PiProviderUiResponse } from "./types.js";
 
 type Emit = (event: PiProviderEvent) => void;
@@ -11,7 +12,10 @@ export class PiExtensionUiBridge {
   readonly #pending = new Map<string, PendingRequest>();
   #nextRequestId = 1;
 
-  constructor(private readonly emit: Emit) {}
+  constructor(
+    private readonly emit: Emit,
+    private readonly correlation: CustomUiCorrelation = new CustomUiCorrelation(),
+  ) {}
 
   createContext(): ExtensionUIContext {
     const bridge = this;
@@ -110,8 +114,12 @@ export class PiExtensionUiBridge {
           occurredAt: Date.now(),
         });
       },
-      custom() {
-        throw new Error("Custom extension UI components are not supported by the H3Code Pi provider.");
+      custom<T>(
+        _factory: Parameters<ExtensionUIContext["custom"]>[0],
+        options?: Parameters<ExtensionUIContext["custom"]>[1],
+      ) {
+        void options;
+        return bridge.requestCustom<T>(_factory);
       },
       pasteToEditor() {},
       setEditorText() {},
@@ -177,6 +185,25 @@ export class PiExtensionUiBridge {
       this.emit({ type: "extension.ui.request", request: fullRequest, occurredAt: Date.now() });
     });
   }
+
+  private requestCustom<T>(factory: Parameters<ExtensionUIContext["custom"]>[0]): Promise<T> {
+    void factory;
+    const match = this.correlation.consumeForCustom();
+    const id = `pi-ui-${this.#nextRequestId++}`;
+    const fullRequest: PiProviderUiRequest = {
+      id,
+      kind: "custom",
+      title: "",
+      componentId: match?.componentId ?? "unknown",
+      payload: match?.payload ?? null,
+      overlay: match?.overlay,
+    };
+
+    return new Promise<T>((resolve) => {
+      this.#pending.set(id, { request: fullRequest, resolve: resolve as (value: unknown) => void });
+      this.emit({ type: "extension.ui.request", request: fullRequest, occurredAt: Date.now() });
+    });
+  }
 }
 
 function responseToValue(response: PiProviderUiResponse) {
@@ -191,6 +218,8 @@ function responseToValue(response: PiProviderUiResponse) {
       return response.accepted;
     case "input":
     case "editor":
+      return response.value;
+    case "custom":
       return response.value;
     default:
       return undefined;
