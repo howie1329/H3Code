@@ -14,13 +14,23 @@ function useIsWorkspaceLandingRoute() {
   })
 }
 
+function useIsSessionRoute() {
+  return useRouterState({
+    select: (state) => /^\/app\/sessions\/[^/]+/.test(state.location.pathname),
+  })
+}
+
 export function AppMainColumn({ children }: { children: ReactNode }) {
   const isWorkspaceLanding = useIsWorkspaceLandingRoute()
+  const isSessionRoute = useIsSessionRoute()
+  const showAppHeader = !isWorkspaceLanding && !isSessionRoute
 
   return (
     <>
-      {!isWorkspaceLanding ? <AppHeader /> : null}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+      {showAppHeader ? <AppHeader /> : null}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {children}
+      </div>
     </>
   )
 }

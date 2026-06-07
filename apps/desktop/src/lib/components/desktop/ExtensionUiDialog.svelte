@@ -7,7 +7,9 @@
   let inputValue = $state("");
   let editorValue = $state("");
 
-  const request = $derived(desktopState.extensionUiRequest);
+  const request = $derived(
+    desktopState.extensionUiRequest?.method === "custom" ? undefined : desktopState.extensionUiRequest,
+  );
   const open = $derived(Boolean(request));
 
   $effect(() => {

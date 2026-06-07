@@ -60,7 +60,7 @@ export function SessionInspector({
     <aside
       aria-label="Session inspector"
       className={cn(
-        'hidden min-h-0 w-64 shrink-0 flex-col gap-5 overflow-y-auto border-l border-border/60 bg-background p-4 lg:flex',
+        'flex min-h-0 w-64 shrink-0 flex-col gap-5 overflow-y-auto border-l border-border/60 bg-background p-4',
         className,
       )}
     >

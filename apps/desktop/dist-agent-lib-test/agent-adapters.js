@@ -118,17 +118,43 @@ export function providerUiToPiRequest(connectionId, request) {
                 title: request.title,
                 prefill: request.value,
             };
+        case "custom":
+            return {
+                ...base,
+                method: "custom",
+                componentId: request.componentId,
+                payload: request.payload,
+                overlay: request.overlay,
+            };
     }
 }
 export function piExtensionUiResponseToProvider(response) {
+    if (response.method === "custom") {
+        if ("cancelled" in response && response.cancelled) {
+            return { requestId: response.id, kind: "custom", canceled: true };
+        }
+        return {
+            requestId: response.id,
+            kind: "custom",
+            value: "value" in response ? response.value : undefined,
+        };
+    }
     if ("cancelled" in response && response.cancelled) {
-        return { requestId: response.id, kind: "confirm", accepted: false, canceled: true };
+        return response.method === "select"
+            ? { requestId: response.id, kind: "select", canceled: true }
+            : response.method === "input" || response.method === "editor"
+                ? { requestId: response.id, kind: response.method, canceled: true }
+                : { requestId: response.id, kind: "confirm", accepted: false, canceled: true };
     }
     if ("confirmed" in response) {
         return { requestId: response.id, kind: "confirm", accepted: response.confirmed };
     }
     if ("value" in response) {
-        return { requestId: response.id, kind: "input", value: response.value };
+        return {
+            requestId: response.id,
+            kind: response.method === "select" || response.method === "editor" ? response.method : "input",
+            value: response.value,
+        };
     }
     return { requestId: response.id, kind: "confirm", accepted: false, canceled: true };
 }
