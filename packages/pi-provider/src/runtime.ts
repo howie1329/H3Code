@@ -18,6 +18,7 @@ export const createRealPiRuntime: PiRuntimeFactory = async (options) => {
       authStorage: options.authStorage,
       modelRegistry: options.modelRegistry,
       settingsManager: options.settingsManager,
+      resourceLoaderOptions: options.eventBus ? { eventBus: options.eventBus } : undefined,
     });
     if (options.resourceLoader) {
       services.resourceLoader = options.resourceLoader;

@@ -1,21 +1,15 @@
 <!-- agentkit:start claude -->
-# CLAUDE.md
+# Claude Instructions
 
-Claude Code guidance for this repository.
-
-Follow `AGENTS.md` first. Treat it as the primary source of truth for project rules, workflows, quality standards, and handoff expectations.
+Follow `AGENTS.md` first. It is the primary source of truth for repository-wide agent behavior.
 
 When relevant, also read:
 
-- `CODE-QUALITY.md`
-- `WORKFLOWS.md`
-- `CHANGE-EXPLANATION.md`
-- `DESIGN-SYSTEM.md`
-- `TESTING.md`
-- `SECURITY-CHECKLIST.md`
-- `STACK.md`
+- `STACK.md` — monorepo layout, architecture boundaries, validation
+- `CODE-QUALITY.md` — review and refactor guidance
+- `CHANGE-EXPLANATION.md` — handoff and summary expectations
+- `DESIGN.md` — UI, styling, layout, components
+- `docs/h3code-cloud-saas-prd.md` — cloud product scope when touching `apps/cloud`
 
-Keep context focused. Do not load companion files unless they are relevant to the task.
-
-Do not duplicate repository rules here. Update `AGENTS.md` or the relevant companion guide instead.
+Prefer existing repository patterns over generic suggestions. Keep changes scoped and reviewable. Do not introduce new dependencies, architecture, or broad rewrites unless the task explicitly requires them.
 <!-- agentkit:end claude -->

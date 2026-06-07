@@ -10,6 +10,7 @@
   import { fly } from "svelte/transition";
 
   import { desktopState } from "$lib/desktop-state.svelte";
+  import { liveTranscriptMessages } from "$lib/pi-session/selectors.js";
   import {
     Message,
     MessageContent,
@@ -46,8 +47,12 @@
 
   const composerScrollInsetPx = $derived(composerInsetPx + 8);
 
-  const transcriptView = $derived(buildTranscriptViewModel(desktopState.transcriptMessages));
-  const transcriptMessages = $derived(transcriptView.messages);
+  const committedTranscriptView = $derived(buildTranscriptViewModel(desktopState.sessionReadModel.messages));
+  const liveTranscriptView = $derived(buildTranscriptViewModel(liveTranscriptMessages(desktopState.sessionReadModel)));
+  const transcriptMessages = $derived([
+    ...committedTranscriptView.messages,
+    ...liveTranscriptView.messages,
+  ]);
   const isThinking = $derived(desktopState.composerPhaseLine?.text === "Thinking…");
   const phaseTail = $derived.by(() => {
     const phase = desktopState.composerPhaseLine;

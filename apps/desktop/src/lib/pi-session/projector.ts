@@ -5,7 +5,7 @@ import {
   type SessionReadModel,
   type ToolActivity,
 } from "./read-model.js";
-import { cloneValue, getString, messageIdentity, toRecord } from "./utils.js";
+import { cloneValue, explicitMessageIdentity, getString, messageContentSignature, toRecord } from "./utils.js";
 
 const MAX_ACTIVITIES = 40;
 const MAX_NOTIFICATIONS = 8;
@@ -21,6 +21,9 @@ export function applySessionEvent(model: SessionReadModel, event: SessionDomainE
 
     case "run.ended":
       return applyRunEnded(next, event.messages, event.occurredAt);
+
+    case "run.failed":
+      return applyRunFailed(next, event.errorMessage, event.occurredAt);
 
     case "turn.started":
       return applyTurnStarted(next, event.occurredAt);
@@ -122,6 +125,17 @@ function applyRunEnded(model: SessionReadModel, messages: unknown[] | undefined,
   model.latestTurn = { state: "idle", startedAt: null };
   model.needsRunHousekeeping = true;
   return pushActivity(model, "run.ended", "Agent run ended", occurredAt);
+}
+
+function applyRunFailed(model: SessionReadModel, errorMessage: string, occurredAt: number): SessionReadModel {
+  model.isAgentRunning = false;
+  model.phase = model.isCompacting ? "compacting" : "idle";
+  model.streamingMessage = null;
+  model.streamingError = errorMessage;
+  model.tools = {};
+  model.latestTurn = { state: "idle", startedAt: null };
+  model.needsRunHousekeeping = true;
+  return pushActivity(model, "run.failed", errorMessage, occurredAt);
 }
 
 function applyTurnStarted(model: SessionReadModel, occurredAt: number): SessionReadModel {
@@ -318,8 +332,10 @@ function createToolExecutionMessage(tool: ToolActivity) {
 }
 
 function appendUniqueMessage(messages: unknown[], message: unknown): unknown[] {
-  const id = messageIdentity(message, `${messages.length}`);
-  const index = messages.findIndex((entry) => messageIdentity(entry, "") === id);
+  const explicitId = explicitMessageIdentity(message);
+  const index = explicitId
+    ? messages.findIndex((entry) => explicitMessageIdentity(entry) === explicitId)
+    : findRecentMessageBySignature(messages, message);
 
   if (index === -1) {
     return [...messages, cloneValue(message)];
@@ -328,6 +344,22 @@ function appendUniqueMessage(messages: unknown[], message: unknown): unknown[] {
   const next = [...messages];
   next[index] = cloneValue(message);
   return next;
+}
+
+function findRecentMessageBySignature(messages: unknown[], message: unknown): number {
+  const signature = messageContentSignature(message);
+
+  if (!signature) {
+    return -1;
+  }
+
+  for (let index = messages.length - 1; index >= Math.max(0, messages.length - 4); index -= 1) {
+    if (!explicitMessageIdentity(messages[index]) && messageContentSignature(messages[index]) === signature) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function pushActivity(model: SessionReadModel, type: string, detail: string, occurredAt: number): SessionReadModel {

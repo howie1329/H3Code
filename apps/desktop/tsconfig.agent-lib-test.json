@@ -11,5 +11,12 @@
       "$lib/*": ["src/lib/*"]
     }
   },
-  "include": ["src/app.d.ts", "src/lib/agent-adapters.ts", "src/lib/agent-adapters.test.ts", "src/lib/pi-model.ts"]
+  "include": [
+    "src/app.d.ts",
+    "src/lib/agent-adapters.ts",
+    "src/lib/agent-adapters.test.ts",
+    "src/lib/pi-model.ts",
+    "src/lib/components/desktop/custom/ask-user-question.ts",
+    "src/lib/components/desktop/custom/ask-user-question.test.ts"
+  ]
 }

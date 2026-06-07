@@ -5,7 +5,7 @@
   import AppCommandMenu from "$lib/components/desktop/AppCommandMenu.svelte";
   import AppSidebar from "$lib/components/desktop/AppSidebar.svelte";
   import { commandMenuController } from "$lib/command-menu-controller.svelte.js";
-  import ExtensionUiDialog from "$lib/components/desktop/ExtensionUiDialog.svelte";
+  import ExtensionUiHost from "$lib/components/desktop/ExtensionUiHost.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import "../app.css";
@@ -90,7 +90,7 @@
 
 <ModeWatcher />
 
-<ExtensionUiDialog />
+<ExtensionUiHost />
 
 <AppCommandMenu bind:open={commandMenuController.open} />
 

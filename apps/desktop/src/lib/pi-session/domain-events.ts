@@ -9,6 +9,7 @@ export type RetryPhase = "start" | "end";
 export type SessionDomainEvent =
   | { type: "run.started"; occurredAt: number }
   | { type: "run.ended"; messages?: unknown[]; occurredAt: number }
+  | { type: "run.failed"; errorMessage: string; occurredAt: number }
   | { type: "turn.started"; occurredAt: number }
   | {
       type: "turn.completed";

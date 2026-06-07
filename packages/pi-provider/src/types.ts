@@ -5,13 +5,13 @@ import type {
   ResourceLoader,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { SessionDomainEvent } from "@h3code/agent-core";
+import type { CustomOverlayOptions, SessionDomainEvent } from "@h3code/agent-core";
 
 export type PiProviderSessionMode = "create" | "open" | "continueRecent";
 export type PiProviderThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type PiProviderQueueMode = "all" | "one-at-a-time";
 export type PiProviderSendSource = "extension" | "prompt" | "skill" | "interactive";
-export type PiProviderUiRequestKind = "select" | "confirm" | "input" | "editor";
+export type PiProviderUiRequestKind = "select" | "confirm" | "input" | "editor" | "custom";
 
 export interface PiProviderSessionTarget {
   mode: PiProviderSessionMode;
@@ -37,6 +37,7 @@ export interface PiRuntimeFactoryOptions {
   modelRegistry?: ModelRegistry;
   resourceLoader?: ResourceLoader;
   settingsManager?: SettingsManager;
+  eventBus?: import("@earendil-works/pi-coding-agent").EventBus;
 }
 
 export type PiRuntimeFactory = (options: PiRuntimeFactoryOptions) => Promise<PiRuntimeLike>;
@@ -140,12 +141,16 @@ export interface PiProviderUiRequest {
   placeholder?: string;
   value?: string;
   options?: string[];
+  componentId?: string;
+  payload?: unknown;
+  overlay?: CustomOverlayOptions;
 }
 
 export type PiProviderUiResponse =
   | { requestId: string; kind: "select"; value?: string; canceled?: boolean }
   | { requestId: string; kind: "confirm"; accepted: boolean; canceled?: boolean }
-  | { requestId: string; kind: "input" | "editor"; value?: string; canceled?: boolean };
+  | { requestId: string; kind: "input" | "editor"; value?: string; canceled?: boolean }
+  | { requestId: string; kind: "custom"; value?: unknown; canceled?: boolean };
 
 type CoreCompatiblePiProviderEvent = Exclude<
   SessionDomainEvent,

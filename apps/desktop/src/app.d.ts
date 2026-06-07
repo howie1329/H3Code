@@ -166,12 +166,22 @@ declare global {
         method: "editor";
         title: string;
         prefill?: string;
+      }
+    | {
+        type: "extension_ui_request";
+        id: string;
+        agentId?: string;
+        method: "custom";
+        componentId: string;
+        payload: unknown;
+        overlay?: { anchor?: string; width?: string; maxHeight?: string };
       };
 
   type PiExtensionUiResponse =
-    | { type: "extension_ui_response"; id: string; value: string }
-    | { type: "extension_ui_response"; id: string; confirmed: boolean }
-    | { type: "extension_ui_response"; id: string; cancelled: true };
+    | { type: "extension_ui_response"; id: string; method?: "select" | "input" | "editor"; value: string }
+    | { type: "extension_ui_response"; id: string; method?: "confirm"; confirmed: boolean }
+    | { type: "extension_ui_response"; id: string; method: "custom"; value: unknown }
+    | { type: "extension_ui_response"; id: string; method?: PiExtensionUiRequest["method"]; cancelled: true };
 
   type DesktopPreferences = {
     recentRepos: RecentRepoPreference[];

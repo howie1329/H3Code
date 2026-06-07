@@ -1,5 +1,7 @@
+import { createEventBus } from "@earendil-works/pi-coding-agent";
 import { listPiCommands } from "./pi-commands.js";
 import { listPiModels } from "./pi-models.js";
+import { CustomUiCorrelation } from "./custom-ui-correlation.js";
 import { mapPiSessionEvent } from "./event-mapper.js";
 import { PiExtensionUiBridge } from "./extension-ui.js";
 import { createRealPiRuntime, withRuntimeDefaults } from "./runtime.js";
@@ -22,7 +24,9 @@ const defaultSession = { mode: "create" as const, sessionPath: undefined };
 export class PiSdkProvider {
   readonly #listeners = new Set<PiProviderEventListener>();
   readonly #runtimeFactory;
-  readonly #uiBridge = new PiExtensionUiBridge((event) => this.emit(event));
+  readonly #eventBus = createEventBus();
+  readonly #customUiCorrelation = new CustomUiCorrelation();
+  readonly #uiBridge = new PiExtensionUiBridge((event) => this.emit(event), this.#customUiCorrelation);
   readonly #options: PiProviderOptions;
   #runtime: PiRuntimeLike | undefined;
   #services: import("./types.js").PiRuntimeServices | undefined;
@@ -31,6 +35,9 @@ export class PiSdkProvider {
   constructor(options: PiProviderOptions) {
     this.#options = options;
     this.#runtimeFactory = options.runtimeFactory ?? createRealPiRuntime;
+    this.#eventBus.on("rpiv:ask-user:prompt", (data) => {
+      this.#customUiCorrelation.onExtensionEvent("rpiv:ask-user:prompt", data);
+    });
   }
 
   get runtime() {
@@ -58,6 +65,7 @@ export class PiSdkProvider {
         modelRegistry: this.#options.modelRegistry,
         resourceLoader: this.#options.resourceLoader,
         settingsManager: this.#options.settingsManager,
+        eventBus: this.#eventBus,
       }),
     );
 
@@ -247,6 +255,7 @@ export class PiSdkProvider {
   }
 
   async dispose() {
+    this.#customUiCorrelation.clear();
     this.#uiBridge.rejectAll(new Error("PI provider disposed while extension UI requests were pending."));
     this.#unsubscribe?.();
     this.#unsubscribe = undefined;
@@ -271,6 +280,11 @@ export class PiSdkProvider {
       },
     });
     this.#unsubscribe = session.subscribe((event) => {
+      const record = toRecord(event);
+      if (record.type === "tool_execution_start" && typeof record.toolName === "string") {
+        this.#customUiCorrelation.onToolExecutionStart(record.toolName, record.args);
+      }
+
       for (const mapped of mapPiSessionEvent(event)) {
         this.emit(mapped);
       }

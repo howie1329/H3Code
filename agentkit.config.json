@@ -1,0 +1,12 @@
+{
+  "installMode": "skill",
+  "agentkitVersion": "0.9.0-alpha.1",
+  "templateSet": "standard",
+  "aiTools": [
+    "codex",
+    "cursor",
+    "claude"
+  ],
+  "designSystem": "linear",
+  "preset": "next"
+}

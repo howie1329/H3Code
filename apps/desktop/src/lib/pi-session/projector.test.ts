@@ -115,6 +115,48 @@ test("projector commits turn before run end and tracks live tool output", () => 
   assert.equal(model.messages.length, 3);
 });
 
+test("run.failed unlocks the read model and preserves error", () => {
+  let model = createInitialSessionReadModel();
+
+  model = applySessionEvent(model, { type: "run.started", occurredAt: 1 });
+  model = applySessionEvent(model, {
+    type: "message.streaming",
+    phase: "update",
+    message: { role: "assistant", content: "partial" },
+    occurredAt: 2,
+  });
+  model = applySessionEvent(model, { type: "run.failed", errorMessage: "model failed", occurredAt: 3 });
+
+  assert.equal(model.isAgentRunning, false);
+  assert.equal(model.phase, "idle");
+  assert.equal(model.streamingMessage, null);
+  assert.equal(model.streamingError, "model failed");
+  assert.equal(Object.keys(model.tools).length, 0);
+  assert.equal(model.needsRunHousekeeping, true);
+});
+
+test("deduplicates id-less assistant message_end and turn_end", () => {
+  let model = createInitialSessionReadModel();
+
+  model = applySessionEvent(
+    model,
+    piRpcToDomainEvents({
+      type: "message_end",
+      message: { role: "assistant", content: "Finished without an id" },
+    })[0]!,
+  );
+  model = applySessionEvent(
+    model,
+    piRpcToDomainEvents({
+      type: "turn_end",
+      message: { role: "assistant", content: "Finished without an id" },
+    })[0]!,
+  );
+
+  assert.equal(model.messages.length, 1);
+  assert.deepEqual(model.messages[0], { role: "assistant", content: "Finished without an id" });
+});
+
 test("hydrates snapshot and surfaces queue, compaction, retry, and status strip", () => {
   let model = createInitialSessionReadModel();
 

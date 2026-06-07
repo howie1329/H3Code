@@ -120,15 +120,19 @@ Use TanStack Router `beforeLoad` (or equivalent) per runtime.
 
 | Path | Purpose |
 |------|---------|
-| `/login` | Clerk sign-in |
-| `/repos` | GitHub repo picker |
-| `/session/$sessionId` | Active cloud workspace |
-| `/` | Redirect: authed → repos; else login |
+| `/` | Clerk sign-in (public) |
+| `/app` | Workspace landing (app shell; no active session) |
+| `/app/sessions/$sessionId` | Active cloud workspace |
+| `/app/settings` | Account and GitHub integrations |
+
+Repo selection and “add repository” live in the **sidebar** (modal/popover), not a dedicated route.
+
+Post-login redirect → `/app`. Protect the `/app` layout route:
 
 ```ts
 beforeLoad: async () => {
   if (getRuntime() !== "cloud") return;
-  if (!await isSignedIn()) throw redirect({ to: "/login" });
+  if (!await isSignedIn()) throw redirect({ to: "/" });
 };
 ```
 
@@ -147,7 +151,7 @@ beforeLoad: () => {
 };
 ```
 
-Same `/session/$sessionId` path **shape** is fine; loaders call different runtime hooks.
+Same session URL **shape** under each runtime’s app prefix is fine; loaders call different runtime hooks (cloud: `/app/sessions/$sessionId`, desktop: e.g. `/session/$sessionId`).
 
 ## Data Hooks Pattern
 

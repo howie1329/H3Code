@@ -7,7 +7,9 @@
   let inputValue = $state("");
   let editorValue = $state("");
 
-  const request = $derived(desktopState.extensionUiRequest);
+  const request = $derived(
+    desktopState.extensionUiRequest?.method === "custom" ? undefined : desktopState.extensionUiRequest,
+  );
   const open = $derived(Boolean(request));
 
   $effect(() => {
@@ -35,7 +37,7 @@
       return;
     }
 
-    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, cancelled: true });
+    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, method: request.method, cancelled: true });
     close();
   }
 
@@ -44,7 +46,7 @@
       return;
     }
 
-    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, value: option });
+    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, method: "select", value: option });
     close();
   }
 
@@ -53,7 +55,7 @@
       return;
     }
 
-    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, value: inputValue });
+    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, method: "input", value: inputValue });
     close();
   }
 
@@ -62,7 +64,7 @@
       return;
     }
 
-    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, value: editorValue });
+    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, method: "editor", value: editorValue });
     close();
   }
 
@@ -71,7 +73,7 @@
       return;
     }
 
-    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, confirmed });
+    desktopState.respondToExtensionUi({ type: "extension_ui_response", id: request.id, method: "confirm", confirmed });
     close();
   }
 </script>
@@ -80,18 +82,20 @@
   <Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && cancel()}>
     <Dialog.Content>
       <Dialog.Header>
-        <Dialog.Title>{request.title}</Dialog.Title>
+        <Dialog.Title class="whitespace-pre-wrap break-words">{request.title}</Dialog.Title>
         {#if request.method === "confirm"}
-          <Dialog.Description>{request.message}</Dialog.Description>
+          <Dialog.Description class="whitespace-pre-wrap break-words">{request.message}</Dialog.Description>
         {:else if request.method === "input" && request.placeholder}
-          <Dialog.Description>{request.placeholder}</Dialog.Description>
+          <Dialog.Description class="whitespace-pre-wrap break-words">{request.placeholder}</Dialog.Description>
         {/if}
       </Dialog.Header>
 
       {#if request.method === "select"}
         <div class="flex max-h-64 flex-col gap-1 overflow-y-auto">
           {#each request.options as option (option)}
-            <Button variant="outline" class="h-9 justify-start" onclick={() => confirmSelect(option)}>{option}</Button>
+            <Button variant="outline" class="h-auto min-h-9 justify-start whitespace-normal text-left" onclick={() => confirmSelect(option)}
+              >{option}</Button
+            >
           {/each}
         </div>
       {:else if request.method === "input"}
