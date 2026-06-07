@@ -1,4 +1,4 @@
-import type { MockTranscriptMessage } from '#/lib/mock/types.ts'
+import type { TranscriptMessage } from '#/lib/session/types.ts'
 
 const DIFF_TOOL_NAMES = new Set([
   'StrReplace',
@@ -9,13 +9,13 @@ const DIFF_TOOL_NAMES = new Set([
 ])
 
 export function sessionHasDiff(
-  messages: readonly MockTranscriptMessage[],
+  messages: readonly TranscriptMessage[],
 ): boolean {
   return collectSessionChangedPaths(messages).length > 0
 }
 
 export function collectSessionChangedPaths(
-  messages: readonly MockTranscriptMessage[],
+  messages: readonly TranscriptMessage[],
 ): string[] {
   const paths = new Set<string>()
 

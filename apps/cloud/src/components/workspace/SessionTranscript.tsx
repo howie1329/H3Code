@@ -35,13 +35,13 @@ import {
   toolResultText,
 } from '#/lib/session/transcript-model.ts'
 import type {
-  MockTranscriptMessage,
-  MockTranscriptToolResultMessage,
-} from '#/lib/mock/types.ts'
+  TranscriptMessage,
+  TranscriptToolResultMessage,
+} from '#/lib/session/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 type SessionTranscriptProps = {
-  messages: readonly MockTranscriptMessage[]
+  messages: readonly TranscriptMessage[]
   isStreaming?: boolean
   isCompacting?: boolean
 }
@@ -107,8 +107,8 @@ function SessionTranscriptItem({
   message,
   toolResults,
 }: {
-  message: MockTranscriptMessage
-  toolResults: ReadonlyMap<string, MockTranscriptToolResultMessage>
+  message: TranscriptMessage
+  toolResults: ReadonlyMap<string, TranscriptToolResultMessage>
 }) {
   if (message.role === 'toolResult') {
     return null

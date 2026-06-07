@@ -9,6 +9,8 @@
  */
 
 import type * as github from "../github.js";
+import type * as lib_auth from "../lib/auth.js";
+import type * as sessions from "../sessions.js";
 import type * as users from "../users.js";
 
 import type {
@@ -19,6 +21,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   github: typeof github;
+  "lib/auth": typeof lib_auth;
+  sessions: typeof sessions;
   users: typeof users;
 }>;
 

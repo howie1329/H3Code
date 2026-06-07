@@ -1,9 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
+import type { FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { AlertCircleIcon, ArrowUpIcon, FolderPlusIcon } from 'lucide-react'
 
+import type { PromptInputMessage } from '#/components/ai-elements/prompt-input.tsx'
 import {
   PromptInput,
   PromptInputBody,
@@ -11,17 +20,13 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
-  type PromptInputMessage,
 } from '#/components/ai-elements/prompt-input.tsx'
 import { LandingRepoSelector } from '#/components/workspace/LandingRepoSelector.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import { Kbd } from '#/components/ui/kbd.tsx'
 import { Skeleton } from '#/components/ui/skeleton.tsx'
-import {
-  getDefaultMockRepositoryId,
-  listMockRepositories,
-} from '#/lib/mock/index.ts'
-import type { MockRepository } from '#/lib/mock/types.ts'
+import { getDefaultRepositoryId } from '#/lib/session/repositories.ts'
+import type { WorkspaceRepository } from '#/lib/session/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 const landingStackClass = cn(
@@ -55,21 +60,27 @@ type WorkspaceLandingProps = {
   isLoadingWorkspace?: boolean
   /** Pre-select a repository from navigation (e.g. sidebar new-session link). */
   initialRepositoryId?: string
-  repositories?: readonly MockRepository[]
+  repositories?: readonly WorkspaceRepository[]
+  onCreateSession?: (
+    repositoryId: string,
+    baseBranch: string,
+    prompt: string,
+  ) => Promise<string>
 }
 
 export function WorkspaceLanding({
   isLoadingWorkspace = false,
   initialRepositoryId,
-  repositories = listMockRepositories(),
+  repositories = [],
+  onCreateSession,
 }: WorkspaceLandingProps) {
   const navigate = useNavigate()
   const enterHintId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [prompt, setPrompt] = useState('')
-  const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | undefined>(
-    () => getDefaultMockRepositoryId(repositories),
-  )
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState<
+    string | undefined
+  >(() => getDefaultRepositoryId(repositories))
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -85,8 +96,15 @@ export function WorkspaceLanding({
       isLoadingWorkspace ||
       !hasRepositories ||
       !hasSelectedRepository ||
+      isSubmitting ||
+      !onCreateSession,
+    [
+      hasRepositories,
+      hasSelectedRepository,
+      isLoadingWorkspace,
       isSubmitting,
-    [hasRepositories, hasSelectedRepository, isLoadingWorkspace, isSubmitting],
+      onCreateSession,
+    ],
   )
 
   const canSubmit = useMemo(
@@ -94,7 +112,8 @@ export function WorkspaceLanding({
     [composerDisabled, prompt],
   )
 
-  const showEnterHint = hasSelectedRepository && !isLoadingWorkspace && hasRepositories
+  const showEnterHint =
+    hasSelectedRepository && !isLoadingWorkspace && hasRepositories
 
   const placeholder = useMemo(() => {
     if (isLoadingWorkspace) {
@@ -140,7 +159,7 @@ export function WorkspaceLanding({
         return current
       }
 
-      return getDefaultMockRepositoryId(repositories)
+      return getDefaultRepositoryId(repositories)
     })
   }, [hasRepositories, repositories])
 
@@ -155,14 +174,24 @@ export function WorkspaceLanding({
   }, [hasRepositories, initialRepositoryId, repositories])
 
   function handleAddRepository() {
-    void navigate({ to: '/app' })
+    void navigate({ to: '/app/settings' })
   }
 
-  async function handleSubmit(message: PromptInputMessage, event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(
+    message: PromptInputMessage,
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault()
 
-    const text = message.text?.trim() ?? prompt.trim()
-    if (!selectedRepositoryId || !text || isSubmitting || composerDisabled) {
+    const text = (message.text || prompt).trim()
+    if (
+      !selectedRepositoryId ||
+      !selectedRepository ||
+      !text ||
+      isSubmitting ||
+      composerDisabled ||
+      !onCreateSession
+    ) {
       return
     }
 
@@ -170,11 +199,22 @@ export function WorkspaceLanding({
     setIsSubmitting(true)
 
     try {
-      // Session create + navigation — wired in a later pass.
-      await new Promise((resolve) => setTimeout(resolve, 400))
+      const sessionId = await onCreateSession(
+        selectedRepositoryId,
+        selectedRepository.defaultBranch,
+        text,
+      )
       setPrompt('')
-    } catch {
-      setErrorMessage('Could not start session. Try again.')
+      await navigate({
+        to: '/app/sessions/$sessionId',
+        params: { sessionId },
+      })
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Could not start session. Try again.',
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -204,7 +244,11 @@ export function WorkspaceLanding({
         ) : null}
 
         {isLoadingWorkspace ? (
-          <div className="space-y-2" aria-busy="true" aria-label="Loading workspace">
+          <div
+            className="space-y-2"
+            aria-busy="true"
+            aria-label="Loading workspace"
+          >
             <Skeleton className="h-[7.5rem] w-full rounded-lg" />
             <Skeleton className="mx-auto h-3 w-32 rounded-md" />
           </div>
@@ -222,12 +266,16 @@ export function WorkspaceLanding({
                   Add repository…
                 </Button>
                 <p className="max-w-sm text-[11px] leading-snug text-muted-foreground">
-                  Choose a repository for Pi to work in.
+                  Sync GitHub in Settings, then choose a repository for Pi to
+                  work in.
                 </p>
               </div>
             ) : null}
 
-            <PromptInput className={landingPromptInputClass} onSubmit={handleSubmit}>
+            <PromptInput
+              className={landingPromptInputClass}
+              onSubmit={handleSubmit}
+            >
               <PromptInputBody>
                 <label htmlFor="workspace-landing-prompt" className="sr-only">
                   Prompt
@@ -251,7 +299,7 @@ export function WorkspaceLanding({
                     repositories={repositories}
                     value={selectedRepositoryId}
                     onValueChange={setSelectedRepositoryId}
-                    disabled={isSubmitting || isLoadingWorkspace || !hasRepositories}
+                    disabled={isSubmitting || !hasRepositories}
                   />
                 </PromptInputTools>
 

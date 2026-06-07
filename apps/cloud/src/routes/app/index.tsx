@@ -1,11 +1,10 @@
-import { useMemo } from 'react'
-import { useQuery } from 'convex/react'
+import { useCallback, useMemo } from 'react'
+import { useMutation, useQuery } from 'convex/react'
 import { createFileRoute } from '@tanstack/react-router'
 
 import { api } from '../../../convex/_generated/api'
-
 import { WorkspaceLanding } from '#/components/workspace/WorkspaceLanding.tsx'
-import type { MockRepository } from '#/lib/mock/types.ts'
+import { mapGithubRepositories } from '#/lib/session/repositories.ts'
 
 type AppWorkspaceSearch = {
   repo?: string
@@ -24,15 +23,24 @@ export const Route = createFileRoute('/app/')({
 function AppWorkspaceLandingRoute() {
   const { repo } = Route.useSearch()
   const githubState = useQuery(api.github.getConnection)
-  const repositories = useMemo<MockRepository[]>(
-    () =>
-      githubState?.repositories.map((repository) => ({
-        defaultBranch: repository.defaultBranch ?? 'main',
-        id: repository.fullName,
-        name: repository.name,
-        owner: repository.ownerLogin,
-      })) ?? [],
+  const createSession = useMutation(api.sessions.create)
+
+  const repositories = useMemo(
+    () => mapGithubRepositories(githubState?.repositories ?? []),
     [githubState?.repositories],
+  )
+
+  const handleCreateSession = useCallback(
+    async (repositoryId: string, baseBranch: string, prompt: string) => {
+      const result = await createSession({
+        repositoryFullName: repositoryId,
+        baseBranch,
+        initialPrompt: prompt,
+      })
+
+      return result.sessionId
+    },
+    [createSession],
   )
 
   return (
@@ -40,6 +48,7 @@ function AppWorkspaceLandingRoute() {
       initialRepositoryId={repo}
       isLoadingWorkspace={githubState === undefined}
       repositories={repositories}
+      onCreateSession={handleCreateSession}
     />
   )
 }

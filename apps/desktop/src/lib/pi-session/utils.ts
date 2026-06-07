@@ -11,6 +11,10 @@ export function nowMs(): number {
 }
 
 export function messageIdentity(message: unknown, fallback: string): string {
+  return explicitMessageIdentity(message) ?? fallback;
+}
+
+export function explicitMessageIdentity(message: unknown): string | undefined {
   const record = toRecord(message);
   const rawId = record.id ?? record.messageId ?? record.uuid;
 
@@ -18,7 +22,42 @@ export function messageIdentity(message: unknown, fallback: string): string {
     return String(rawId);
   }
 
-  return fallback;
+  return undefined;
+}
+
+export function messageContentSignature(message: unknown): string | undefined {
+  const record = toRecord(message);
+  const role = record.role;
+  const text = extractMessageText(record);
+
+  if ((typeof role !== "string" && typeof role !== "number") || !text.trim()) {
+    return undefined;
+  }
+
+  return `${String(role)}:${text}`;
+}
+
+function extractMessageText(record: Record<string, unknown>): string {
+  const direct = record.text ?? record.content;
+
+  if (typeof direct === "string") {
+    return direct;
+  }
+
+  if (Array.isArray(direct)) {
+    return direct
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+
+        const partRecord = toRecord(part);
+        return typeof partRecord.text === "string" ? partRecord.text : "";
+      })
+      .join("\n");
+  }
+
+  return "";
 }
 
 export function cloneValue(value: unknown): unknown {

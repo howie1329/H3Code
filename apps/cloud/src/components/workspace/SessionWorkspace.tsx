@@ -2,6 +2,10 @@
 
 import { useMemo } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useMutation, useQuery } from 'convex/react'
+
+import { api } from '../../../convex/_generated/api'
+import type { Id } from '../../../convex/_generated/dataModel'
 
 import { SessionComposer } from '#/components/workspace/SessionComposer.tsx'
 import { SessionDiffPanel } from '#/components/workspace/SessionDiffPanel.tsx'
@@ -13,15 +17,16 @@ import {
   useSessionWorkspace,
 } from '#/components/workspace/session-workspace-context.tsx'
 import { Button } from '#/components/ui/button.tsx'
+import { Skeleton } from '#/components/ui/skeleton.tsx'
+import {
+  mapConvexMessagesToTranscript,
+  mapSessionStatus,
+  repositoryFullName,
+} from '#/lib/session/convex-mappers.ts'
 import {
   collectSessionChangedPaths,
   sessionHasDiff,
 } from '#/lib/session/session-diff.ts'
-import {
-  getMockSession,
-  getMockSessionDetail,
-  listMockRepositories,
-} from '#/lib/mock/index.ts'
 
 type SessionWorkspaceProps = {
   sessionId: string
@@ -36,31 +41,69 @@ export function SessionWorkspace({ sessionId }: SessionWorkspaceProps) {
 }
 
 function SessionWorkspaceContent({ sessionId }: SessionWorkspaceProps) {
-  const session = getMockSession(sessionId)
-  const detail = getMockSessionDetail(sessionId)
+  const sessionData = useQuery(api.sessions.get, {
+    sessionId: sessionId as Id<'sessions'>,
+  })
+  const sendMessage = useMutation(api.sessions.sendMessage)
   const { activePanel } = useSessionWorkspace()
 
-  const repositoryName = useMemo(() => {
-    if (!session) {
-      return undefined
-    }
+  const messages = useMemo(
+    () =>
+      sessionData?.messages
+        ? mapConvexMessagesToTranscript(sessionData.messages)
+        : [],
+    [sessionData?.messages],
+  )
 
-    return listMockRepositories().find(
-      (repo) => repo.id === session.repositoryId,
-    )?.name
-  }, [session])
+  const detail = useMemo(
+    () => ({
+      messages,
+      steering: [] as const,
+      followUp: [] as const,
+      isStreaming: false,
+      isCompacting: false,
+    }),
+    [messages],
+  )
+
+  const repoFullName = useMemo(
+    () =>
+      sessionData?.session
+        ? repositoryFullName(
+            sessionData.session.githubOwner,
+            sessionData.session.githubRepo,
+          )
+        : undefined,
+    [sessionData?.session],
+  )
+
+  const repositoryName = sessionData?.session.githubRepo
 
   const changedPaths = useMemo(
-    () => (detail ? collectSessionChangedPaths(detail.messages) : []),
-    [detail],
+    () => collectSessionChangedPaths(detail.messages),
+    [detail.messages],
   )
 
   const hasDiff = useMemo(
-    () => (detail ? sessionHasDiff(detail.messages) : false),
-    [detail],
+    () => sessionHasDiff(detail.messages),
+    [detail.messages],
   )
 
-  if (!session || !detail) {
+  if (sessionData === undefined) {
+    return (
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex h-10 shrink-0 items-center border-b border-border/60 px-4">
+          <Skeleton className="h-4 w-40" />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+          <Skeleton className="h-24 w-full max-w-xl" />
+          <Skeleton className="h-24 w-full max-w-lg" />
+        </div>
+      </main>
+    )
+  }
+
+  if (sessionData === null) {
     return (
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 py-10 text-center">
         <div className="space-y-1">
@@ -78,8 +121,8 @@ function SessionWorkspaceContent({ sessionId }: SessionWorkspaceProps) {
     )
   }
 
-  const title = session.summary.title ?? session.id
-  const status = session.summary.status ?? 'idle'
+  const title = sessionData.session.title ?? sessionId
+  const status = mapSessionStatus(sessionData.session.status)
 
   return (
     <main
@@ -98,8 +141,11 @@ function SessionWorkspaceContent({ sessionId }: SessionWorkspaceProps) {
           <SessionComposer
             sessionTitle={title}
             isStreaming={detail.isStreaming}
-            onSubmit={async () => {
-              // Steer / send — wired when Convex session mutations land.
+            onSubmit={async (text) => {
+              await sendMessage({
+                sessionId: sessionId as Id<'sessions'>,
+                text,
+              })
             }}
             onStop={() => {
               // Abort — wired when cloud sandbox control lands.
@@ -107,11 +153,13 @@ function SessionWorkspaceContent({ sessionId }: SessionWorkspaceProps) {
           />
         </div>
 
-        {activePanel === 'context' ? (
+        {activePanel === 'context' && repoFullName ? (
           <SessionInspector
-            session={session}
-            detail={detail}
+            title={title}
+            status={status}
+            repositoryFullName={repoFullName}
             repositoryName={repositoryName}
+            detail={detail}
           />
         ) : null}
 

@@ -1,12 +1,12 @@
 import type {
-  MockTranscriptMessage,
-  MockTranscriptToolResultMessage,
-} from '#/lib/mock/types.ts'
+  TranscriptMessage,
+  TranscriptToolResultMessage,
+} from '#/lib/session/types.ts'
 
 export function buildToolResultIndex(
-  messages: readonly MockTranscriptMessage[],
-): ReadonlyMap<string, MockTranscriptToolResultMessage> {
-  const index = new Map<string, MockTranscriptToolResultMessage>()
+  messages: readonly TranscriptMessage[],
+): ReadonlyMap<string, TranscriptToolResultMessage> {
+  const index = new Map<string, TranscriptToolResultMessage>()
 
   for (const message of messages) {
     if (message.role === 'toolResult') {
@@ -34,11 +34,6 @@ export function toolCallTitle(
   return name
 }
 
-export function toolResultText(
-  result: MockTranscriptToolResultMessage,
-): string {
-  return result.content
-    .filter((part) => part.type === 'text')
-    .map((part) => part.text)
-    .join('\n')
+export function toolResultText(result: TranscriptToolResultMessage): string {
+  return result.content.map((part) => part.text).join('\n')
 }

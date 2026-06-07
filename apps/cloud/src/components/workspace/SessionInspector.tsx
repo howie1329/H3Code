@@ -1,15 +1,18 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import type { SessionStatus } from '@h3code/agent-core'
 
 import { Badge } from '#/components/ui/badge.tsx'
-import type { MockSession, MockSessionDetail } from '#/lib/mock/types.ts'
+import type { SessionDetail } from '#/lib/session/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 type SessionInspectorProps = {
-  session: MockSession
-  detail: MockSessionDetail
+  title: string
+  status: SessionStatus
+  repositoryFullName: string
   repositoryName?: string
+  detail: SessionDetail
   className?: string
 }
 
@@ -47,13 +50,13 @@ function InspectorList({ items }: { items: readonly string[] }) {
 }
 
 export function SessionInspector({
-  session,
-  detail,
+  title,
+  status,
+  repositoryFullName,
   repositoryName,
+  detail,
   className,
 }: SessionInspectorProps) {
-  const { summary } = session
-  const status = summary.status ?? 'idle'
   const messageCount = detail.messages.length
 
   return (
@@ -67,7 +70,7 @@ export function SessionInspector({
       <InspectorSection title="Session">
         <div className="space-y-2">
           <p className="text-xs font-medium leading-snug text-foreground">
-            {summary.title ?? session.id}
+            {title}
           </p>
           <Badge variant="outline" className="text-[10px]">
             {status}
@@ -80,17 +83,15 @@ export function SessionInspector({
           <div>
             <dt className="text-muted-foreground">Name</dt>
             <dd className="mt-0.5 font-mono leading-snug text-foreground">
-              {repositoryName ?? session.repositoryId}
+              {repositoryName ?? repositoryFullName}
             </dd>
           </div>
-          {summary.repoPath ? (
-            <div>
-              <dt className="text-muted-foreground">Path</dt>
-              <dd className="mt-0.5 break-all font-mono leading-snug text-foreground">
-                {summary.repoPath}
-              </dd>
-            </div>
-          ) : null}
+          <div>
+            <dt className="text-muted-foreground">Full name</dt>
+            <dd className="mt-0.5 break-all font-mono leading-snug text-foreground">
+              {repositoryFullName}
+            </dd>
+          </div>
         </dl>
       </InspectorSection>
 

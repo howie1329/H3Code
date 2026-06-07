@@ -131,6 +131,9 @@ class DesktopState {
   reconcileInFlight = false;
   reconcileAgain = false;
   diffRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  runEndedHousekeepingTimer: ReturnType<typeof setTimeout> | undefined;
+  pendingStreamingUpdates = new Map<string, AgentSessionEvent>();
+  streamingUpdateFrame: ReturnType<typeof requestAnimationFrame> | undefined;
 
   selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
   canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
@@ -1301,6 +1304,17 @@ class DesktopState {
   }
 
   handleSessionEvent(event: AgentSessionEvent) {
+    if (event.type === "message.streaming" && event.phase === "update" && !event.errorMessage) {
+      this.queueStreamingUpdate(event);
+      return;
+    }
+
+    this.flushStreamingUpdate(event.agentId ?? this.activeAgentId);
+
+    this.applySessionEventNow(event);
+  }
+
+  applySessionEventNow(event: AgentSessionEvent) {
     const agentId = event.agentId ?? this.activeAgentId;
     const currentModel = agentId
       ? (this.agentReadModels[agentId] ?? (agentId === this.activeAgentId ? this.sessionReadModel : createInitialSessionReadModel()))
@@ -1315,7 +1329,7 @@ class DesktopState {
     }
 
     if (agentId && this.activeAgentId && agentId !== this.activeAgentId) {
-      if (event.type === "run.started" || event.type === "run.ended") {
+      if (event.type === "run.started" || event.type === "run.ended" || event.type === "run.failed") {
         void this.syncSidebarSessionsForAgent(agentId);
       }
       return;
@@ -1332,7 +1346,7 @@ class DesktopState {
       void this.syncSidebarSessionsForAgent(agentId);
     }
 
-    if (event.type === "run.ended") {
+    if (event.type === "run.ended" || event.type === "run.failed") {
       this.setSessionStreaming(false);
     }
 
@@ -1347,10 +1361,58 @@ class DesktopState {
     }
 
     if (this.sessionReadModel.needsRunHousekeeping) {
-      void this.reconcileRunEnded();
+      this.scheduleRunEndedHousekeeping();
     }
 
-    this.cacheCurrentSession();
+    if (event.type !== "message.streaming" || event.phase !== "update") {
+      this.cacheCurrentSession();
+    }
+  }
+
+  queueStreamingUpdate(event: AgentSessionEvent) {
+    const agentId = event.agentId ?? this.activeAgentId ?? "__active__";
+    this.pendingStreamingUpdates.set(agentId, event);
+
+    if (this.streamingUpdateFrame !== undefined) {
+      return;
+    }
+
+    const scheduleFrame = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (callback: FrameRequestCallback) => setTimeout(() => callback(Date.now()), 16) as unknown as number;
+
+    this.streamingUpdateFrame = scheduleFrame(() => {
+      this.streamingUpdateFrame = undefined;
+      const updates = [...this.pendingStreamingUpdates.values()];
+      this.pendingStreamingUpdates.clear();
+
+      for (const update of updates) {
+        this.applySessionEventNow(update);
+      }
+    });
+  }
+
+  flushStreamingUpdate(agentId: string | undefined) {
+    const key = agentId ?? "__active__";
+    const pending = this.pendingStreamingUpdates.get(key);
+
+    if (!pending) {
+      return;
+    }
+
+    this.pendingStreamingUpdates.delete(key);
+    this.applySessionEventNow(pending);
+  }
+
+  scheduleRunEndedHousekeeping() {
+    if (this.runEndedHousekeepingTimer !== undefined) {
+      clearTimeout(this.runEndedHousekeepingTimer);
+    }
+
+    this.runEndedHousekeepingTimer = setTimeout(() => {
+      this.runEndedHousekeepingTimer = undefined;
+      void this.reconcileRunEnded();
+    }, 100);
   }
 
   async reconcileRunEnded() {

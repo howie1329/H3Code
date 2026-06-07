@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useQuery } from 'convex/react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
   ChevronDownIcon,
@@ -42,8 +43,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '#/components/ui/tooltip.tsx'
-import { listMockRepositories, listMockSessions } from '#/lib/mock/index.ts'
-import type { MockSession } from '#/lib/mock/types.ts'
+import { api } from '../../../convex/_generated/api'
+
+import { toSidebarSession } from '#/lib/session/convex-mappers.ts'
+import { mapGithubRepositories } from '#/lib/session/repositories.ts'
+import type { SidebarSession } from '#/lib/session/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 const sidebarInset = 'px-2'
@@ -210,11 +214,11 @@ function ThemeToggleButton() {
   )
 }
 
-function SessionSidebarLink({ session }: { session: MockSession }) {
+function SessionSidebarLink({ session }: { session: SidebarSession }) {
   const activeSessionId = useActiveSessionId()
   const isActive = activeSessionId === session.id
   const title = session.summary.title ?? session.id
-  const statusLabel = session.summary.status ?? 'idle'
+  const statusLabel = session.summary.status
 
   return (
     <SidebarMenuSubItem>
@@ -253,7 +257,7 @@ function RepositoryCollapsible({
 }: {
   repositoryId: string
   name: string
-  sessions: readonly MockSession[]
+  sessions: readonly SidebarSession[]
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = React.useState(defaultOpen)
@@ -333,19 +337,49 @@ function RepositoriesEmptyState() {
         className="h-7 w-full justify-start gap-2 border-sidebar-border px-2 text-[11px] shadow-none active:translate-y-px motion-reduce:active:translate-y-0"
         asChild
       >
-        <Link to="/app">
+        <Link to="/app/settings">
           <PlusIcon className={iconClass} aria-hidden />
-          Add repository
+          Sync GitHub
         </Link>
       </Button>
     </div>
   )
 }
 
+function groupSessionsByRepository(
+  sessions: readonly SidebarSession[],
+): Map<string, SidebarSession[]> {
+  const grouped = new Map<string, SidebarSession[]>()
+
+  for (const session of sessions) {
+    const existing = grouped.get(session.repositoryId) ?? []
+    existing.push(session)
+    grouped.set(session.repositoryId, existing)
+  }
+
+  return grouped
+}
+
 export function AppSidebar() {
   const iconRail = useIconRail()
   const isSettingsActive = useIsSettingsRoute()
-  const repositories = listMockRepositories()
+  const githubState = useQuery(api.github.getConnection)
+  const sessionRows = useQuery(api.sessions.listForUser) ?? []
+
+  const repositories = React.useMemo(
+    () => mapGithubRepositories(githubState?.repositories ?? []),
+    [githubState?.repositories],
+  )
+
+  const sessionsByRepository = React.useMemo(() => {
+    const sidebarSessions = sessionRows
+      .map((session) => toSidebarSession(session))
+      .filter((session): session is SidebarSession => session !== null)
+
+    return groupSessionsByRepository(sidebarSessions)
+  }, [sessionRows])
+
+  const isLoadingRepositories = githubState === undefined
   const hasRepositories = repositories.length > 0
 
   return (
@@ -396,7 +430,11 @@ export function AppSidebar() {
                   sidebarInset,
                 )}
               >
-                {!hasRepositories ? (
+                {isLoadingRepositories ? (
+                  <p className={cn('px-2 py-6', metaClass)}>
+                    Loading repositories…
+                  </p>
+                ) : !hasRepositories ? (
                   <RepositoriesEmptyState />
                 ) : (
                   <SidebarMenu className="gap-0.5">
@@ -405,7 +443,7 @@ export function AppSidebar() {
                         key={repo.id}
                         repositoryId={repo.id}
                         name={repo.name}
-                        sessions={listMockSessions(repo.id)}
+                        sessions={sessionsByRepository.get(repo.id) ?? []}
                         defaultOpen={repo.defaultOpen}
                       />
                     ))}
