@@ -9,7 +9,7 @@ import { api } from '../../../convex/_generated/api'
 import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert.tsx'
 import { Badge } from '#/components/ui/badge.tsx'
 import { Button } from '#/components/ui/button.tsx'
-import { loadGitHubSyncPayload } from '#/integrations/github/server.ts'
+import { loadGitHubConnectionPayload } from '#/integrations/github/server.ts'
 
 export const Route = createFileRoute('/app/settings')({
   head: () => ({
@@ -21,31 +21,30 @@ export const Route = createFileRoute('/app/settings')({
 function SettingsPage() {
   const { isAuthenticated, isLoading } = useConvexAuth()
   const githubState = useQuery(api.github.getConnection)
-  const syncRepositories = useMutation(api.github.syncRepositories)
-  const loadGitHubPayload = useServerFn(loadGitHubSyncPayload)
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const verifyConnection = useMutation(api.github.verifyConnection)
+  const loadGitHubPayload = useServerFn(loadGitHubConnectionPayload)
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
 
   const connection = githubState?.connection
-  const repositories = githubState?.repositories ?? []
   const status = connection?.status ?? 'token_unavailable'
   const isConnected = status === 'connected'
 
-  async function handleSyncGitHub() {
-    setIsSyncing(true)
-    setSyncError(null)
+  async function handleVerifyGitHub() {
+    setIsVerifying(true)
+    setVerifyError(null)
 
     try {
       const payload = await loadGitHubPayload()
-      await syncRepositories(payload)
+      await verifyConnection(payload)
     } catch (error) {
-      setSyncError(
+      setVerifyError(
         error instanceof Error
           ? error.message
-          : 'Could not sync GitHub repositories.',
+          : 'Could not verify GitHub connection.',
       )
     } finally {
-      setIsSyncing(false)
+      setIsVerifying(false)
     }
   }
 
@@ -82,7 +81,8 @@ function SettingsPage() {
               GitHub
             </h2>
             <p className="text-sm text-muted-foreground">
-              Sync repositories from the GitHub account connected through Clerk.
+              Verify the GitHub account connected through Clerk. Add repositories
+              to your workspace from the sidebar.
             </p>
           </div>
           <Badge variant={isConnected ? 'secondary' : 'outline'}>
@@ -106,18 +106,18 @@ function SettingsPage() {
             </AlertTitle>
             <AlertDescription>
               {isConnected
-                ? `${repositories.length} repositories synced.`
+                ? 'GitHub is ready. Use Add repository in the sidebar to choose repos for your workspace.'
                 : connection.errorMessage ??
-                  'Connect GitHub in Clerk and sync again.'}
+                  'Connect GitHub in Clerk and verify again.'}
             </AlertDescription>
           </Alert>
         ) : null}
 
-        {syncError ? (
+        {verifyError ? (
           <Alert variant="destructive">
             <TriangleAlertIcon aria-hidden />
-            <AlertTitle>Sync failed</AlertTitle>
-            <AlertDescription>{syncError}</AlertDescription>
+            <AlertTitle>Verification failed</AlertTitle>
+            <AlertDescription>{verifyError}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -129,14 +129,14 @@ function SettingsPage() {
             type="button"
             size="sm"
             className="gap-1.5"
-            disabled={isSyncing || isLoading || !isAuthenticated}
-            onClick={handleSyncGitHub}
+            disabled={isVerifying || isLoading || !isAuthenticated}
+            onClick={handleVerifyGitHub}
           >
             <RefreshCwIcon
-              className={isSyncing ? 'size-3.5 animate-spin' : 'size-3.5'}
+              className={isVerifying ? 'size-3.5 animate-spin' : 'size-3.5'}
               aria-hidden
             />
-            {isSyncing ? 'Syncing' : 'Sync GitHub'}
+            {isVerifying ? 'Verifying' : 'Verify GitHub'}
           </Button>
         </div>
       </section>

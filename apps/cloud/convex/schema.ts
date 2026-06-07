@@ -34,21 +34,6 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_clerk_user_id', ['clerkUserId']),
 
-  githubRepositories: defineTable({
-    clerkUserId: v.string(),
-    defaultBranch: v.optional(v.string()),
-    fullName: v.string(),
-    githubId: v.number(),
-    isPrivate: v.boolean(),
-    name: v.string(),
-    ownerLogin: v.string(),
-    pushedAt: v.optional(v.string()),
-    syncedAt: v.number(),
-    url: v.string(),
-  })
-    .index('by_clerk_user_id', ['clerkUserId'])
-    .index('by_clerk_user_id_full_name', ['clerkUserId', 'fullName']),
-
   users: defineTable({
     clerkUserId: v.string(),
     displayName: v.optional(v.string()),
@@ -82,4 +67,19 @@ export default defineSchema({
     content: v.string(),
     createdAt: v.number(),
   }).index('by_session_and_seq', ['sessionId', 'seq']),
+
+  workspaceRepositories: defineTable({
+    userId: v.id('users'),
+    fullName: v.string(),
+    name: v.string(),
+    ownerLogin: v.string(),
+    defaultBranch: v.string(),
+    githubId: v.number(),
+    isPrivate: v.boolean(),
+    url: v.string(),
+    sortOrder: v.number(),
+    addedAt: v.number(),
+  })
+    .index('by_user', ['userId'])
+    .index('by_user_full_name', ['userId', 'fullName']),
 })

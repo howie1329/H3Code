@@ -12,6 +12,7 @@ import type * as github from "../github.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as sessions from "../sessions.js";
 import type * as users from "../users.js";
+import type * as workspaceRepositories from "../workspaceRepositories.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   sessions: typeof sessions;
   users: typeof users;
+  workspaceRepositories: typeof workspaceRepositories;
 }>;
 
 /**

@@ -8,18 +8,9 @@ const connectionStatus = v.union(
   v.literal('token_unavailable'),
 )
 
-const repositoryInput = v.object({
-  defaultBranch: v.optional(v.string()),
-  fullName: v.string(),
-  githubId: v.number(),
-  isPrivate: v.boolean(),
-  name: v.string(),
-  ownerLogin: v.string(),
-  pushedAt: v.optional(v.string()),
-  url: v.string(),
-})
-
-async function getClerkUserId(ctx: { auth: { getUserIdentity: () => Promise<{ subject: string } | null> } }) {
+async function getClerkUserId(ctx: {
+  auth: { getUserIdentity: () => Promise<{ subject: string } | null> }
+}) {
   const identity = await ctx.auth.getUserIdentity()
   return identity?.subject ?? null
 }
@@ -28,10 +19,7 @@ export const getConnection = query({
   handler: async (ctx) => {
     const clerkUserId = await getClerkUserId(ctx)
     if (!clerkUserId) {
-      return {
-        connection: null,
-        repositories: [],
-      }
+      return { connection: null }
     }
 
     const connection = await ctx.db
@@ -39,21 +27,11 @@ export const getConnection = query({
       .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
       .unique()
 
-    const repositories = await ctx.db
-      .query('githubRepositories')
-      .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
-      .collect()
-
-    return {
-      connection,
-      repositories: repositories.sort((a, b) =>
-        a.fullName.localeCompare(b.fullName),
-      ),
-    }
+    return { connection }
   },
 })
 
-export const syncRepositories = mutation({
+export const verifyConnection = mutation({
   args: {
     connection: v.object({
       errorMessage: v.optional(v.string()),
@@ -62,7 +40,6 @@ export const syncRepositories = mutation({
       scopes: v.array(v.string()),
       status: connectionStatus,
     }),
-    repositories: v.array(repositoryInput),
     user: v.object({
       displayName: v.optional(v.string()),
       email: v.optional(v.string()),
@@ -72,7 +49,7 @@ export const syncRepositories = mutation({
   handler: async (ctx, args) => {
     const clerkUserId = await getClerkUserId(ctx)
     if (!clerkUserId) {
-      throw new Error('Sign in to sync GitHub repositories.')
+      throw new Error('Sign in to verify GitHub connection.')
     }
 
     const now = Date.now()
@@ -111,30 +88,6 @@ export const syncRepositories = mutation({
       await ctx.db.insert('githubConnections', connection)
     }
 
-    for (const repository of args.repositories) {
-      const existingRepository = await ctx.db
-        .query('githubRepositories')
-        .withIndex('by_clerk_user_id_full_name', (q) =>
-          q.eq('clerkUserId', clerkUserId).eq('fullName', repository.fullName),
-        )
-        .unique()
-
-      const nextRepository = {
-        clerkUserId,
-        ...repository,
-        syncedAt: now,
-      }
-
-      if (existingRepository) {
-        await ctx.db.patch(existingRepository._id, nextRepository)
-      } else {
-        await ctx.db.insert('githubRepositories', nextRepository)
-      }
-    }
-
-    return {
-      repositoryCount: args.repositories.length,
-      status: args.connection.status,
-    }
+    return { status: args.connection.status }
   },
 })

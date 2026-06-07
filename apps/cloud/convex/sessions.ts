@@ -146,23 +146,21 @@ export const create = mutation({
     initialPrompt: v.string(),
   },
   handler: async (ctx, args) => {
-    const { clerkUserId, userId } = await requireUser(ctx)
+    const { userId } = await requireUser(ctx)
     const prompt = args.initialPrompt.trim()
     if (!prompt) {
       throw new Error('Enter a prompt to start a session.')
     }
 
     const repository = await ctx.db
-      .query('githubRepositories')
-      .withIndex('by_clerk_user_id_full_name', (q) =>
-        q
-          .eq('clerkUserId', clerkUserId)
-          .eq('fullName', args.repositoryFullName),
+      .query('workspaceRepositories')
+      .withIndex('by_user_full_name', (q) =>
+        q.eq('userId', userId).eq('fullName', args.repositoryFullName),
       )
       .unique()
 
     if (!repository) {
-      throw new Error('Sync GitHub repositories before starting a session.')
+      throw new Error('Add this repository to your workspace first.')
     }
 
     const { githubOwner, githubRepo } = parseRepositoryFullName(

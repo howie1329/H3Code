@@ -25,6 +25,7 @@ import { LandingRepoSelector } from '#/components/workspace/LandingRepoSelector.
 import { Button } from '#/components/ui/button.tsx'
 import { Kbd } from '#/components/ui/kbd.tsx'
 import { Skeleton } from '#/components/ui/skeleton.tsx'
+import { useAddRepositoryDialog } from '#/components/workspace/add-repository-context.tsx'
 import { getDefaultRepositoryId } from '#/lib/session/repositories.ts'
 import type { WorkspaceRepository } from '#/lib/session/types.ts'
 import { cn } from '#/lib/utils.ts'
@@ -75,6 +76,7 @@ export function WorkspaceLanding({
   onCreateSession,
 }: WorkspaceLandingProps) {
   const navigate = useNavigate()
+  const { openAddRepositoryDialog } = useAddRepositoryDialog()
   const enterHintId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [prompt, setPrompt] = useState('')
@@ -174,7 +176,7 @@ export function WorkspaceLanding({
   }, [hasRepositories, initialRepositoryId, repositories])
 
   function handleAddRepository() {
-    void navigate({ to: '/app/settings' })
+    openAddRepositoryDialog()
   }
 
   async function handleSubmit(
@@ -266,8 +268,8 @@ export function WorkspaceLanding({
                   Add repository…
                 </Button>
                 <p className="max-w-sm text-[11px] leading-snug text-muted-foreground">
-                  Sync GitHub in Settings, then choose a repository for Pi to
-                  work in.
+                  Add a repository from GitHub, then choose one for Pi to work
+                  in.
                 </p>
               </div>
             ) : null}

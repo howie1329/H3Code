@@ -1,18 +1,17 @@
 import { createServerFn } from '@tanstack/react-start'
 import { auth, clerkClient } from '@clerk/tanstack-react-start/server'
 
-type GitHubRepository = {
-  defaultBranch?: string
+export type GitHubRepository = {
+  defaultBranch: string
   fullName: string
   githubId: number
   isPrivate: boolean
   name: string
   ownerLogin: string
-  pushedAt?: string
   url: string
 }
 
-type GitHubSyncPayload = {
+type GitHubConnectionPayload = {
   connection: {
     errorMessage?: string
     githubAccountId?: string
@@ -20,12 +19,17 @@ type GitHubSyncPayload = {
     scopes: string[]
     status: 'connected' | 'missing_scopes' | 'token_unavailable'
   }
-  repositories: GitHubRepository[]
   user: {
     displayName?: string
     email?: string
     imageUrl?: string
   }
+}
+
+type GitHubPickerPayload = {
+  errorMessage?: string
+  repositories: GitHubRepository[]
+  status: 'connected' | 'missing_scopes' | 'token_unavailable'
 }
 
 type GitHubApiUser = {
@@ -46,8 +50,10 @@ type GitHubApiRepository = {
     login: string
   }
   private: boolean
-  pushed_at?: string | null
 }
+
+const MAX_PICKER_REPOS = 300
+const REPOS_PER_PAGE = 100
 
 function parseScopes(scopeHeader: string | null) {
   if (!scopeHeader) {
@@ -77,20 +83,22 @@ async function fetchGitHub<T>(path: string, token: string) {
   }
 }
 
-export const loadGitHubSyncPayload = createServerFn({
-  method: 'GET',
-}).handler(async (): Promise<GitHubSyncPayload> => {
+function mapRepository(repo: GitHubApiRepository): GitHubRepository {
+  return {
+    defaultBranch: repo.default_branch ?? 'main',
+    fullName: repo.full_name,
+    githubId: repo.id,
+    isPrivate: repo.private,
+    name: repo.name,
+    ownerLogin: repo.owner.login,
+    url: repo.html_url,
+  }
+}
+
+async function getGitHubAuthContext() {
   const { userId } = await auth()
   if (!userId) {
-    return {
-      connection: {
-        errorMessage: 'Sign in before connecting GitHub.',
-        scopes: [],
-        status: 'token_unavailable',
-      },
-      repositories: [],
-      user: {},
-    }
+    return null
   }
 
   const clerk = clerkClient()
@@ -104,11 +112,87 @@ export const loadGitHubSyncPayload = createServerFn({
   const displayName =
     user.fullName ?? user.username ?? primaryEmail ?? user.id
 
-  const userProfile = {
-    displayName,
-    email: primaryEmail,
-    imageUrl: user.imageUrl,
+  return {
+    token,
+    userId,
+    userProfile: {
+      displayName,
+      email: primaryEmail,
+      imageUrl: user.imageUrl,
+    },
   }
+}
+
+async function fetchAllUserRepositories(token: string): Promise<{
+  errorMessage?: string
+  repositories: GitHubRepository[]
+  scopes: string[]
+  status: 'connected' | 'missing_scopes' | 'token_unavailable'
+}> {
+  const repositories: GitHubRepository[] = []
+  let page = 1
+  let scopes: string[] = []
+
+  while (repositories.length < MAX_PICKER_REPOS) {
+    const response = await fetchGitHub<GitHubApiRepository[]>(
+      `/user/repos?per_page=${REPOS_PER_PAGE}&page=${page}&sort=pushed&affiliation=owner,collaborator,organization_member`,
+      token,
+    )
+
+    if (response.scopes.length > 0) {
+      scopes = response.scopes
+    }
+
+    if (!response.ok || !response.data) {
+      return {
+        errorMessage: `GitHub repository request failed with status ${response.status}.`,
+        repositories: [],
+        scopes,
+        status: response.status === 403 ? 'missing_scopes' : 'token_unavailable',
+      }
+    }
+
+    if (response.data.length === 0) {
+      break
+    }
+
+    for (const repo of response.data) {
+      repositories.push(mapRepository(repo))
+      if (repositories.length >= MAX_PICKER_REPOS) {
+        break
+      }
+    }
+
+    if (response.data.length < REPOS_PER_PAGE) {
+      break
+    }
+
+    page += 1
+  }
+
+  return {
+    repositories,
+    scopes,
+    status: 'connected',
+  }
+}
+
+export const loadGitHubConnectionPayload = createServerFn({
+  method: 'GET',
+}).handler(async (): Promise<GitHubConnectionPayload> => {
+  const authContext = await getGitHubAuthContext()
+  if (!authContext) {
+    return {
+      connection: {
+        errorMessage: 'Sign in before connecting GitHub.',
+        scopes: [],
+        status: 'token_unavailable',
+      },
+      user: {},
+    }
+  }
+
+  const { token, userProfile } = authContext
 
   if (!token) {
     return {
@@ -118,7 +202,6 @@ export const loadGitHubSyncPayload = createServerFn({
         scopes: [],
         status: 'token_unavailable',
       },
-      repositories: [],
       user: userProfile,
     }
   }
@@ -129,35 +212,10 @@ export const loadGitHubSyncPayload = createServerFn({
       connection: {
         errorMessage: `GitHub profile request failed with status ${githubUser.status}.`,
         scopes: githubUser.scopes,
-        status: githubUser.status === 403 ? 'missing_scopes' : 'token_unavailable',
+        status:
+          githubUser.status === 403 ? 'missing_scopes' : 'token_unavailable',
       },
-      repositories: [],
       user: userProfile,
-    }
-  }
-
-  const repos = await fetchGitHub<GitHubApiRepository[]>(
-    '/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member',
-    token,
-  )
-
-  const scopes = repos.scopes.length > 0 ? repos.scopes : githubUser.scopes
-  if (!repos.ok || !repos.data) {
-    return {
-      connection: {
-        errorMessage: `GitHub repository request failed with status ${repos.status}.`,
-        githubAccountId: String(githubUser.data.id),
-        githubLogin: githubUser.data.login,
-        scopes,
-        status: repos.status === 403 ? 'missing_scopes' : 'token_unavailable',
-      },
-      repositories: [],
-      user: {
-        ...userProfile,
-        displayName: githubUser.data.name ?? userProfile.displayName,
-        email: githubUser.data.email ?? userProfile.email,
-        imageUrl: githubUser.data.avatar_url ?? userProfile.imageUrl,
-      },
     }
   }
 
@@ -165,24 +223,44 @@ export const loadGitHubSyncPayload = createServerFn({
     connection: {
       githubAccountId: String(githubUser.data.id),
       githubLogin: githubUser.data.login,
-      scopes,
+      scopes: githubUser.scopes,
       status: 'connected',
     },
-    repositories: repos.data.map((repo) => ({
-      defaultBranch: repo.default_branch,
-      fullName: repo.full_name,
-      githubId: repo.id,
-      isPrivate: repo.private,
-      name: repo.name,
-      ownerLogin: repo.owner.login,
-      pushedAt: repo.pushed_at ?? undefined,
-      url: repo.html_url,
-    })),
     user: {
       ...userProfile,
       displayName: githubUser.data.name ?? userProfile.displayName,
       email: githubUser.data.email ?? userProfile.email,
       imageUrl: githubUser.data.avatar_url ?? userProfile.imageUrl,
     },
+  }
+})
+
+export const listGitHubRepositoriesForPicker = createServerFn({
+  method: 'GET',
+}).handler(async (): Promise<GitHubPickerPayload> => {
+  const authContext = await getGitHubAuthContext()
+  if (!authContext) {
+    return {
+      errorMessage: 'Sign in before loading GitHub repositories.',
+      repositories: [],
+      status: 'token_unavailable',
+    }
+  }
+
+  const { token } = authContext
+  if (!token) {
+    return {
+      errorMessage:
+        'GitHub is not connected to this Clerk account, or Clerk has no GitHub OAuth token.',
+      repositories: [],
+      status: 'token_unavailable',
+    }
+  }
+
+  const result = await fetchAllUserRepositories(token)
+  return {
+    errorMessage: result.errorMessage,
+    repositories: result.repositories,
+    status: result.status,
   }
 })

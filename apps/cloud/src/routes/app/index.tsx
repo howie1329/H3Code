@@ -4,7 +4,7 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { api } from '../../../convex/_generated/api'
 import { WorkspaceLanding } from '#/components/workspace/WorkspaceLanding.tsx'
-import { mapGithubRepositories } from '#/lib/session/repositories.ts'
+import { mapWorkspaceRepositories } from '#/lib/session/repositories.ts'
 
 type AppWorkspaceSearch = {
   repo?: string
@@ -22,12 +22,12 @@ export const Route = createFileRoute('/app/')({
 
 function AppWorkspaceLandingRoute() {
   const { repo } = Route.useSearch()
-  const githubState = useQuery(api.github.getConnection)
+  const workspaceRepoRows = useQuery(api.workspaceRepositories.list)
   const createSession = useMutation(api.sessions.create)
 
   const repositories = useMemo(
-    () => mapGithubRepositories(githubState?.repositories ?? []),
-    [githubState?.repositories],
+    () => mapWorkspaceRepositories(workspaceRepoRows ?? []),
+    [workspaceRepoRows],
   )
 
   const handleCreateSession = useCallback(
@@ -46,7 +46,7 @@ function AppWorkspaceLandingRoute() {
   return (
     <WorkspaceLanding
       initialRepositoryId={repo}
-      isLoadingWorkspace={githubState === undefined}
+      isLoadingWorkspace={workspaceRepoRows === undefined}
       repositories={repositories}
       onCreateSession={handleCreateSession}
     />

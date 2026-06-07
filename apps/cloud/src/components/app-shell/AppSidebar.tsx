@@ -46,7 +46,8 @@ import {
 import { api } from '../../../convex/_generated/api'
 
 import { toSidebarSession } from '#/lib/session/convex-mappers.ts'
-import { mapGithubRepositories } from '#/lib/session/repositories.ts'
+import { useAddRepositoryDialog } from '#/components/workspace/add-repository-context.tsx'
+import { mapWorkspaceRepositories } from '#/lib/session/repositories.ts'
 import type { SidebarSession } from '#/lib/session/types.ts'
 import { cn } from '#/lib/utils.ts'
 
@@ -320,7 +321,11 @@ function RepositoryCollapsible({
   )
 }
 
-function RepositoriesEmptyState() {
+function RepositoriesEmptyState({
+  onAddRepository,
+}: {
+  onAddRepository: () => void
+}) {
   return (
     <div className="flex flex-col gap-3 py-6 pr-1">
       <div className="space-y-1">
@@ -328,19 +333,17 @@ function RepositoriesEmptyState() {
           No repositories yet
         </p>
         <p className={cn(metaClass, 'leading-relaxed')}>
-          Connect a repository to browse Pi sessions and start work from here.
+          Add a repository from GitHub to browse Pi sessions and start work here.
         </p>
       </div>
       <Button
         type="button"
         variant="outline"
         className="h-7 w-full justify-start gap-2 border-sidebar-border px-2 text-[11px] shadow-none active:translate-y-px motion-reduce:active:translate-y-0"
-        asChild
+        onClick={onAddRepository}
       >
-        <Link to="/app/settings">
-          <PlusIcon className={iconClass} aria-hidden />
-          Sync GitHub
-        </Link>
+        <PlusIcon className={iconClass} aria-hidden />
+        Add repository
       </Button>
     </div>
   )
@@ -363,12 +366,13 @@ function groupSessionsByRepository(
 export function AppSidebar() {
   const iconRail = useIconRail()
   const isSettingsActive = useIsSettingsRoute()
-  const githubState = useQuery(api.github.getConnection)
+  const { openAddRepositoryDialog } = useAddRepositoryDialog()
+  const workspaceRepoRows = useQuery(api.workspaceRepositories.list)
   const sessionRows = useQuery(api.sessions.listForUser) ?? []
 
   const repositories = React.useMemo(
-    () => mapGithubRepositories(githubState?.repositories ?? []),
-    [githubState?.repositories],
+    () => mapWorkspaceRepositories(workspaceRepoRows ?? []),
+    [workspaceRepoRows],
   )
 
   const sessionsByRepository = React.useMemo(() => {
@@ -379,7 +383,7 @@ export function AppSidebar() {
     return groupSessionsByRepository(sidebarSessions)
   }, [sessionRows])
 
-  const isLoadingRepositories = githubState === undefined
+  const isLoadingRepositories = workspaceRepoRows === undefined
   const hasRepositories = repositories.length > 0
 
   return (
@@ -414,13 +418,20 @@ export function AppSidebar() {
           <SidebarGroup className="flex min-h-0 flex-1 flex-col p-0">
             <div
               className={cn(
-                'flex h-7 shrink-0 items-center pt-2',
+                'flex h-7 shrink-0 items-center justify-between gap-1 pt-2',
                 sidebarInset,
               )}
             >
               <SidebarGroupLabel className={groupLabelClass}>
                 Repositories
               </SidebarGroupLabel>
+              <SidebarToolbarAction
+                label="Add repository"
+                onClick={openAddRepositoryDialog}
+                className="shrink-0"
+              >
+                <PlusIcon className={iconClass} aria-hidden />
+              </SidebarToolbarAction>
             </div>
             <SidebarGroupContent className="flex min-h-0 flex-1 flex-col">
               <nav
@@ -435,7 +446,9 @@ export function AppSidebar() {
                     Loading repositories…
                   </p>
                 ) : !hasRepositories ? (
-                  <RepositoriesEmptyState />
+                  <RepositoriesEmptyState
+                    onAddRepository={openAddRepositoryDialog}
+                  />
                 ) : (
                   <SidebarMenu className="gap-0.5">
                     {repositories.map((repo) => (

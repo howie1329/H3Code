@@ -1,3 +1,4 @@
+import type { Doc } from '../../../convex/_generated/dataModel'
 import type { WorkspaceRepository } from '#/lib/session/types.ts'
 
 export function getDefaultRepositoryId(
@@ -11,16 +12,11 @@ export function getDefaultRepositoryId(
   return preferred?.id ?? repositories[0]?.id
 }
 
-export function mapGithubRepositories(
-  repositories: readonly {
-    defaultBranch?: string
-    fullName: string
-    name: string
-    ownerLogin: string
-  }[],
+export function mapWorkspaceRepositories(
+  repositories: readonly Doc<'workspaceRepositories'>[],
 ): WorkspaceRepository[] {
   return repositories.map((repository) => ({
-    defaultBranch: repository.defaultBranch ?? 'main',
+    defaultBranch: repository.defaultBranch,
     id: repository.fullName,
     name: repository.name,
     owner: repository.ownerLogin,
