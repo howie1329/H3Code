@@ -169,9 +169,9 @@ declare global {
       };
 
   type PiExtensionUiResponse =
-    | { type: "extension_ui_response"; id: string; value: string }
-    | { type: "extension_ui_response"; id: string; confirmed: boolean }
-    | { type: "extension_ui_response"; id: string; cancelled: true };
+    | { type: "extension_ui_response"; id: string; method?: "select" | "input" | "editor"; value: string }
+    | { type: "extension_ui_response"; id: string; method?: "confirm"; confirmed: boolean }
+    | { type: "extension_ui_response"; id: string; method?: PiExtensionUiRequest["method"]; cancelled: true };
 
   type DesktopPreferences = {
     recentRepos: RecentRepoPreference[];
