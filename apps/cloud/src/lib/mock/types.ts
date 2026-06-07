@@ -1,4 +1,4 @@
-import type { SessionSnapshot, SessionSummary } from '@h3code/agent-core'
+import type { SessionSummary } from '@h3code/agent-core'
 
 /**
  * PI-compatible transcript rows stored in `SessionSnapshot.messages`.
@@ -75,10 +75,13 @@ export type MockSession = {
   preview?: string
 }
 
-export type MockSessionDetail = Pick<
-  SessionSnapshot,
-  'messages' | 'steering' | 'followUp' | 'isStreaming' | 'isCompacting'
->
+export type MockSessionDetail = {
+  messages: readonly MockTranscriptMessage[]
+  steering: readonly string[]
+  followUp: readonly string[]
+  isStreaming: boolean
+  isCompacting: boolean
+}
 
 export type MockSessionRecord = {
   session: MockSession
