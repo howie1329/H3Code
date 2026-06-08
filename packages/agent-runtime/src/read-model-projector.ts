@@ -52,7 +52,8 @@ export class ReadModelProjector {
       case "session.ended": {
         session.status = event.status === "failed" ? "error" : "idle";
         session.activeTurnId = undefined;
-        return patch(session, { status: session.status, activeTurnId: null, updatedAt: event.occurredAt });
+        completeActiveItems(session, event.status === "failed" ? "failed" : "completed", event.occurredAt);
+        return patch(session, { status: session.status, activeTurnId: null, messages: session.messages, activities: session.activities, updatedAt: event.occurredAt });
       }
       case "turn.started": {
         session.status = "running";
@@ -64,8 +65,7 @@ export class ReadModelProjector {
         session.status = event.status === "failed" ? "error" : "idle";
         session.activeTurnId = undefined;
         session.tokenUsage = normalizeUsage(event.usage) ?? session.tokenUsage;
-        session.messages = session.messages.map((m) => m.turnId === event.turnId && m.status === "streaming" ? { ...m, status: event.status === "failed" ? "failed" : "completed", updatedAt: event.occurredAt } : m);
-        session.activities = session.activities.map((a) => a.turnId === event.turnId && a.status === "running" ? { ...a, status: event.status === "failed" ? "failed" : "completed", updatedAt: event.occurredAt } : a);
+        completeActiveItems(session, event.status === "failed" ? "failed" : "completed", event.occurredAt);
         return patch(session, { status: session.status, activeTurnId: null, messages: session.messages, activities: session.activities, tokenUsage: session.tokenUsage ?? null, updatedAt: event.occurredAt });
       }
       case "item.started": {
@@ -117,3 +117,11 @@ function activityKind(type: RuntimeItemType): UiActivity["kind"] { return type =
 function upsertMessage(session: SessionReadModel, id: MessageId, message: Omit<UiMessage, "id">): UiMessage { const next = { id, ...message }; session.messages = [...session.messages.filter((m) => m.id !== id), next]; return next; }
 function upsertActivity(session: SessionReadModel, id: ActivityId, activity: Omit<UiActivity, "id">): UiActivity { const next = { id, ...activity }; session.activities = [...session.activities.filter((a) => a.id !== id), next]; return next; }
 function normalizeUsage(usage: unknown): SessionReadModel["tokenUsage"] | undefined { return usage && typeof usage === "object" ? usage as SessionReadModel["tokenUsage"] : undefined; }
+function completeActiveItems(session: SessionReadModel, status: "completed" | "failed", updatedAt: number): void {
+  session.messages = session.messages.map((message) =>
+    message.status === "streaming" ? { ...message, status, updatedAt } : message,
+  );
+  session.activities = session.activities.map((activity) =>
+    activity.status === "running" || activity.status === "pending" ? { ...activity, status, updatedAt } : activity,
+  );
+}

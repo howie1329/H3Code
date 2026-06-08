@@ -51,6 +51,31 @@ test("completes streaming items when session becomes idle", () => {
   }
 });
 
+test("completes active items when turn completes with a different turn id", () => {
+  const projector = new ReadModelProjector();
+  let result = projector.apply(undefined, { type: "session.started", sessionId: "s1", providerId: "fake", repoPath: "/repo", occurredAt: 1 });
+  result = projector.apply(result.session, { type: "turn.started", sessionId: "s1", providerId: "fake", turnId: "t1", occurredAt: 2 });
+  result = projector.apply(result.session, { type: "item.started", sessionId: "s1", providerId: "fake", turnId: "t1", itemId: "i1", itemType: "assistant_message", occurredAt: 3 });
+  result = projector.apply(result.session, { type: "content.delta", sessionId: "s1", providerId: "fake", turnId: "t1", itemId: "i1", stream: "assistant_text", delta: "done", occurredAt: 4 });
+  result = projector.apply(result.session, { type: "tool.updated", sessionId: "s1", providerId: "fake", turnId: "t1", itemId: "tool1", toolName: "read", status: "pending", occurredAt: 5 });
+  result = projector.apply(result.session, { type: "turn.completed", sessionId: "s1", providerId: "fake", turnId: "t2", status: "completed", occurredAt: 6 });
+
+  assert.equal(result.session.status, "idle");
+  assert.equal(result.session.messages[0]?.status, "completed");
+  assert.equal(result.session.activities[0]?.status, "completed");
+});
+
+test("completes active items when session ends", () => {
+  const projector = new ReadModelProjector();
+  let result = projector.apply(undefined, { type: "session.started", sessionId: "s1", providerId: "fake", repoPath: "/repo", occurredAt: 1 });
+  result = projector.apply(result.session, { type: "turn.started", sessionId: "s1", providerId: "fake", turnId: "t1", occurredAt: 2 });
+  result = projector.apply(result.session, { type: "item.started", sessionId: "s1", providerId: "fake", turnId: "t1", itemId: "i1", itemType: "assistant_message", occurredAt: 3 });
+  result = projector.apply(result.session, { type: "session.ended", sessionId: "s1", providerId: "fake", status: "completed", occurredAt: 4 });
+
+  assert.equal(result.session.status, "idle");
+  assert.equal(result.session.messages[0]?.status, "completed");
+});
+
 test("rejects events for unknown sessions", () => {
   const projector = new ReadModelProjector();
   assert.throws(
