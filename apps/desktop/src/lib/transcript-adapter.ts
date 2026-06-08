@@ -47,7 +47,7 @@ export function composerPhase(model: SessionReadModel): ComposerPhaseLine | null
   }
 
   if (model.status === "running") {
-    return { tone: "working", text: "Pi is working…" };
+    return { tone: "working", text: "Agent is working…" };
   }
 
   return null;

@@ -1,4 +1,4 @@
-import type { SessionId } from "$lib/session-types.js";
+import type { SessionId } from "@h3code/agent-protocol";
 
 export type ConnectionState = "disconnected" | "starting" | "connected" | "error" | "exited";
 

@@ -22,7 +22,6 @@ import { getRuntimeClient } from "$lib/runtime-client.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
 import { applySessionEvent, createEmptySessionReadModel } from "$lib/session-state.js";
 import { indexedSessionToSummary } from "$lib/session-summary.js";
-import type { SessionSummary } from "$lib/session-types.js";
 import {
   composerPhase,
   isAgentRunning,
@@ -31,7 +30,7 @@ import {
   transcriptMessages,
 } from "$lib/transcript-adapter.js";
 import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionDiffState, SessionNotification } from "$lib/desktop-types.js";
-import type { SessionReadModel, UiSessionEvent } from "@h3code/agent-protocol";
+import type { SessionReadModel, SessionSummary, UiSessionEvent } from "@h3code/agent-protocol";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -262,7 +261,7 @@ class DesktopState {
     }
   }
 
-  async connectRepo(nextRepoPath: string, _selectedSessionRef?: string) {
+  async connectRepo(nextRepoPath: string) {
     await this.withBusy(async () => {
       await this.connectRepoInternal(nextRepoPath);
     });
@@ -812,7 +811,7 @@ class DesktopState {
 
     if (existingIndex !== -1) {
       return sessions.map((entry, index) =>
-        index === existingIndex ? { ...entry, liveSessionId: session.id, status: session.status } : entry,
+        index === existingIndex ? { ...entry, status: session.status } : entry,
       );
     }
 
@@ -820,7 +819,7 @@ class DesktopState {
   }
 
   getSessionRowStatus(session: SessionSummary): SessionRowStatus {
-    if (session.id === this.activeSessionId || session.liveSessionId === this.activeSessionId) {
+    if (session.id === this.activeSessionId) {
       if (this.providerUiRequest) {
         return createSessionRowStatus("needs_input");
       }
@@ -982,7 +981,6 @@ function liveSessionToSummary(session: SessionReadModel, repoPath: string): Sess
     updatedAt: timestamp,
     worktreePath: repoPath,
     messageCount: session.messages.length,
-    liveSessionId: session.id,
   };
 }
 

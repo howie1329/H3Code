@@ -32,13 +32,13 @@ npm run build
 
 Copy `.env.example` to `.env.local` and fill in:
 
-| Variable | Purpose |
-| --- | --- |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk client key |
-| `CLERK_SECRET_KEY` | Clerk server key (TanStack Start server fns, GitHub token retrieval) |
-| `CLERK_JWT_ISSUER_DOMAIN` | Clerk Frontend API URL — also set in **Convex dashboard** env for JWT validation |
-| `CONVEX_DEPLOYMENT` | Convex deployment name |
-| `VITE_CONVEX_URL` | Convex deployment URL |
+| Variable                     | Purpose                                                                          |
+| ---------------------------- | -------------------------------------------------------------------------------- |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk client key                                                                 |
+| `CLERK_SECRET_KEY`           | Clerk server key (TanStack Start server fns, GitHub token retrieval)             |
+| `CLERK_JWT_ISSUER_DOMAIN`    | Clerk Frontend API URL — also set in **Convex dashboard** env for JWT validation |
+| `CONVEX_DEPLOYMENT`          | Convex deployment name                                                           |
+| `VITE_CONVEX_URL`            | Convex deployment URL                                                            |
 
 Clerk redirect URLs (`VITE_CLERK_SIGN_IN_URL`, etc.) are optional when using the default `/sign-in` and `/sign-up` routes.
 
@@ -52,12 +52,12 @@ GitHub OAuth tokens are fetched **server-side** only (`src/integrations/github/s
 
 ## Routes
 
-| Path | Purpose |
-| --- | --- |
-| `/sign-in`, `/sign-up` | Clerk auth |
-| `/app` | Workspace landing (workspace repo picker + composer; creates sessions) |
-| `/app/settings` | Account and GitHub connection verify |
-| `/app/sessions/$sessionId` | Session workspace (transcript + composer; user messages persisted) |
+| Path                       | Purpose                                                                |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `/sign-in`, `/sign-up`     | Clerk auth                                                             |
+| `/app`                     | Workspace landing (workspace repo picker + composer; creates sessions) |
+| `/app/settings`            | Account and GitHub connection verify                                   |
+| `/app/sessions/$sessionId` | Session workspace (transcript + composer; user messages persisted)     |
 
 `/app` requires sign-in.
 
@@ -67,17 +67,17 @@ GitHub OAuth tokens are fetched **server-side** only (`src/integrations/github/s
 - **UI:** shadcn-compatible components in `src/components/ui/` (`components.json` lives here)
 - **Auth:** `@clerk/tanstack-react-start` + `ConvexProviderWithClerk`
 - **Backend:** Convex (`convex/schema.ts`, `github.ts`, `workspaceRepositories.ts`, `sessions.ts`, `users.ts`, `auth.config.ts`)
-- **Protocol types:** `@h3code/agent-core` — do not introduce cloud-specific agent wire shapes in UI components
+- **Protocol types:** `@h3code/agent-protocol` — do not introduce cloud-specific agent wire shapes in UI components
 
 ## Convex tables
 
-| Table | Purpose |
-| --- | --- |
-| `users` | Clerk user profile cache |
-| `githubConnections` | GitHub connection status and scopes (metadata only) |
-| `workspaceRepositories` | User-curated repos for sidebar and landing |
-| `sessions` | Cloud agent sessions (repo, branch, status, title) |
-| `messages` | Session transcript rows (user messages today; assistant/tool via sandbox later) |
+| Table                   | Purpose                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `users`                 | Clerk user profile cache                                                        |
+| `githubConnections`     | GitHub connection status and scopes (metadata only)                             |
+| `workspaceRepositories` | User-curated repos for sidebar and landing                                      |
+| `sessions`              | Cloud agent sessions (repo, branch, status, title)                              |
+| `messages`              | Session transcript rows (user messages today; assistant/tool via sandbox later) |
 
 Deferred: `runs`, `control`, `diffs`, `usageEvents`.
 

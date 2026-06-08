@@ -327,12 +327,12 @@
                 │ · Connection manager · Workspace / prefs · Git / worktrees │
                 │ · Provider registry · Auth to local server only │
                 └───────────────────────────────┬─────────────────────────────────┘
-                │ AgentProvider interface
+                │ ProviderAdapter interface
                 ▼
                 ┌─────────────────────────────────────────────────────────────────┐
                 │ Provider layer │
                 │ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
-                │ │ PiProvider │ │ CodexProvider│ │ CursorProvider│ … │
+                │ │ PiProviderAdapter │ │ CodexProvider│ │ CursorProvider│ … │
                 │ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ │
                 └─────────┼─────────────────┼─────────────────┼──────────────────┘
                 ▼ ▼ ▼
@@ -371,16 +371,16 @@
         <section id="current">
             <h2>3. Current state</h2>
             <p>Today the desktop app uses the Agent Server path by default:</p>
-            <div class="diagram">Svelte renderer → AgentClient (WebSocket) → @h3code/agent-server → PiAgentProvider → in-process PI SDK</div>
+            <div class="diagram">Svelte renderer → RuntimeClient (WebSocket) → @h3code/agent-runtime-server → PiProviderAdapter → in-process PI SDK</div>
             <ul>
                 <li>Electron main supervises the local server and keeps only thin native shell IPC for app version,
                     repo selection, reveal-in-Finder, and preferences database reveal.
                 </li>
-                <li><code>@h3code/agent-server</code> owns WebSocket routing, connection lifecycle, provider registry,
+                <li><code>@h3code/agent-runtime-server</code> owns WebSocket routing, connection lifecycle, provider registry,
                     platform services, and the SQLite-backed metadata/preferences boundary.</li>
-                <li><code>@h3code/pi-provider</code> implements the current PI provider through the in-process PI SDK,
+                <li><code>@h3code/agent-provider-pi</code> implements the current PI provider through the in-process PI SDK,
                     maps PI events into <code>SessionDomainEvent</code>, and handles extension UI bridging.</li>
-                <li><code>@h3code/agent-core</code> defines the provider-neutral protocol, capability flags, provider
+                <li><code>@h3code/agent-protocol</code> defines the provider-neutral protocol, capability flags, provider
                     interface, session summaries, snapshots, and workspace diff types.</li>
                 <li>The renderer uses the WebSocket client, but parts of the desktop API and UI state are still
                     PI-shaped (<code>PiSessionState</code>, <code>PiStatus</code>, <code>PiSlashCommand</code>).</li>
@@ -412,10 +412,10 @@
             </p>
             <h3>4.2 Package layout</h3>
             <pre>packages/
-  agent-core/          # Shared types: domain events, provider interface, WS message shapes
-  agent-server/        # HTTP + WebSocket server, connection manager, platform services
+  agent-protocol/          # Shared types: domain events, provider interface, WS message shapes
+  agent-runtime-server/        # HTTP + WebSocket server, connection manager, platform services
   agent-metadata/      # SQLite metadata index, recent repos, desktop settings
-  pi-provider/         # PiProvider — in-process PI SDK runtime
+  agent-provider-pi/         # PiProviderAdapter — in-process PI SDK runtime
   codex-provider/      # Future CodexProvider — Codex Server client
   cursor-provider/     # Future CursorProvider — TBD transport
 apps/
@@ -458,7 +458,7 @@ apps/
                     <tr>
                         <td><strong>Provider layer</strong></td>
                         <td>
-                            <code>AgentProvider</code> implementations, capability advertisement,
+                            <code>ProviderAdapter</code> implementations, capability advertisement,
                             translation to <code>SessionDomainEvent</code>, provider-native session refs
                         </td>
                         <td>
@@ -477,8 +477,8 @@ apps/
                 </tbody>
             </table>
 
-            <h3>5.1 AgentProvider interface (conceptual)</h3>
-            <pre>interface AgentProvider {
+            <h3>5.1 ProviderAdapter interface (conceptual)</h3>
+            <pre>interface ProviderAdapter {
   readonly id: "pi" | "codex" | "cursor" | string;
   readonly capabilities: ProviderCapabilities;
 
@@ -609,10 +609,10 @@ UI ← { type: "session.event", connectionId: "c-abc", event: { type: "message.s
 
             <div class="phase">
                 <h3><span class="badge pi">Phase 1 — PI</span></h3>
-                <p><strong>Transport:</strong> in-process PI SDK runtime via <code>@h3code/pi-provider</code>.</p>
+                <p><strong>Transport:</strong> in-process PI SDK runtime via <code>@h3code/agent-provider-pi</code>.</p>
                 <ul>
-                    <li><code>PiAgentProvider</code> is registered by product startup and adapts PI SDK sessions to the
-                        shared <code>AgentProvider</code> interface.</li>
+                    <li><code>PiProviderAdapter</code> is registered by product startup and adapts PI SDK sessions to the
+                        shared <code>ProviderAdapter</code> interface.</li>
                     <li>Map PI SDK events → <code>SessionDomainEvent</code> inside the provider.
                     </li>
                     <li>Current parity covers connect repo, sessions, prompt/steer/follow-up/abort, models,
@@ -776,16 +776,16 @@ UI ← { type: "session.event", connectionId: "c-abc", event: { type: "message.s
             <h2>10. Migration phases</h2>
             <ol>
                 <li>
-                    <strong>Extract <code>agent-core</code></strong> — complete for the current protocol:
+                    <strong>Extract <code>agent-protocol</code></strong> — complete for the current protocol:
                     <code>SessionDomainEvent</code>, provider types, capability flags, and WebSocket message unions.
                 </li>
                 <li>
                     <strong>Stand up Agent Server</strong> — complete for PI: localhost WebSocket, health check,
-                    provider registry, connection manager, platform services, and <code>PiAgentProvider</code>.
+                    provider registry, connection manager, platform services, and <code>PiProviderAdapter</code>.
                 </li>
                 <li>
                     <strong>Switch desktop UI</strong> — complete for agent commands/events: renderer uses
-                    <code>AgentClient</code> over WebSocket; Electron remains for window + native dialogs.
+                    <code>RuntimeClient</code> over WebSocket; Electron remains for window + native dialogs.
                 </li>
                 <li>
                     <strong>Delete PI logic from Electron main</strong> — complete: main supervises the server and

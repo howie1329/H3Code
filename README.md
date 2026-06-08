@@ -1,6 +1,6 @@
 # H3Code
 
-H3Code is a local desktop workbench for coding agents. Today it is an Electron and SvelteKit desktop UI that talks to a local Agent Server over WebSocket. PI Agent is the current working provider; the Agent Server gives the UI one H3Code-owned protocol that can grow to support multiple providers.
+H3Code is a local desktop workbench for coding agents. Today it is an Electron and SvelteKit desktop UI that talks to a local runtime server over WebSocket. PI Agent is the current working provider; the runtime server gives the UI one H3Code-owned protocol that can grow to support multiple providers.
 
 PI remains the current working provider and the source of truth for sessions, messages, tool execution, model behavior, queueing, compaction, and retry. H3Code owns the local experience around that runtime: repo selection, process lifecycle, connection diagnostics, UI state, rendering, metadata indexing, and preferences.
 
@@ -8,7 +8,7 @@ The web and marketing app are preserved in `apps/web`.
 
 Start with:
 
-- [docs/h3code-agent-server-product.md](docs/h3code-agent-server-product.md) — product direction for the Agent Server architecture.
+- [docs/h3code-agent-server-product.md](docs/h3code-agent-server-product.md) — product direction for the local runtime server architecture.
 - [docs/agent-server-architecture.html.html](docs/agent-server-architecture.html.html) — visual/reference architecture proposal.
 - [docs/h3code-desktop-mvp.md](docs/h3code-desktop-mvp.md) — current PI desktop MVP boundary.
 
@@ -18,26 +18,30 @@ Current desktop path:
 
 ```txt
 Svelte renderer
-  -> AgentClient (WebSocket)
-    -> @h3code/agent-server (localhost)
-      -> PiAgentProvider (@h3code/pi-provider, in-process PI SDK)
+  -> RuntimeClient (WebSocket)
+    -> @h3code/agent-runtime-server (localhost)
+      -> AgentRuntime
+        -> PiProviderAdapter (@h3code/agent-provider-pi)
 ```
 
 Provider direction:
 
 ```txt
 Svelte renderer
-  -> local Agent Server WebSocket
-    -> AgentProvider interface
-      -> PiProvider / CodexProvider / CursorProvider
+  -> local runtime server WebSocket
+    -> ProviderAdapter interface
+      -> PiProviderAdapter / CodexProviderAdapter / CursorProviderAdapter
         -> actual provider runtime
 ```
 
-The server packages now exist:
+The runtime packages now exist:
 
-- `@h3code/agent-core` defines provider-neutral H3Code protocol and provider contracts.
-- `@h3code/agent-server` provides the local Node/WebSocket server, routing, connection management, provider registry, and platform services.
-- `@h3code/pi-provider` implements the current PI provider with the in-process PI SDK.
+- `@h3code/agent-protocol` defines provider-neutral protocol, commands, runtime events, read models, workspace summaries, and provider contracts.
+- `@h3code/agent-runtime` owns provider registration, runtime bindings, event ingestion, and read-model projection.
+- `@h3code/agent-runtime-ws` provides the WebSocket transport.
+- `@h3code/agent-runtime-persistence` stores projected runtime state and bindings for cold start.
+- `@h3code/agent-runtime-server` composes the local server, runtime, persistence, metadata registry, WebSocket transport, and PI adapter.
+- `@h3code/agent-provider-pi` implements the current PI provider adapter with the in-process PI SDK.
 - `@h3code/agent-metadata` stores recent repos, indexed session metadata, desktop settings, and related local metadata.
 
 Electron main now supervises the local server and native shell affordances. The legacy PI IPC path has been removed.
@@ -62,14 +66,14 @@ H3Code should not persist transcripts or become the source of truth for provider
 
 ## Current Desktop Status
 
-The desktop app currently implements the core PI provider loop through the Agent Server:
+The desktop app currently implements the core PI provider loop through the runtime server:
 
 - Select a local repo with the native directory picker.
-- Start the local Agent Server and connect the renderer over WebSocket.
+- Start the local runtime server and connect the renderer over WebSocket.
 - Create an in-process PI SDK provider session for the selected repo.
 - List PI sessions for repos.
 - Switch sessions and create new PI-owned sessions.
-- Load PI state, messages, and session stats.
+- Load H3Code session read models, messages, and session stats.
 - Send prompts, steer, and follow-up messages through the H3Code WebSocket protocol.
 - Abort active runs.
 - Render transcript messages, streaming assistant output, tool blocks, runtime diagnostics, extension UI, and recent tool activity.
@@ -77,7 +81,7 @@ The desktop app currently implements the core PI provider loop through the Agent
 Still planned:
 
 - Harden the local WebSocket boundary with startup auth and fuller payload validation.
-- Continue removing PI-shaped renderer types above the provider-neutral protocol.
+- Keep renderer code on server-projected `SessionReadModel` shapes.
 - Add Codex Server and Cursor providers behind the same H3Code protocol.
 
 ## Repository Shape
@@ -87,10 +91,13 @@ apps/
   desktop/       # Electron + SvelteKit desktop app
   web/           # SvelteKit marketing site
 packages/
-  agent-core/    # H3Code protocol, domain events, provider contracts
-  agent-server/  # Local Node/WebSocket server
-  agent-metadata/# Local metadata and desktop preferences
-  pi-provider/   # In-process PI SDK provider
+  agent-protocol/            # H3Code protocol, runtime events, read models, provider contracts
+  agent-runtime/             # Runtime bindings, event ingestion, read-model projection
+  agent-runtime-ws/          # WebSocket transport
+  agent-runtime-persistence/ # SQLite runtime read-model persistence
+  agent-runtime-server/      # Local server composition for desktop
+  agent-provider-pi/         # In-process PI SDK provider adapter
+  agent-metadata/            # Local metadata and desktop preferences
 docs/
   h3code-agent-server-product.md
   agent-server-architecture.html.html
@@ -106,7 +113,7 @@ docs/
 - TypeScript
 - Tailwind CSS
 - shadcn-svelte / Bits UI
-- Node.js + `ws` for the local Agent Server
+- Node.js + `ws` for the local runtime server
 - In-process PI SDK provider for the current provider path
 - SQLite metadata index and desktop settings (`@h3code/agent-metadata`)
 
@@ -147,7 +154,7 @@ npm run build
 Package-specific checks:
 
 ```bash
-npm run check --workspace @h3code/agent-core
-npm run check --workspace @h3code/agent-server
-npm run test --workspace @h3code/agent-server
+npm run check --workspace @h3code/agent-protocol
+npm run test --workspace @h3code/agent-runtime
+npm run test --workspace @h3code/agent-runtime-server
 ```

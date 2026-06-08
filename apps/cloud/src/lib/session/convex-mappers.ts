@@ -1,13 +1,14 @@
-import type { SessionStatus } from '@h3code/agent-core'
-
 import type { Doc } from '../../../convex/_generated/dataModel'
 import type {
+  CloudSessionDisplayStatus,
   ConvexSessionStatus,
   SidebarSession,
   TranscriptMessage,
 } from '#/lib/session/types.ts'
 
-export function mapSessionStatus(status: ConvexSessionStatus): SessionStatus {
+export function mapSessionStatus(
+  status: ConvexSessionStatus,
+): CloudSessionDisplayStatus {
   switch (status) {
     case 'provisioning':
       return 'waiting'
@@ -87,8 +88,9 @@ export function toSidebarSession(
     repositoryId: `${session.githubOwner}/${session.githubRepo}`,
     preview: session.preview,
     summary: {
+      id: session._id,
       providerId: session.providerId,
-      sessionRef: session._id,
+      repoPath: `${session.githubOwner}/${session.githubRepo}`,
       status: mapSessionStatus(session.status),
       title: session.title,
       preview: session.preview,

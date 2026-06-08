@@ -25,7 +25,7 @@ cd apps/desktop && npx shadcn-svelte@latest add https://svelte-ai-elements.verce
 
 ## Not related
 
-`packages/pi-provider` `PiPromptInput` is the Pi RPC prompt type, not AI Elements UI.
+`packages/agent-provider-pi` `PiPromptInput` is the Pi RPC prompt type, not AI Elements UI.
 
 ## Local textarea patch
 

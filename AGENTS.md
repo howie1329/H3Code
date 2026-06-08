@@ -1,7 +1,7 @@
 # H3Code — Agent Guidance
 
 <!-- agentkit:start agents -->
-H3Code is a coding-agent platform with two active surfaces: a **desktop workbench** (Electron + SvelteKit + local Agent Server over WebSocket) and a **cloud workbench** (`apps/cloud`: TanStack React Start + Clerk + Convex). PI Agent is the current provider on desktop; `@h3code/agent-core` defines the provider-neutral protocol shared across surfaces.
+H3Code is a coding-agent platform with two active surfaces: a **desktop workbench** (Electron + SvelteKit + local runtime server over WebSocket) and a **cloud workbench** (`apps/cloud`: TanStack React Start + Clerk + Convex). PI Agent is the current provider on desktop through `@h3code/agent-provider-pi`; `@h3code/agent-protocol` defines the provider-neutral protocol shared across surfaces.
 
 Read `STACK.md` before stack-specific changes. Read companion docs only when the task touches that area.
 
@@ -14,17 +14,20 @@ apps/
   web/            # SvelteKit marketing site
   cloud/          # TanStack React Start + Clerk + Convex cloud workbench
 packages/
-  agent-core/     # Provider-neutral H3Code protocol and contracts
-  agent-server/   # Local Node/WebSocket server (desktop)
-  agent-metadata/ # Local metadata, preferences, SQLite index
-  pi-provider/    # In-process PI SDK provider
+  agent-protocol/            # Provider-neutral H3Code protocol and contracts
+  agent-runtime/             # Runtime bindings, event ingestion, read-model projection
+  agent-runtime-ws/          # WebSocket transport
+  agent-runtime-persistence/ # Runtime read-model persistence
+  agent-runtime-server/      # Local runtime server composition
+  agent-provider-pi/         # In-process PI SDK provider adapter
+  agent-metadata/            # Local metadata, preferences, SQLite index
 docs/             # Product specs, architecture, implementation notes
 DESIGN.md         # UI/design tokens and component guidance (Linear baseline)
 ```
 
 Key product docs:
 
-- `docs/h3code-agent-server-product.md` — Agent Server product direction
+- `docs/h3code-agent-server-product.md` — local runtime server product direction
 - `docs/h3code-desktop-mvp.md` — current desktop MVP boundary
 - `docs/h3code-cloud-saas-prd.md` — cloud SaaS scope and MVP boundary
 - `docs/h3code-convex-schema.md` — Convex data model for cloud sessions
@@ -55,12 +58,12 @@ Root scripts (npm workspaces + Turborepo):
 Workspace-specific examples:
 
 ```bash
-npm run check --workspace @h3code/agent-core
-npm run check --workspace @h3code/agent-server
-npm run test --workspace @h3code/agent-server
+npm run check --workspace @h3code/agent-protocol
+npm run test --workspace @h3code/agent-runtime
+npm run test --workspace @h3code/agent-runtime-server
 ```
 
-Desktop app also has targeted Node test scripts (`test:pi-session`, `test:agent-lib`, etc.) under `apps/desktop`.
+Desktop app also has targeted Node test scripts (`test:runtime-client`, `test:agent-lib`, etc.) under `apps/desktop`.
 
 ## Workflow Expectations
 

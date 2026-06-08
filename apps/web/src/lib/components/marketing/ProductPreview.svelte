@@ -51,7 +51,7 @@
             I will read the connection manager and desktop client handshake, then list where state is lost on reconnect.
           </p>
           <div class="mt-2 rounded-md border border-border/80 bg-muted/40 px-2 py-1.5">
-            <p class="font-mono text-[10px] text-muted-foreground">Read packages/agent-server/src/connection-manager.ts</p>
+            <p class="font-mono text-[10px] text-muted-foreground">Read packages/agent-runtime/src/agent-runtime.ts</p>
           </div>
         </div>
         <div class="flex items-center gap-2 text-[10px] text-muted-foreground">

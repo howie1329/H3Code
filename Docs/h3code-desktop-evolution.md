@@ -9,16 +9,16 @@
 ```txt
 Electron main
   ├─ BrowserWindow → SvelteKit renderer (today) / TanStack SPA (future)
-  ├─ IPC: folder picker, reveal in Finder, agent-server URL
+  ├─ IPC: folder picker, reveal in Finder, agent-runtime-server URL
   └─ startH3CodeAgentServer() → localhost HTTP + WebSocket
 
 Renderer
   → agent-client (WebSocket)
-  → @h3code/agent-server
-    → PiAgentProvider → PI SDK (in-process)
+  → @h3code/agent-runtime-server
+    → PiProviderAdapter → PI SDK (in-process)
 ```
 
-**Harness today:** PI SDK, not H3Code. **`pi-provider`** maps PI events → `agent-core` `SessionDomainEvent`s. **`agent-metadata`** SQLite caches display messages and prefs.
+**Harness today:** PI SDK, not H3Code. **`agent-provider-pi`** maps PI events → `agent-protocol` `SessionDomainEvent`s. **`agent-metadata`** SQLite caches display messages and prefs.
 
 ## Cursor Local (Reference)
 
@@ -47,8 +47,8 @@ These can be done in order; none blocks cloud MVP.
 
 ```txt
 Electron main (or utilityProcess)
-  └─ AgentHost — same logic as agent-server, no ws://
-       └─ PiAgentProvider
+  └─ AgentHost — same logic as agent-runtime-server, no ws://
+       └─ PiProviderAdapter
 
 Renderer
   └─ IPC: agent.send, agent.subscribe, agent.abort
@@ -56,13 +56,13 @@ Renderer
 
 | Package | Change |
 |---------|--------|
-| `agent-server` | Extract **core** (`ConnectionManager`, `WsRouter` logic) into **`agent-host`** usable without `ws` |
+| `agent-runtime-server` | Extract **core** (`ConnectionManager`, `WsRouter` logic) into **`agent-host`** usable without `ws` |
 | `apps/desktop` | Replace `agent-client.ts` WS with preload IPC |
-| `electron/agent-server-lifecycle.ts` | Start host in main, not HTTP server |
+| `electron/agent-runtime-server-lifecycle.ts` | Start host in main, not HTTP server |
 
-**Keep:** `agent-core`, `pi-provider`, `agent-metadata` (until Convex cache supersedes message cache).
+**Keep:** `agent-protocol`, `agent-provider-pi`, `agent-metadata` (until Convex cache supersedes message cache).
 
-**Tests:** Existing `@h3code/agent-server` tests → drive `agent-host` API without opening a port.
+**Tests:** Existing `@h3code/agent-runtime-server` tests → drive `agent-host` API without opening a port.
 
 ### Track 2 — Convex as desktop display cache (optional)
 
@@ -95,7 +95,7 @@ Invoked from Electron main or a trusted Node sidecar with repo boundary checks.
 
 **Goal:** Pattern B—H3 runs the agent loop (e.g. AI SDK `streamText` + tools) in the host process or sidecar.
 
-- Implements `AgentProvider` with `id: "h3"`.
+- Implements `ProviderAdapter` with `id: "h3"`.
 - Uses `h3-tools` for filesystem/terminal.
 - PI becomes optional provider alongside `"pi"`, `"claude-code"`, etc.
 
@@ -124,13 +124,13 @@ No second UI codebase; cloud backend unchanged.
 
 ```txt
 packages/
-  agent-core/       # unchanged contract
-  pi-provider/      # PI adapter (local + sandbox)
+  agent-protocol/       # unchanged contract
+  agent-provider-pi/      # PI adapter (local + sandbox)
   agent-metadata/   # prefs, repo index (shrink if Convex cache wins)
-  agent-host/       # NEW: in-process routing, no WebSocket (split from agent-server)
-  agent-server/     # KEEP for tests, remote clients, or deprecate after migration
+  agent-host/       # NEW: in-process routing, no WebSocket (split from agent-runtime-server)
+  agent-runtime-server/     # KEEP for tests, remote clients, or deprecate after migration
   h3-tools/         # NEW (Track 3+): repo-scoped tool impl
-  h3-harness/       # NEW (Track 4+): AI SDK loop implementing AgentProvider
+  h3-harness/       # NEW (Track 4+): AI SDK loop implementing ProviderAdapter
   app-shell/        # shared UI (with unified client)
   runtime-desktop/  # IPC + local hooks
 ```
@@ -138,7 +138,7 @@ packages/
 ## What Not to Do Prematurely
 
 - Merge cloud orchestration into Electron main—cloud stays Convex + Daytona.
-- Delete `pi-provider` when adding `h3-harness`—wrappers remain valuable.
+- Delete `agent-provider-pi` when adding `h3-harness`—wrappers remain valuable.
 - Rewrite VS Code fork—out of scope for H3Code product shape.
 
 ## Suggested Order
@@ -156,7 +156,7 @@ packages/
 - [ ] No open TCP port for agent in normal desktop use.
 - [ ] Send prompt, stream, steer, abort parity with current WS behavior.
 - [ ] Folder picker and session switch unchanged from user perspective.
-- [ ] `npm run test --workspace @h3code/agent-server` (or agent-host) still pass.
+- [ ] `npm run test --workspace @h3code/agent-runtime-server` (or agent-host) still pass.
 
 ## Open Questions
 

@@ -1,10 +1,6 @@
-export type ProviderModel = {
-  id: string;
-  provider: string;
-  modelId: string;
-  name?: string;
-  reasoning?: boolean;
-};
+import type { ProviderModel } from "@h3code/agent-protocol";
+
+export type { ProviderModel };
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
@@ -129,14 +125,15 @@ export function groupModelsByProvider(models: ProviderModel[]) {
   const groups: Array<{ provider: string; models: ProviderModel[] }> = [];
 
   for (const model of models) {
+    const provider = model.provider ?? "unknown";
     const lastGroup = groups.at(-1);
 
-    if (lastGroup?.provider === model.provider) {
+    if (lastGroup?.provider === provider) {
       lastGroup.models.push(model);
       continue;
     }
 
-    groups.push({ provider: model.provider, models: [model] });
+    groups.push({ provider, models: [model] });
   }
 
   return groups;

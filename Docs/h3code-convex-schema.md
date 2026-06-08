@@ -6,7 +6,7 @@
 
 ## Principles
 
-1. **Store H3Code protocol shapes only**—messages, runs, capabilities as defined in `@h3code/agent-core`, not PI/Codex-native payloads.
+1. **Store H3Code protocol shapes only**—messages, runs, capabilities as defined in `@h3code/agent-protocol`, not PI/Codex-native payloads.
 2. **Convex is the UI’s source of truth** for subscribed clients. The provider runtime (PI in sandbox or locally) owns **live** conversation context while connected.
 3. **Coalesce writes** (~150–250ms) from the adapter; do not persist per-token rows.
 4. **Large blobs** (full diffs, huge tool output) may exceed Convex’s per-document size limit (~1 MiB)—store artifact references or chunked rows (see `diffArtifacts` / `messageChunks`).
@@ -97,7 +97,7 @@ Append-only H3Code-shaped transcript rows. UI subscribes `by_session` ordered by
 | `runId` | id → runs? | |
 | `seq` | number | Monotonic per session |
 | `role` | enum | `user`, `assistant`, `tool`, `system` |
-| `content` | string | Or structured JSON matching agent-core |
+| `content` | string | Or structured JSON matching agent-protocol |
 | `toolCallId` | string? | |
 | `toolName` | string? | |
 | `isPartial` | boolean | true until chunk flush completes |
@@ -127,7 +127,7 @@ Sandbox holds Convex client subscription on `control` for `sessionId` (or polls 
 |-------|------|-------|
 | `sessionId` | id → sessions | |
 | `runId` | id → runs? | |
-| `summary` | object | Paths changed, stats—agent-core `WorkspaceDiffSummary` |
+| `summary` | object | Paths changed, stats—agent-protocol `WorkspaceDiffSummary` |
 | `patch` | string? | Optional; if large, use `artifactId` |
 | `artifactId` | id? | → file storage |
 | `createdAt` | number | |
@@ -154,7 +154,7 @@ Web Push endpoint + keys per user/device for run-completed notifications.
 
 ```txt
 PI (or provider) event
-  → map to agent-core
+  → map to agent-protocol
   → debounce buffer
   → mutation: appendMessage / patchMessage
   → optional: upsertDiff after run segment
@@ -232,7 +232,7 @@ Store everything needed for step 1 on the session row at connect time.
 
 ## Related Types
 
-Implement validators alongside tables using shapes from `@h3code/agent-core` (`SessionDomainEvent`, `WorkspaceDiffSummary`, `ProviderCapabilities`) to avoid drift.
+Implement validators alongside tables using shapes from `@h3code/agent-protocol` (`SessionDomainEvent`, `WorkspaceDiffSummary`, `ProviderCapabilities`) to avoid drift.
 
 ## Open Questions
 

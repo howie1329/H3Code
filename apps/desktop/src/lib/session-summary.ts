@@ -1,6 +1,5 @@
 import type { IndexedSessionPreference } from "@h3code/agent-metadata";
-
-import type { SessionSummary } from "$lib/session-types.js";
+import type { SessionSummary } from "@h3code/agent-protocol";
 
 export function indexedSessionToSummary(session: IndexedSessionPreference): SessionSummary {
   return {

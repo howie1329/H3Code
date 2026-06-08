@@ -94,8 +94,8 @@ pub fn build(b: *std.Build) void {
     linkPlatform(b, target, app_mod, exe, selected_platform, web_engine, zero_native_path, cef_dir, cef_auto_install);
     b.installArtifact(exe);
 
-    const agent_server_build = b.addSystemCommand(&.{ "npm", "run", "build", "--workspace", "@h3code/agent-server" });
-    const agent_server_step = b.step("agent-server-build", "Build the Agent Server sidecar");
+    const agent_server_build = b.addSystemCommand(&.{ "npm", "run", "build", "--workspace", "@h3code/agent-runtime-server" });
+    const agent_server_step = b.step("agent-server-build", "Build the runtime server sidecar");
     agent_server_step.dependOn(&agent_server_build.step);
 
     const frontend_build = b.addSystemCommand(&.{ "npm", "--prefix", "../desktop", "run", "build:renderer" });

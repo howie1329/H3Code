@@ -81,23 +81,6 @@ export class RuntimeClient {
     return this.requireSessionFromCommandResult(response, requestId);
   }
 
-  async resumeSession(sessionId: string, providerSessionRef?: string): Promise<SessionReadModel> {
-    await this.ensureConnected();
-    const requestId = this.createRequestId();
-    const response = await this.request({
-      id: requestId,
-      type: "command",
-      protocolVersion: AGENT_PROTOCOL_VERSION,
-      payload: {
-        type: "session.resume",
-        sessionId,
-        providerSessionRef,
-      },
-    });
-
-    return this.requireSessionFromCommandResult(response, requestId);
-  }
-
   async switchSession(repoPath: string, sessionId: string): Promise<SessionReadModel> {
     await this.ensureConnected();
     const requestId = this.createRequestId();

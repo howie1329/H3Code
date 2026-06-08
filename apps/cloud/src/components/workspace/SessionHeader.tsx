@@ -1,14 +1,13 @@
 'use client'
 
-import type { SessionStatus } from '@h3code/agent-core'
-
 import { SessionHeaderActions } from '#/components/workspace/SessionHeaderActions.tsx'
 import { Badge } from '#/components/ui/badge.tsx'
 import HeaderUser from '#/integrations/clerk/header-user'
+import type { CloudSessionDisplayStatus } from '#/lib/session/types.ts'
 
 type SessionHeaderProps = {
   title: string
-  status?: SessionStatus
+  status?: CloudSessionDisplayStatus
   hasDiff?: boolean
 }
 
