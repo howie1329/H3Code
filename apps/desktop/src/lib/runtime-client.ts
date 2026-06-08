@@ -8,6 +8,9 @@ import {
   type SessionReadModel,
   type SessionSummary,
   type UiSessionEvent,
+  type ProviderCommand,
+  type ProviderModel,
+  type ProviderQueueMode,
 } from "@h3code/agent-protocol";
 
 type PendingRequest = {
@@ -95,6 +98,32 @@ export class RuntimeClient {
     return this.requireSessionFromCommandResult(response, requestId);
   }
 
+  async switchSession(repoPath: string, providerSessionRef: string): Promise<SessionReadModel> {
+    await this.ensureConnected();
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "session.switch", repoPath, providerId: "pi", providerSessionRef },
+    });
+
+    return this.requireSessionFromCommandResult(response, requestId);
+  }
+
+  async deleteSession(repoPath: string, providerSessionRef: string, sessionId?: string): Promise<SessionSummary[]> {
+    await this.ensureConnected();
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "session.delete", repoPath, providerId: "pi", providerSessionRef, sessionId },
+    });
+
+    return this.requireSessionsFromCommandResult(response);
+  }
+
   async sendTurn(sessionId: string, text: string): Promise<void> {
     await this.ensureConnected();
     const requestId = this.createRequestId();
@@ -115,6 +144,81 @@ export class RuntimeClient {
       protocolVersion: AGENT_PROTOCOL_VERSION,
       payload: { type: "turn.abort", sessionId },
     });
+  }
+
+  async listProviderCommands(sessionId: string): Promise<ProviderCommand[]> {
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "provider.commands.list", sessionId },
+    });
+
+    return this.requireProviderCommandsFromCommandResult(response);
+  }
+
+  async listProviderModels(sessionId: string): Promise<ProviderModel[]> {
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "provider.models.list", sessionId },
+    });
+
+    return this.requireProviderModelsFromCommandResult(response);
+  }
+
+  async setModel(sessionId: string, model: ProviderModel): Promise<SessionReadModel> {
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "provider.model.set", sessionId, model },
+    });
+
+    return this.requireSessionFromCommandResult(response, requestId);
+  }
+
+  async setThinkingLevel(sessionId: string, level: string): Promise<SessionReadModel> {
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "provider.thinking.set", sessionId, level },
+    });
+
+    return this.requireSessionFromCommandResult(response, requestId);
+  }
+
+  async setQueueSettings(
+    sessionId: string,
+    settings: { steeringMode?: ProviderQueueMode; followUpMode?: ProviderQueueMode },
+  ): Promise<SessionReadModel> {
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "provider.queue.set", sessionId, ...settings },
+    });
+
+    return this.requireSessionFromCommandResult(response, requestId);
+  }
+
+  async setAutoCompaction(sessionId: string, enabled: boolean): Promise<SessionReadModel> {
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "provider.compaction.set", sessionId, enabled },
+    });
+
+    return this.requireSessionFromCommandResult(response, requestId);
   }
 
   async subscribeSession(sessionId: string, onEvent: (event: UiSessionEvent) => void): Promise<() => void> {
@@ -393,6 +497,42 @@ export class RuntimeClient {
     }
 
     return response.payload.session;
+  }
+
+  private requireProviderCommandsFromCommandResult(response: ServerToClientMessage): ProviderCommand[] {
+    if (response.type === "error") {
+      throw new Error(response.payload.message);
+    }
+
+    if (response.type !== "command.result" || !response.payload.providerCommands) {
+      throw new Error(`Unexpected provider commands response: ${response.type}`);
+    }
+
+    return response.payload.providerCommands.commands;
+  }
+
+  private requireProviderModelsFromCommandResult(response: ServerToClientMessage): ProviderModel[] {
+    if (response.type === "error") {
+      throw new Error(response.payload.message);
+    }
+
+    if (response.type !== "command.result" || !response.payload.providerModels) {
+      throw new Error(`Unexpected provider models response: ${response.type}`);
+    }
+
+    return response.payload.providerModels.models;
+  }
+
+  private requireSessionsFromCommandResult(response: ServerToClientMessage): SessionSummary[] {
+    if (response.type === "error") {
+      throw new Error(response.payload.message);
+    }
+
+    if (response.type !== "command.result" || !response.payload.sessions) {
+      throw new Error(`Unexpected sessions response: ${response.type}`);
+    }
+
+    return response.payload.sessions;
   }
 }
 

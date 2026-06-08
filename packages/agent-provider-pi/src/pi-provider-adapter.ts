@@ -1,6 +1,8 @@
 import { PiSdkProvider } from "./pi-sdk/pi-provider.js";
 import type {
   AbortTurnCommand,
+  ListProviderCommandsCommand,
+  ListProviderModelsCommand,
   ProviderAdapter,
   ProviderDescriptor,
   ProviderRuntime,
@@ -12,6 +14,10 @@ import type {
   StartProviderSessionRequest,
   ResumeProviderSessionRequest,
   RuntimeEvent,
+  SetProviderCompactionCommand,
+  SetProviderModelCommand,
+  SetProviderQueueCommand,
+  SetProviderThinkingCommand,
 } from "@h3code/agent-protocol";
 import type { PiProviderOptions, PiProviderUiResponse } from "./pi-sdk/types.js";
 import { createPiRuntimeEventMapperState, mapPiEventToRuntimeEvents } from "./event-mapper.js";
@@ -34,9 +40,18 @@ export class PiProviderAdapter implements ProviderAdapter {
       cancellation: true,
       attachments: true,
       modes: ["default", "plan"],
+      controls: {
+        slashCommands: true,
+        model: true,
+        thinkingLevel: true,
+        queueSettings: true,
+        autoCompaction: true,
+        sessionSwitching: true,
+        sessionDeletion: true,
+      },
       metadata: {
         advancedControls: false,
-        deferredControls: ["model", "thinkingLevel", "queueModes", "autoCompaction", "switch", "fork", "import"],
+        deferredControls: ["fork", "import"],
       },
     },
   };
@@ -67,6 +82,32 @@ export class PiProviderAdapter implements ProviderAdapter {
 
   async abortTurn(binding: RuntimeBinding, _command: AbortTurnCommand): Promise<void> {
     await this.#requireProvider(binding).abort();
+  }
+
+  async listCommands(binding: RuntimeBinding, _command: ListProviderCommandsCommand) {
+    return this.#requireProvider(binding).listCommands();
+  }
+
+  async listModels(binding: RuntimeBinding, _command: ListProviderModelsCommand) {
+    return this.#requireProvider(binding).listModels();
+  }
+
+  async setModel(binding: RuntimeBinding, command: SetProviderModelCommand): Promise<void> {
+    await this.#requireProvider(binding).setModel(command.model);
+  }
+
+  async setThinkingLevel(binding: RuntimeBinding, command: SetProviderThinkingCommand): Promise<void> {
+    this.#requireProvider(binding).setThinkingLevel(command.level);
+  }
+
+  async setQueueSettings(binding: RuntimeBinding, command: SetProviderQueueCommand): Promise<void> {
+    const provider = this.#requireProvider(binding);
+    if (command.steeringMode) provider.setSteeringMode(command.steeringMode);
+    if (command.followUpMode) provider.setFollowUpMode(command.followUpMode);
+  }
+
+  async setAutoCompaction(binding: RuntimeBinding, command: SetProviderCompactionCommand): Promise<void> {
+    this.#requireProvider(binding).setAutoCompactionEnabled(command.enabled);
   }
 
   async resolveApproval(binding: RuntimeBinding, command: ResolveApprovalCommand): Promise<void> {

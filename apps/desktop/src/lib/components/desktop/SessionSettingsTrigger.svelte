@@ -22,7 +22,7 @@
   );
   const modelLabel = $derived(desktopState.modelsLoading ? "Loading…" : getModelLabel(model));
   const supportsThinking = $derived(modelSupportsThinking(model, desktopState.availableModels));
-  const thinkingShort = $derived("Off");
+  const thinkingShort = $derived(desktopState.sessionReadModel.thinkingLevel ?? "Off");
   const summaryTitle = $derived(modelLabel);
 </script>
 

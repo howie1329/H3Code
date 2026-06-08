@@ -314,6 +314,11 @@ class DesktopState {
       sessionId: session.id,
       repoPath: nextRepoPath,
     };
+    this.supportsSlashCommands = true;
+    this.supportsModelPicker = true;
+    this.supportsQueueSettings = true;
+    this.supportsCompactionSettings = true;
+    this.canChangeSessionSettings = true;
     this.syncPendingInteraction();
     this.applyDiffSummary(session.diffSummary);
 
@@ -360,8 +365,32 @@ class DesktopState {
     this.landingRepoPath = selected.path;
   }
 
-  async handleSwitchSession(_sessionPath: string, _repoPath = this.repoPath) {
-    this.errorMessage = "Session switching is not available in this runtime build yet.";
+  async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
+    if (!repoPath) {
+      this.errorMessage = "Select a repo before switching sessions.";
+      return;
+    }
+
+    this.isSwitchingSession = true;
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      const session = await getRuntimeClient().switchSession(repoPath, sessionPath);
+      this.resetSessionDiff();
+      await this.attachSession(session, repoPath);
+      const sessions = await getRuntimeClient().listSessions({ repoPath, markRecent: true });
+      this.sessions = this.mergeLiveSession(sessions, session, repoPath);
+      this.repos = updateRepo(this.repos, repoPath, {
+        expanded: true,
+        sessions: this.sessions,
+        sessionsLoaded: true,
+        sessionsLoading: false,
+        sessionsError: undefined,
+      });
+      await this.ensureWorkspaceRoute();
+    });
+
+    this.isSwitchingSession = false;
   }
 
   async handleNewSession(repoPath = this.repoPath) {
@@ -436,8 +465,29 @@ class DesktopState {
       return;
     }
 
-    this.errorMessage = "Session deletion is not available in this runtime build yet.";
-    void sessionPath;
+    const deletingActive = sessionPath === this.selectedSessionRef || sessionPath === this.sessionReadModel.providerSessionRef;
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      const sessions = await getRuntimeClient().deleteSession(
+        repoPath,
+        sessionPath,
+        deletingActive ? this.activeSessionId : undefined,
+      );
+      this.sessions = sessions;
+      this.repos = updateRepo(this.repos, repoPath, {
+        sessions,
+        sessionsLoaded: true,
+        sessionsLoading: false,
+        sessionsError: undefined,
+      });
+
+      if (deletingActive) {
+        this.clearWorkspaceSessionState();
+        this.landingRepoPath = repoPath;
+        await this.ensureLandingRoute();
+      }
+    });
   }
 
   async handleSteerSubmit(text: string) {
@@ -534,40 +584,125 @@ class DesktopState {
     }
   }
 
-  async ensureSlashCommands(_refresh = false) {
-    this.slashCommands = [];
-    this.slashCommandsLoaded = false;
-    this.slashCommandsError = "Slash commands unavailable in this runtime build.";
+  async ensureSlashCommands(refresh = false) {
+    if (!this.activeSessionId || !this.supportsSlashCommands) {
+      this.slashCommands = [];
+      this.slashCommandsLoaded = false;
+      return;
+    }
+
+    if (this.slashCommandsLoaded && !refresh) {
+      return;
+    }
+
+    this.slashCommandsLoading = true;
+    this.slashCommandsError = undefined;
+
+    try {
+      this.slashCommands = await getRuntimeClient().listProviderCommands(this.activeSessionId);
+      this.slashCommandsLoaded = true;
+    } catch (error) {
+      this.slashCommandsError = getErrorMessage(error);
+    } finally {
+      this.slashCommandsLoading = false;
+    }
   }
 
   slashCommandsLoaded = false;
 
-  async ensureAvailableModels(_refresh = false) {
-    this.availableModels = [];
-    this.modelsLoaded = false;
+  async ensureAvailableModels(refresh = false) {
+    if (!this.activeSessionId || !this.supportsModelPicker) {
+      this.availableModels = [];
+      this.modelsLoaded = false;
+      return;
+    }
+
+    if (this.modelsLoaded && !refresh) {
+      return;
+    }
+
+    this.modelsLoading = true;
     this.modelsError = undefined;
+
+    try {
+      this.availableModels = (await getRuntimeClient().listProviderModels(this.activeSessionId)).map((model) => ({
+        ...model,
+        provider: model.provider ?? this.sessionReadModel.providerId,
+        modelId: model.modelId ?? model.id,
+      }));
+      this.modelsLoaded = true;
+    } catch (error) {
+      this.modelsError = getErrorMessage(error);
+    } finally {
+      this.modelsLoading = false;
+    }
   }
 
   modelsLoaded = false;
 
-  async setModel(_provider: string, _modelId: string) {
-    this.errorMessage = "Model changes are not available in this runtime build yet.";
+  async setModel(provider: string | undefined, modelId: string) {
+    if (!this.activeSessionId) {
+      return;
+    }
+
+    const model = this.availableModels.find((entry) => entry.id === modelId || entry.modelId === modelId) ?? {
+      id: modelId,
+      modelId,
+      provider,
+    };
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      this.sessionReadModel = await getRuntimeClient().setModel(this.activeSessionId!, model);
+    });
   }
 
-  async setThinkingLevel(_level: string) {
-    this.errorMessage = "Thinking level changes are not available in this runtime build yet.";
+  async setThinkingLevel(level: string) {
+    if (!this.activeSessionId) {
+      return;
+    }
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      this.sessionReadModel = await getRuntimeClient().setThinkingLevel(this.activeSessionId!, level);
+    });
   }
 
-  async setSteeringMode(_mode: string) {
-    this.errorMessage = "Queue settings are not available in this runtime build yet.";
+  async setSteeringMode(mode: string) {
+    if (!this.activeSessionId) {
+      return;
+    }
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      this.sessionReadModel = await getRuntimeClient().setQueueSettings(this.activeSessionId!, {
+        steeringMode: mode as ProviderQueueMode,
+      });
+    });
   }
 
-  async setFollowUpMode(_mode: string) {
-    this.errorMessage = "Queue settings are not available in this runtime build yet.";
+  async setFollowUpMode(mode: string) {
+    if (!this.activeSessionId) {
+      return;
+    }
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      this.sessionReadModel = await getRuntimeClient().setQueueSettings(this.activeSessionId!, {
+        followUpMode: mode as ProviderQueueMode,
+      });
+    });
   }
 
-  async setAutoCompaction(_enabled: boolean) {
-    this.errorMessage = "Auto-compaction is not available in this runtime build yet.";
+  async setAutoCompaction(enabled: boolean) {
+    if (!this.activeSessionId) {
+      return;
+    }
+
+    await this.withBusy(async () => {
+      this.errorMessage = undefined;
+      this.sessionReadModel = await getRuntimeClient().setAutoCompaction(this.activeSessionId!, enabled);
+    });
   }
 
   setSidebarOpen(open: boolean) {

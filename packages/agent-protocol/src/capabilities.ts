@@ -6,12 +6,23 @@ export type ProviderCapabilities = {
   cancellation: boolean;
   attachments: boolean;
   modes?: ProviderMode[];
+  controls?: ProviderControlCapabilities;
   tools?: ProviderToolCapability[];
   models?: ProviderModelCapability[];
   metadata?: Record<string, unknown>;
 };
 
 export type ProviderMode = "default" | "plan";
+
+export type ProviderControlCapabilities = {
+  slashCommands?: boolean;
+  model?: boolean;
+  thinkingLevel?: boolean;
+  queueSettings?: boolean;
+  autoCompaction?: boolean;
+  sessionSwitching?: boolean;
+  sessionDeletion?: boolean;
+};
 
 export type ProviderToolCapability = {
   name: string;

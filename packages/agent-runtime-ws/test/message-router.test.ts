@@ -89,6 +89,32 @@ test("lists sessions through the workspace service", async () => {
   assert.equal(peer.messages[0]?.payload.sessions.length, 1);
 });
 
+test("deletes sessions through runtime and workspace services", async () => {
+  const runtime = new FakeRuntime();
+  const peer = new Peer();
+  const workspaceCalls: unknown[] = [];
+  const workspace = {
+    listSessions: async () => [],
+    deleteSession: async (input: unknown) => {
+      workspaceCalls.push(input);
+      return [{ providerId: "fake", sessionRef: "/repo/s2", status: "idle" as const, repoPath: "/repo" }];
+    },
+  };
+  const router = new AgentRuntimeWsMessageRouter(runtime as never, workspace);
+
+  await router.route(peer, {
+    id: "delete1",
+    type: "command",
+    protocolVersion: AGENT_PROTOCOL_VERSION,
+    payload: { type: "session.delete", repoPath: "/repo", providerId: "fake", providerSessionRef: "/repo/s1" },
+  });
+
+  assert.deepEqual(runtime.dispatched, [{ type: "session.delete", repoPath: "/repo", providerId: "fake", providerSessionRef: "/repo/s1" }]);
+  assert.deepEqual(workspaceCalls, [{ repoPath: "/repo", providerId: "fake", providerSessionRef: "/repo/s1" }]);
+  assert.equal(peer.messages[0]?.type, "command.result");
+  assert.equal(peer.messages[0]?.payload.sessions?.[0]?.sessionRef, "/repo/s2");
+});
+
 test("errors when no workspace service is configured for session listing", async () => {
   const runtime = new FakeRuntime();
   const peer = new Peer();

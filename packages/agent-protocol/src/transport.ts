@@ -1,4 +1,4 @@
-import type { AgentCommand } from "./commands.js";
+import type { AgentCommand, ProviderCommandListResult, ProviderModelListResult } from "./commands.js";
 import type { RequestId, SessionId } from "./ids.js";
 import type { SessionReadModel } from "./session-read-model.js";
 import type { UiSessionEvent } from "./ui-events.js";
@@ -33,6 +33,9 @@ export type ServerToClientMessage =
 export type CommandResult = {
   requestId?: RequestId;
   session?: SessionReadModel;
+  providerCommands?: ProviderCommandListResult;
+  providerModels?: ProviderModelListResult;
+  sessions?: SessionSummary[];
 };
 
 export type ProtocolError = {

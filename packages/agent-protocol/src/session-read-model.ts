@@ -14,6 +14,9 @@ export type SessionReadModel = {
   activities: UiActivity[];
   pendingInteractions: PendingInteraction[];
   model?: UiModelState;
+  thinkingLevel?: string;
+  queueSettings?: UiQueueSettings;
+  autoCompactionEnabled?: boolean;
   tokenUsage?: TokenUsageSnapshot;
   diffSummary?: WorkspaceDiffSummary;
   updatedAt: number;
@@ -62,6 +65,14 @@ export type UiModelState = {
   id?: string;
   name?: string;
   providerId?: ProviderId;
+  provider?: string;
+  modelId?: string;
+  reasoning?: boolean;
+};
+
+export type UiQueueSettings = {
+  steeringMode?: "all" | "one-at-a-time";
+  followUpMode?: "all" | "one-at-a-time";
 };
 
 export type TokenUsageSnapshot = {
@@ -93,6 +104,9 @@ export type SessionReadModelPatch = {
   activities?: UiActivity[];
   pendingInteractions?: PendingInteraction[];
   model?: UiModelState | null;
+  thinkingLevel?: string | null;
+  queueSettings?: UiQueueSettings | null;
+  autoCompactionEnabled?: boolean | null;
   tokenUsage?: TokenUsageSnapshot | null;
   diffSummary?: WorkspaceDiffSummary | null;
   updatedAt: number;

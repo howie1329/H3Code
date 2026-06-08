@@ -87,6 +87,18 @@ export function applyPatch(model: SessionReadModel, patch: SessionReadModelPatch
     next.model = patch.model ?? undefined;
   }
 
+  if (patch.thinkingLevel !== undefined) {
+    next.thinkingLevel = patch.thinkingLevel ?? undefined;
+  }
+
+  if (patch.queueSettings !== undefined) {
+    next.queueSettings = patch.queueSettings ?? undefined;
+  }
+
+  if (patch.autoCompactionEnabled !== undefined) {
+    next.autoCompactionEnabled = patch.autoCompactionEnabled ?? undefined;
+  }
+
   if (patch.tokenUsage !== undefined) {
     next.tokenUsage = patch.tokenUsage ?? undefined;
   }

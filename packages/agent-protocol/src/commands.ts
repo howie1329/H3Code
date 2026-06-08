@@ -1,10 +1,19 @@
+import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "./providers.js";
 import type { ProviderId, ProviderSessionRef, RepoPath, RequestId, SessionId, TurnId } from "./ids.js";
 
 export type AgentCommand =
   | CreateSessionCommand
+  | SwitchSessionCommand
+  | DeleteSessionCommand
   | ResumeSessionCommand
   | SendTurnCommand
   | AbortTurnCommand
+  | ListProviderCommandsCommand
+  | ListProviderModelsCommand
+  | SetProviderModelCommand
+  | SetProviderThinkingCommand
+  | SetProviderQueueCommand
+  | SetProviderCompactionCommand
   | ResolveApprovalCommand
   | ResolveUserInputCommand;
 
@@ -20,6 +29,21 @@ export type ResumeSessionCommand = {
   sessionId: SessionId;
   providerSessionRef?: ProviderSessionRef;
   resumeCursor?: unknown;
+};
+
+export type SwitchSessionCommand = {
+  type: "session.switch";
+  repoPath: RepoPath;
+  providerId: ProviderId;
+  providerSessionRef: ProviderSessionRef;
+};
+
+export type DeleteSessionCommand = {
+  type: "session.delete";
+  repoPath: RepoPath;
+  providerId?: ProviderId;
+  providerSessionRef: ProviderSessionRef;
+  sessionId?: SessionId;
 };
 
 export type SendTurnCommand = {
@@ -50,6 +74,41 @@ export type AbortTurnCommand = {
   turnId?: TurnId;
 };
 
+export type ListProviderCommandsCommand = {
+  type: "provider.commands.list";
+  sessionId: SessionId;
+};
+
+export type ListProviderModelsCommand = {
+  type: "provider.models.list";
+  sessionId: SessionId;
+};
+
+export type SetProviderModelCommand = {
+  type: "provider.model.set";
+  sessionId: SessionId;
+  model: ProviderModel;
+};
+
+export type SetProviderThinkingCommand = {
+  type: "provider.thinking.set";
+  sessionId: SessionId;
+  level: string;
+};
+
+export type SetProviderQueueCommand = {
+  type: "provider.queue.set";
+  sessionId: SessionId;
+  steeringMode?: ProviderQueueMode;
+  followUpMode?: ProviderQueueMode;
+};
+
+export type SetProviderCompactionCommand = {
+  type: "provider.compaction.set";
+  sessionId: SessionId;
+  enabled: boolean;
+};
+
 export type ResolveApprovalCommand = {
   type: "approval.resolve";
   sessionId: SessionId;
@@ -63,4 +122,12 @@ export type ResolveUserInputCommand = {
   sessionId: SessionId;
   requestId: RequestId;
   input: unknown;
+};
+
+export type ProviderCommandListResult = {
+  commands: ProviderCommand[];
+};
+
+export type ProviderModelListResult = {
+  models: ProviderModel[];
 };

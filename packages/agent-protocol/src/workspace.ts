@@ -23,3 +23,9 @@ export type ListSessionsInput = {
   providerId?: ProviderId;
   markRecent?: boolean;
 };
+
+export type DeleteSessionInput = {
+  repoPath: string;
+  providerId?: ProviderId;
+  providerSessionRef: string;
+};

@@ -26,7 +26,11 @@ export class ReadModelProjector {
       case "session.started": {
         if (event.repoPath) session.repoPath = event.repoPath;
         session.providerSessionRef = event.providerSessionRef ?? session.providerSessionRef;
-        if (event.model) session.model = { id: event.model, name: event.model, providerId: event.providerId };
+        if (event.modelState) session.model = { ...event.modelState, providerId: event.providerId };
+        else if (event.model) session.model = { id: event.model, name: event.model, providerId: event.providerId };
+        if (event.thinkingLevel !== undefined) session.thinkingLevel = event.thinkingLevel;
+        if (event.queueSettings !== undefined) session.queueSettings = event.queueSettings;
+        if (event.autoCompactionEnabled !== undefined) session.autoCompactionEnabled = event.autoCompactionEnabled;
         session.status = "idle";
         return { session, events: [{ type: "session.snapshot", session }] };
       }
@@ -46,8 +50,12 @@ export class ReadModelProjector {
         }
         session.providerSessionRef = event.providerSessionRef ?? session.providerSessionRef;
         if (event.title !== undefined) session.title = event.title;
-        if (event.model) session.model = { id: event.model, name: event.model, providerId: event.providerId };
-        return patch(session, { status: session.status, activeTurnId: session.activeTurnId ?? null, title: session.title ?? null, messages: session.messages, activities: session.activities, model: session.model ?? null, updatedAt: event.occurredAt });
+        if (event.modelState) session.model = { ...event.modelState, providerId: event.providerId };
+        else if (event.model) session.model = { id: event.model, name: event.model, providerId: event.providerId };
+        if (event.thinkingLevel !== undefined) session.thinkingLevel = event.thinkingLevel;
+        if (event.queueSettings !== undefined) session.queueSettings = event.queueSettings;
+        if (event.autoCompactionEnabled !== undefined) session.autoCompactionEnabled = event.autoCompactionEnabled;
+        return patch(session, { status: session.status, activeTurnId: session.activeTurnId ?? null, title: session.title ?? null, messages: session.messages, activities: session.activities, model: session.model ?? null, thinkingLevel: session.thinkingLevel ?? null, queueSettings: session.queueSettings ?? null, autoCompactionEnabled: session.autoCompactionEnabled ?? null, updatedAt: event.occurredAt });
       }
       case "session.ended": {
         session.status = event.status === "failed" ? "error" : "idle";

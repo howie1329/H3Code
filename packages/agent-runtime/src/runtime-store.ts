@@ -26,6 +26,16 @@ export class InMemoryRuntimeStore {
     return [...this.#providerRuntimes.entries()];
   }
 
+  findBindingByProviderSessionRef(providerSessionRef: string): RuntimeBinding | undefined {
+    for (const binding of this.#bindings.values()) {
+      if (binding.providerSessionRef === providerSessionRef) {
+        return binding;
+      }
+    }
+
+    return undefined;
+  }
+
   getReadModel(sessionId: SessionId): SessionReadModel | undefined {
     return this.#readModels.get(sessionId);
   }

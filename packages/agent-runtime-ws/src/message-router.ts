@@ -1,6 +1,7 @@
 import {
   AGENT_PROTOCOL_VERSION,
   type ClientToServerMessage,
+  type DeleteSessionInput,
   type ListSessionsInput,
   type ServerToClientMessage,
   type SessionSummary,
@@ -20,6 +21,7 @@ export type RuntimeWsPeer = {
  */
 export type WorkspaceService = {
   listSessions(input: ListSessionsInput): Promise<SessionSummary[]>;
+  deleteSession?(input: DeleteSessionInput): Promise<SessionSummary[]>;
 };
 
 export class AgentRuntimeWsMessageRouter {
@@ -36,11 +38,32 @@ export class AgentRuntimeWsMessageRouter {
     try {
       switch (message.type) {
         case "command":
-          const session = await this.#runtime.dispatchCommand(message.payload);
+          if (message.payload.type === "session.delete") {
+            await this.#runtime.dispatchCommand(message.payload);
+
+            if (!this.#workspace?.deleteSession) {
+              throw Object.assign(new Error("Workspace session deletion is not available."), { code: "unsupported_message" });
+            }
+
+            const sessions = await this.#workspace.deleteSession({
+              repoPath: message.payload.repoPath,
+              providerId: message.payload.providerId,
+              providerSessionRef: message.payload.providerSessionRef,
+            });
+            peer.send({
+              type: "command.result",
+              protocolVersion: AGENT_PROTOCOL_VERSION,
+              payload: { requestId: message.id, sessions },
+              sentAt: Date.now(),
+            });
+            return;
+          }
+
+          const result = await this.#runtime.dispatchCommand(message.payload);
           peer.send({
             type: "command.result",
             protocolVersion: AGENT_PROTOCOL_VERSION,
-            payload: session ? { requestId: message.id, session } : { requestId: message.id },
+            payload: toCommandResultPayload(message.id, result),
             sentAt: Date.now(),
           });
           return;
@@ -84,4 +107,20 @@ export class AgentRuntimeWsMessageRouter {
     for (const unsubscribe of this.#subscriptions.get(peer)?.values() ?? []) unsubscribe();
     this.#subscriptions.delete(peer);
   }
+}
+
+function toCommandResultPayload(requestId: string | undefined, result: Awaited<ReturnType<AgentRuntime["dispatchCommand"]>>) {
+  if (result && "commands" in result) {
+    return { requestId, providerCommands: { commands: result.commands } };
+  }
+
+  if (result && "models" in result) {
+    return { requestId, providerModels: { models: result.models } };
+  }
+
+  if (result) {
+    return { requestId, session: result };
+  }
+
+  return { requestId };
 }

@@ -191,7 +191,7 @@
             <SegmentedControl
               ariaLabel="Steering delivery mode"
               options={deliveryOptions}
-              value={undefined}
+              value={desktopState.sessionReadModel.queueSettings?.steeringMode}
               disabled={queueControlsDisabled}
               onChange={(value) => desktopState.setSteeringMode(value as ProviderQueueMode)}
             />
@@ -206,7 +206,7 @@
             <SegmentedControl
               ariaLabel="Follow-up delivery mode"
               options={deliveryOptions}
-              value={undefined}
+              value={desktopState.sessionReadModel.queueSettings?.followUpMode}
               disabled={queueControlsDisabled}
               onChange={(value) => desktopState.setFollowUpMode(value as ProviderQueueMode)}
             />
@@ -221,7 +221,7 @@
           {#snippet control()}
             <Switch
               id="auto-compaction"
-              checked={false}
+              checked={desktopState.sessionReadModel.autoCompactionEnabled === true}
               disabled={compactionControlsDisabled}
               onCheckedChange={(checked) => desktopState.setAutoCompaction(checked)}
             />

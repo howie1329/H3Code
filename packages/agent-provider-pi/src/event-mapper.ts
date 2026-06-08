@@ -34,6 +34,13 @@ export function mapPiEventToRuntimeEvents(event: PiProviderEvent, context: PiRun
           providerSessionRef: event.snapshot.sessionFile ?? event.snapshot.sessionId,
           title: event.snapshot.sessionName,
           model: modelId(event.snapshot.model),
+          modelState: modelState(event.snapshot.model),
+          thinkingLevel: event.snapshot.thinkingLevel,
+          queueSettings: {
+            steeringMode: event.snapshot.steeringMode,
+            followUpMode: event.snapshot.followUpMode,
+          },
+          autoCompactionEnabled: event.snapshot.autoCompactionEnabled,
           metadata: {
             cwd: event.snapshot.cwd,
             diagnostics: event.snapshot.diagnostics,
@@ -177,4 +184,23 @@ function modelId(value: unknown): string | undefined {
     if (typeof record.name === "string") return record.name;
   }
   return undefined;
+}
+
+function modelState(value: unknown) {
+  if (!value || typeof value !== "object") {
+    const id = modelId(value);
+    return id ? { id, name: id, modelId: id } : undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = modelId(value);
+  if (!id) return undefined;
+
+  return {
+    id,
+    provider: typeof record.provider === "string" ? record.provider : undefined,
+    name: typeof record.name === "string" ? record.name : id,
+    modelId: typeof record.modelId === "string" ? record.modelId : id,
+    reasoning: typeof record.reasoning === "boolean" ? record.reasoning : undefined,
+  };
 }

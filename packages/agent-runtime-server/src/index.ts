@@ -1,4 +1,4 @@
-import { listPiSessionsForRepo, PiProviderAdapter, type PiProviderAdapterOptions } from "@h3code/agent-provider-pi";
+import { deletePiSessionForRepo, listPiSessionsForRepo, PiProviderAdapter, type PiProviderAdapterOptions } from "@h3code/agent-provider-pi";
 import { AgentRuntime, type AgentRuntimeOptions } from "@h3code/agent-runtime";
 import { createAgentRuntimeWsServer, type WorkspaceService } from "@h3code/agent-runtime-ws";
 import type { WebSocketServer } from "ws";
@@ -19,6 +19,11 @@ const piWorkspaceService: WorkspaceService = {
       repoPath: input.repoPath,
       providerId: input.providerId ?? "pi",
       markRecent: input.markRecent,
+    }),
+  deleteSession: (input) =>
+    deletePiSessionForRepo({
+      repoPath: input.repoPath,
+      sessionRef: input.providerSessionRef,
     }),
 };
 

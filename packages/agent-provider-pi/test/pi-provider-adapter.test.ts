@@ -8,6 +8,11 @@ class FakePiProvider {
   prompts: unknown[] = [];
   aborted = false;
   responses: unknown[] = [];
+  model: unknown;
+  thinkingLevel: string | undefined;
+  steeringMode: string | undefined;
+  followUpMode: string | undefined;
+  autoCompactionEnabled: boolean | undefined;
   listener?: (event: unknown) => void;
 
   subscribe(listener: (event: unknown) => void) {
@@ -44,6 +49,34 @@ class FakePiProvider {
 
   respondToUiRequest(response: unknown) {
     this.responses.push(response);
+  }
+
+  listCommands() {
+    return [{ name: "ask", source: "prompt" }];
+  }
+
+  listModels() {
+    return [{ id: "model", provider: "openai", modelId: "model" }];
+  }
+
+  async setModel(model: unknown) {
+    this.model = model;
+  }
+
+  setThinkingLevel(level: string) {
+    this.thinkingLevel = level;
+  }
+
+  setSteeringMode(mode: string) {
+    this.steeringMode = mode;
+  }
+
+  setFollowUpMode(mode: string) {
+    this.followUpMode = mode;
+  }
+
+  setAutoCompactionEnabled(enabled: boolean) {
+    this.autoCompactionEnabled = enabled;
   }
 
   async dispose() {
@@ -97,6 +130,25 @@ test("maps first-pass commands to the PI provider", async () => {
   assert.deepEqual(fake.prompts, [{ text: "hello", images: undefined, source: "prompt" }]);
   assert.equal(fake.aborted, true);
   assert.equal(fake.responses.length, 1);
+});
+
+test("maps provider controls to the PI provider", async () => {
+  const fake = new FakePiProvider();
+  const adapter = new PiProviderAdapter({ providerFactory: () => fake as never });
+  const runtime = await adapter.startSession({ sessionId: "s1", providerId: "pi", repoPath: "/repo" }, () => undefined);
+
+  assert.deepEqual(await adapter.listCommands?.(runtime.binding, { type: "provider.commands.list", sessionId: "s1" }), [{ name: "ask", source: "prompt" }]);
+  assert.deepEqual(await adapter.listModels?.(runtime.binding, { type: "provider.models.list", sessionId: "s1" }), [{ id: "model", provider: "openai", modelId: "model" }]);
+  await adapter.setModel?.(runtime.binding, { type: "provider.model.set", sessionId: "s1", model: { id: "model", provider: "openai", modelId: "model" } });
+  await adapter.setThinkingLevel?.(runtime.binding, { type: "provider.thinking.set", sessionId: "s1", level: "high" });
+  await adapter.setQueueSettings?.(runtime.binding, { type: "provider.queue.set", sessionId: "s1", steeringMode: "all", followUpMode: "one-at-a-time" });
+  await adapter.setAutoCompaction?.(runtime.binding, { type: "provider.compaction.set", sessionId: "s1", enabled: true });
+
+  assert.deepEqual(fake.model, { id: "model", provider: "openai", modelId: "model" });
+  assert.equal(fake.thinkingLevel, "high");
+  assert.equal(fake.steeringMode, "all");
+  assert.equal(fake.followUpMode, "one-at-a-time");
+  assert.equal(fake.autoCompactionEnabled, true);
 });
 
 test("buffers startup PI events until runtime session is started", async () => {

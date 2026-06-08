@@ -1,3 +1,4 @@
+import type { ProviderModel, ProviderQueueMode } from "./providers.js";
 import type { ProviderId, ProviderSessionRef, RepoPath, RequestId, RuntimeItemId, SessionId, TurnId } from "./ids.js";
 
 export type RuntimeEvent =
@@ -28,6 +29,13 @@ export type SessionStartedEvent = RuntimeEventBase<"session.started"> & {
   providerSessionRef?: ProviderSessionRef;
   resumeCursor?: unknown;
   model?: string;
+  modelState?: ProviderModel;
+  thinkingLevel?: string;
+  queueSettings?: {
+    steeringMode?: ProviderQueueMode;
+    followUpMode?: ProviderQueueMode;
+  };
+  autoCompactionEnabled?: boolean;
 };
 
 export type SessionUpdatedEvent = RuntimeEventBase<"session.updated"> & {
@@ -35,6 +43,13 @@ export type SessionUpdatedEvent = RuntimeEventBase<"session.updated"> & {
   providerSessionRef?: ProviderSessionRef;
   resumeCursor?: unknown;
   model?: string;
+  modelState?: ProviderModel;
+  thinkingLevel?: string;
+  queueSettings?: {
+    steeringMode?: ProviderQueueMode;
+    followUpMode?: ProviderQueueMode;
+  };
+  autoCompactionEnabled?: boolean;
   title?: string;
   metadata?: Record<string, unknown>;
 };

@@ -1,4 +1,4 @@
-import type { AgentCommand, ProviderAdapter, ProviderDescriptor, RuntimeEvent, SessionId, SessionReadModel, UiMessage, UiSessionEvent } from "@h3code/agent-protocol";
+import type { AgentCommand, ProviderAdapter, ProviderCommand, ProviderDescriptor, ProviderModel, RuntimeEvent, SessionId, SessionReadModel, UiMessage, UiSessionEvent } from "@h3code/agent-protocol";
 import { RuntimeEventBus, type RuntimeEventListener } from "./event-bus.js";
 import { ProviderRegistry } from "./provider-registry.js";
 import { ReadModelProjector } from "./read-model-projector.js";
@@ -11,6 +11,12 @@ export type AgentRuntimeOptions = {
   projector?: ReadModelProjector;
   idFactory?: () => SessionId;
 };
+
+export type AgentCommandResult =
+  | SessionReadModel
+  | { commands: ProviderCommand[] }
+  | { models: ProviderModel[] }
+  | void;
 
 export class AgentRuntime {
   readonly #registry: ProviderRegistry;
@@ -63,7 +69,7 @@ export class AgentRuntime {
     return this.ingestRuntimeEvent(event);
   }
 
-  async dispatchCommand(command: AgentCommand): Promise<SessionReadModel | void> {
+  async dispatchCommand(command: AgentCommand): Promise<AgentCommandResult> {
     switch (command.type) {
       case "session.create": {
         const sessionId = this.#idFactory();
@@ -82,6 +88,36 @@ export class AgentRuntime {
         this.#store.setProviderRuntime(command.sessionId, runtime);
         return this.#store.getReadModel(command.sessionId);
       }
+      case "session.switch": {
+        const existingBinding = this.#store.findBindingByProviderSessionRef(command.providerSessionRef);
+        if (existingBinding) {
+          return this.#store.getReadModel(existingBinding.sessionId);
+        }
+
+        const sessionId = this.#idFactory();
+        const provider = this.#registry.get(command.providerId);
+        const runtime = await provider.resumeSession(
+          {
+            sessionId,
+            providerId: command.providerId,
+            repoPath: command.repoPath,
+            providerSessionRef: command.providerSessionRef,
+          },
+          (event) => { void this.ingestRuntimeEvent(event); },
+        );
+        this.#store.setBinding(runtime.binding);
+        this.#store.setProviderRuntime(sessionId, runtime);
+        return this.#store.getReadModel(sessionId);
+      }
+      case "session.delete": {
+        const binding = command.sessionId
+          ? this.#store.getBinding(command.sessionId)
+          : this.#store.findBindingByProviderSessionRef(command.providerSessionRef);
+        if (binding) {
+          await this.stopSession(binding.sessionId);
+        }
+        return;
+      }
       case "turn.send": {
         const binding = this.#requireBinding(command.sessionId);
         this.#insertUserMessage(command);
@@ -92,6 +128,52 @@ export class AgentRuntime {
         const binding = this.#requireBinding(command.sessionId);
         await this.#registry.get(binding.providerId).abortTurn(binding, command);
         return;
+      }
+      case "provider.commands.list": {
+        const binding = this.#requireBinding(command.sessionId);
+        const provider = this.#registry.get(binding.providerId);
+        if (!provider.listCommands) throw runtimeErrors.unsupportedCommand(command.type);
+        return { commands: await provider.listCommands(binding, command) };
+      }
+      case "provider.models.list": {
+        const binding = this.#requireBinding(command.sessionId);
+        const provider = this.#registry.get(binding.providerId);
+        if (!provider.listModels) throw runtimeErrors.unsupportedCommand(command.type);
+        return { models: await provider.listModels(binding, command) };
+      }
+      case "provider.model.set": {
+        const binding = this.#requireBinding(command.sessionId);
+        const provider = this.#registry.get(binding.providerId);
+        if (!provider.setModel) throw runtimeErrors.unsupportedCommand(command.type);
+        await provider.setModel(binding, command);
+        return this.#patchSession(command.sessionId, { model: { ...command.model, providerId: binding.providerId } });
+      }
+      case "provider.thinking.set": {
+        const binding = this.#requireBinding(command.sessionId);
+        const provider = this.#registry.get(binding.providerId);
+        if (!provider.setThinkingLevel) throw runtimeErrors.unsupportedCommand(command.type);
+        await provider.setThinkingLevel(binding, command);
+        return this.#patchSession(command.sessionId, { thinkingLevel: command.level });
+      }
+      case "provider.queue.set": {
+        const binding = this.#requireBinding(command.sessionId);
+        const provider = this.#registry.get(binding.providerId);
+        if (!provider.setQueueSettings) throw runtimeErrors.unsupportedCommand(command.type);
+        await provider.setQueueSettings(binding, command);
+        const session = this.#store.getReadModel(command.sessionId);
+        return this.#patchSession(command.sessionId, {
+          queueSettings: {
+            steeringMode: command.steeringMode ?? session?.queueSettings?.steeringMode,
+            followUpMode: command.followUpMode ?? session?.queueSettings?.followUpMode,
+          },
+        });
+      }
+      case "provider.compaction.set": {
+        const binding = this.#requireBinding(command.sessionId);
+        const provider = this.#registry.get(binding.providerId);
+        if (!provider.setAutoCompaction) throw runtimeErrors.unsupportedCommand(command.type);
+        await provider.setAutoCompaction(binding, command);
+        return this.#patchSession(command.sessionId, { autoCompactionEnabled: command.enabled });
       }
       case "approval.resolve": {
         const binding = this.#requireBinding(command.sessionId);
@@ -114,7 +196,7 @@ export class AgentRuntime {
     }
   }
 
-  async dispatch(command: AgentCommand): Promise<SessionReadModel | void> {
+  async dispatch(command: AgentCommand): Promise<AgentCommandResult> {
     return this.dispatchCommand(command);
   }
 
@@ -170,5 +252,25 @@ export class AgentRuntime {
       updatedAt: now,
     });
     this.#bus.emit(command.sessionId, { type: "thread.message.upserted", sessionId: command.sessionId, message });
+  }
+
+  #patchSession(sessionId: SessionId, patch: Partial<SessionReadModel>): SessionReadModel {
+    const current = this.#store.getReadModel(sessionId);
+    if (!current) throw runtimeErrors.sessionNotFound(sessionId);
+    const updatedAt = Date.now();
+    const session = { ...current, ...patch, updatedAt };
+    this.#store.setReadModel(session);
+    this.#bus.emit(sessionId, {
+      type: "session.patch",
+      sessionId,
+      patch: {
+        model: patch.model ?? undefined,
+        thinkingLevel: patch.thinkingLevel ?? undefined,
+        queueSettings: patch.queueSettings ?? undefined,
+        autoCompactionEnabled: patch.autoCompactionEnabled ?? undefined,
+        updatedAt,
+      },
+    });
+    return session;
   }
 }
