@@ -6,11 +6,13 @@ import { AgentRuntimeWsMessageRouter, type RuntimeWsPeer } from "../src/message-
 class FakeRuntime {
   listener?: (event: UiSessionEvent) => void;
   dispatched: unknown[] = [];
+  removed: string[] = [];
   async dispatchCommand(command: unknown) {
     this.dispatched.push(command);
     if ((command as { type?: string }).type === "session.create") return this.getSnapshot("s1");
     return undefined;
   }
+  async removeSession(sessionId: string) { this.removed.push(sessionId); }
   getSnapshot(sessionId: string) { return { id: sessionId, providerId: "fake", repoPath: "/repo", status: "idle", messages: [], activities: [], pendingInteractions: [], updatedAt: 1 }; }
   getBinding(sessionId: string) { return { sessionId, providerId: "fake", repoPath: "/repo", providerSessionRef: `${sessionId}.jsonl`, status: "running" as const }; }
   subscribe(_sessionId: string, listener: (event: UiSessionEvent) => void) { this.listener = listener; return () => { this.listener = undefined; }; }
@@ -40,6 +42,24 @@ test("returns session snapshots from create session commands", async () => {
 
   assert.equal(peer.messages[0]?.type, "command.result");
   assert.equal(peer.messages[0]?.payload.session?.id, "s1");
+});
+
+test("cleans up created runtime state when session registration fails", async () => {
+  const runtime = new FakeRuntime();
+  const peer = new Peer();
+  const workspace = {
+    listSessions: async () => [],
+    registerSession: async () => {
+      throw Object.assign(new Error("registration failed"), { code: "registration_failed" });
+    },
+  };
+  const router = new AgentRuntimeWsMessageRouter(runtime as never, workspace);
+
+  await router.route(peer, { id: "req1", type: "command", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { type: "session.create", repoPath: "/repo", providerId: "fake" } });
+
+  assert.deepEqual(runtime.removed, ["s1"]);
+  assert.equal(peer.messages[0]?.type, "error");
+  assert.equal(peer.messages[0]?.payload.code, "registration_failed");
 });
 
 test("responds to snapshot requests", async () => {
@@ -114,6 +134,29 @@ test("deletes sessions through runtime and workspace services", async () => {
   assert.deepEqual(workspaceCalls, [{ repoPath: "/repo", providerId: "fake", sessionId: "h3-s1" }]);
   assert.equal(peer.messages[0]?.type, "command.result");
   assert.equal(peer.messages[0]?.payload.sessions?.[0]?.id, "h3-s2");
+});
+
+test("does not delete runtime state when workspace session deletion fails", async () => {
+  const runtime = new FakeRuntime();
+  const peer = new Peer();
+  const workspace = {
+    listSessions: async () => [],
+    deleteSession: async () => {
+      throw Object.assign(new Error("delete failed"), { code: "delete_failed" });
+    },
+  };
+  const router = new AgentRuntimeWsMessageRouter(runtime as never, workspace);
+
+  await router.route(peer, {
+    id: "delete1",
+    type: "command",
+    protocolVersion: AGENT_PROTOCOL_VERSION,
+    payload: { type: "session.delete", repoPath: "/repo", providerId: "fake", sessionId: "h3-s1" },
+  });
+
+  assert.deepEqual(runtime.dispatched, []);
+  assert.equal(peer.messages[0]?.type, "error");
+  assert.equal(peer.messages[0]?.payload.code, "delete_failed");
 });
 
 test("errors when no workspace service is configured for session listing", async () => {

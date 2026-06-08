@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { getConfiguredDataDir } from "./config.js";
@@ -11,6 +12,7 @@ export function getDatabase() {
     return database;
   }
 
+  mkdirSync(getConfiguredDataDir(), { recursive: true });
   database = new DatabaseSync(getDatabasePath());
   database.exec("PRAGMA foreign_keys = ON");
   database.exec("PRAGMA journal_mode = WAL");

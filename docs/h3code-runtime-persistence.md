@@ -82,11 +82,11 @@ Agent server boots
   -> runs migrations
   -> loads persisted SessionReadModel projections
   -> exposes session snapshots to connected clients
-  -> resumes/reconciles provider sessions in the background
+  -> resumes/reconciles registered provider sessions in the background
   -> applies new RuntimeEvents through the same projector
 ```
 
-The user should see the last known session state immediately. Provider reconciliation may later patch the model, but it must flow through provider-neutral runtime events and the read-model projector.
+The user should see the last known session state immediately. Provider reconciliation must not block the first UI paint. It may later patch the model, but it must flow through provider-neutral runtime events and the read-model projector.
 
 ## Package Boundary
 
@@ -193,6 +193,7 @@ Provider-owned handles (`providerSessionRef`, PI internal ids) live on `RuntimeB
 
 - Registration happens on `session.create` only.
 - `listSessions` reads the registry; it does not scan provider filesystems.
+- App-open reconciliation resumes registered persisted bindings only.
 - Legacy `session_message_cache` has been removed; use `@h3code/agent-runtime-persistence` for transcript paint on cold start.
 
 ## Relationship To `agent-metadata`
@@ -236,9 +237,10 @@ A UI store can render the snapshot after it arrives, but it should not be the du
 2. Wire `@h3code/agent-runtime` to load persisted sessions on startup.
 3. Persist projected `SessionReadModel` updates after runtime events are applied.
 4. Persist runtime bindings when sessions are created, resumed, switched, or deleted.
-5. Keep desktop unchanged except for consuming normal server snapshots.
-6. Move any runtime-shaped storage out of `@h3code/agent-metadata`.
-7. Leave true app metadata in `@h3code/agent-metadata`.
+5. Reconcile registered persisted bindings in the background after server startup.
+6. Keep desktop unchanged except for consuming normal server snapshots.
+7. Move any runtime-shaped storage out of `@h3code/agent-metadata`.
+8. Leave true app metadata in `@h3code/agent-metadata`.
 
 ## Non-Goals
 

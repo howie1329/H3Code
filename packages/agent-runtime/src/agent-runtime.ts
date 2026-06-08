@@ -1,4 +1,4 @@
-import type { AgentCommand, ProviderAdapter, ProviderCommand, ProviderDescriptor, ProviderModel, RuntimeEvent, SessionId, SessionReadModel, UiMessage, UiSessionEvent } from "@h3code/agent-protocol";
+import type { AgentCommand, ProviderAdapter, ProviderCommand, ProviderDescriptor, ProviderModel, RuntimeBinding, RuntimeEvent, SessionId, SessionReadModel, UiMessage, UiSessionEvent } from "@h3code/agent-protocol";
 import type { RuntimePersistence } from "@h3code/agent-runtime-persistence";
 import { RuntimeEventBus, type RuntimeEventListener } from "./event-bus.js";
 import { ProviderRegistry } from "./provider-registry.js";
@@ -19,6 +19,18 @@ export type AgentCommandResult =
   | { commands: ProviderCommand[] }
   | { models: ProviderModel[] }
   | void;
+
+export type ReconcilePersistedSessionsOptions = {
+  shouldReconcile?: (binding: RuntimeBinding) => boolean | Promise<boolean>;
+  onError?: (error: unknown, binding: RuntimeBinding) => void | Promise<void>;
+};
+
+export type ReconcilePersistedSessionsResult = {
+  attempted: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+};
 
 export class AgentRuntime {
   readonly #registry: ProviderRegistry;
@@ -48,6 +60,52 @@ export class AgentRuntime {
     for (const binding of await this.#persistence.loadBindings()) {
       this.#store.setBinding(binding);
     }
+  }
+
+  async reconcilePersistedSessions(options: ReconcilePersistedSessionsOptions = {}): Promise<ReconcilePersistedSessionsResult> {
+    const result: ReconcilePersistedSessionsResult = {
+      attempted: 0,
+      succeeded: 0,
+      skipped: 0,
+      failed: 0,
+    };
+
+    for (const binding of this.#store.listBindings()) {
+      if (!this.#store.getReadModel(binding.sessionId) || this.#store.getProviderRuntime(binding.sessionId)) {
+        result.skipped += 1;
+        continue;
+      }
+
+      try {
+        if (options.shouldReconcile && !(await options.shouldReconcile(binding))) {
+          result.skipped += 1;
+          continue;
+        }
+
+        result.attempted += 1;
+        const provider = this.#registry.get(binding.providerId);
+        const runtime = await provider.resumeSession(
+          {
+            sessionId: binding.sessionId,
+            providerId: binding.providerId,
+            repoPath: binding.repoPath,
+            providerSessionRef: binding.providerSessionRef,
+            resumeCursor: binding.resumeCursor,
+            options: binding.providerOptions,
+          },
+          (event) => { void this.ingestRuntimeEvent(event); },
+        );
+        this.#store.setBinding(runtime.binding);
+        this.#store.setProviderRuntime(binding.sessionId, runtime);
+        await this.#persistSessionState(binding.sessionId);
+        result.succeeded += 1;
+      } catch (error) {
+        result.failed += 1;
+        await options.onError?.(error, binding);
+      }
+    }
+
+    return result;
   }
 
   registerProvider(provider: ProviderAdapter): void {

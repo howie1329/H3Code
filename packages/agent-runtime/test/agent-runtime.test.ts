@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ProviderAdapter, RuntimeEventSink } from "@h3code/agent-protocol";
+import type { ProviderAdapter, RuntimeBinding, RuntimeEventSink, SessionReadModel } from "@h3code/agent-protocol";
+import type { RuntimePersistence } from "@h3code/agent-runtime-persistence";
 import { AgentRuntime } from "../src/agent-runtime.js";
 
 function fakeProvider(events: RuntimeEventSink): ProviderAdapter {
@@ -120,6 +121,72 @@ test("switches to a registered session by SessionId", async () => {
   assert.equal(switched?.id, "s1");
 });
 
+test("reconciles persisted sessions through provider resume events", async () => {
+  const sessions = [persistedSession("s1")];
+  const bindings = [persistedBinding("s1")];
+  const persistence = fakePersistence(sessions, bindings);
+  const resumed: string[] = [];
+  const provider: ProviderAdapter = {
+    ...fakeProvider(() => {}),
+    async resumeSession(request, sink) {
+      resumed.push(request.providerSessionRef ?? "");
+      await sink({ type: "session.started", sessionId: request.sessionId, providerId: request.providerId, repoPath: request.repoPath, providerSessionRef: request.providerSessionRef, occurredAt: 1 });
+      await sink({
+        type: "session.updated",
+        sessionId: request.sessionId,
+        providerId: request.providerId,
+        status: "idle",
+        title: "Rebased",
+        messages: [{ id: "m2", role: "assistant", content: "from provider", createdAt: 2, updatedAt: 2 }],
+        occurredAt: 2,
+      });
+      return { binding: { ...request, status: "running" }, async stop() {} };
+    },
+  };
+  const runtime = new AgentRuntime({ providers: [provider], persistence });
+
+  await runtime.loadPersistedState();
+  const result = await runtime.reconcilePersistedSessions({ shouldReconcile: () => true });
+  const secondResult = await runtime.reconcilePersistedSessions({ shouldReconcile: () => true });
+
+  assert.deepEqual(result, { attempted: 1, succeeded: 1, skipped: 0, failed: 0 });
+  assert.deepEqual(secondResult, { attempted: 0, succeeded: 0, skipped: 1, failed: 0 });
+  assert.deepEqual(resumed, ["s1.jsonl"]);
+  assert.equal(runtime.getSnapshot("s1")?.title, "Rebased");
+  assert.equal(runtime.getSnapshot("s1")?.messages[0]?.content, "from provider");
+});
+
+test("reconciliation failures do not stop later sessions", async () => {
+  const persistence = fakePersistence(
+    [persistedSession("s1"), persistedSession("s2")],
+    [persistedBinding("s1"), persistedBinding("s2")],
+  );
+  const errors: string[] = [];
+  const provider: ProviderAdapter = {
+    ...fakeProvider(() => {}),
+    async resumeSession(request, sink) {
+      if (request.sessionId === "s1") {
+        throw new Error("cannot resume");
+      }
+      await sink({ type: "session.started", sessionId: request.sessionId, providerId: request.providerId, repoPath: request.repoPath, providerSessionRef: request.providerSessionRef, occurredAt: 1 });
+      return { binding: { ...request, status: "running" }, async stop() {} };
+    },
+  };
+  const runtime = new AgentRuntime({ providers: [provider], persistence });
+
+  await runtime.loadPersistedState();
+  const result = await runtime.reconcilePersistedSessions({
+    shouldReconcile: () => true,
+    onError(error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    },
+  });
+
+  assert.deepEqual(result, { attempted: 2, succeeded: 1, skipped: 0, failed: 1 });
+  assert.deepEqual(errors, ["cannot resume"]);
+  assert.equal(runtime.getSnapshot("s2")?.providerSessionRef, "s2.jsonl");
+});
+
 test("deletes a session by SessionId", async () => {
   let stopped = 0;
   let runtime!: AgentRuntime;
@@ -138,3 +205,42 @@ test("deletes a session by SessionId", async () => {
   assert.equal(stopped, 1);
   assert.equal(runtime.getSnapshot("s1"), undefined);
 });
+
+function persistedSession(id: string): SessionReadModel {
+  return {
+    id,
+    providerId: "fake",
+    repoPath: "/repo",
+    providerSessionRef: `${id}.jsonl`,
+    status: "idle",
+    messages: [],
+    activities: [],
+    pendingInteractions: [],
+    updatedAt: 1,
+  };
+}
+
+function persistedBinding(sessionId: string): RuntimeBinding {
+  return {
+    sessionId,
+    providerId: "fake",
+    repoPath: "/repo",
+    providerSessionRef: `${sessionId}.jsonl`,
+    status: "stopped",
+  };
+}
+
+function fakePersistence(sessions: SessionReadModel[], bindings: RuntimeBinding[]): RuntimePersistence {
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+  const bindingsById = new Map(bindings.map((binding) => [binding.sessionId, binding]));
+
+  return {
+    async loadSessions() { return [...sessionsById.values()]; },
+    async loadSession(sessionId) { return sessionsById.get(sessionId); },
+    async saveSession(session) { sessionsById.set(session.id, session); },
+    async deleteSession(sessionId) { sessionsById.delete(sessionId); },
+    async loadBindings() { return [...bindingsById.values()]; },
+    async saveBinding(binding) { bindingsById.set(binding.sessionId, binding); },
+    async deleteBinding(sessionId) { bindingsById.delete(sessionId); },
+  };
+}

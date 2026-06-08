@@ -45,7 +45,6 @@ export class AgentRuntimeWsMessageRouter {
         case "command":
           if (message.payload.type === "session.delete") {
             await this.#workspace?.assertRegisteredSession?.(message.payload.sessionId);
-            await this.#runtime.dispatchCommand(message.payload);
 
             if (!this.#workspace?.deleteSession) {
               throw Object.assign(new Error("Workspace session deletion is not available."), { code: "unsupported_message" });
@@ -56,6 +55,7 @@ export class AgentRuntimeWsMessageRouter {
               providerId: message.payload.providerId,
               sessionId: message.payload.sessionId,
             });
+            await this.#runtime.dispatchCommand(message.payload);
             peer.send({
               type: "command.result",
               protocolVersion: AGENT_PROTOCOL_VERSION,
@@ -74,7 +74,12 @@ export class AgentRuntimeWsMessageRouter {
           if (message.payload.type === "session.create" && result && "id" in result) {
             const binding = this.#runtime.getBinding(result.id);
             if (binding) {
-              await this.#workspace?.registerSession?.(result, binding);
+              try {
+                await this.#workspace?.registerSession?.(result, binding);
+              } catch (error) {
+                await this.#runtime.removeSession(result.id);
+                throw error;
+              }
             }
           }
 

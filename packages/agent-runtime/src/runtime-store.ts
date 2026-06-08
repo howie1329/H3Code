@@ -14,6 +14,10 @@ export class InMemoryRuntimeStore {
     this.#bindings.set(binding.sessionId, binding);
   }
 
+  listBindings(): RuntimeBinding[] {
+    return [...this.#bindings.values()];
+  }
+
   getProviderRuntime(sessionId: SessionId): ProviderRuntime | undefined {
     return this.#providerRuntimes.get(sessionId);
   }

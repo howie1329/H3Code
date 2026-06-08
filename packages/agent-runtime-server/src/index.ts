@@ -12,6 +12,7 @@ import {
 } from "@h3code/agent-runtime-persistence";
 import { createAgentRuntimeWsServer, type WorkspaceService } from "@h3code/agent-runtime-ws";
 import {
+  configureMetadataStore,
   isRegisteredSession,
   registerH3CodeSession,
   touchRegisteredSession,
@@ -66,11 +67,13 @@ export type H3CodeRuntimeServerHandle = {
   runtime: AgentRuntime;
   wsServer: WebSocketServer;
   port?: number;
+  reconciliation: Promise<unknown>;
   close(): Promise<void>;
 };
 
 export async function startH3CodeRuntimeServer(options: H3CodeRuntimeServerOptions = {}): Promise<H3CodeRuntimeServerHandle> {
   const dataDir = resolvePersistenceDataDir(options.dataDir);
+  configureMetadataStore({ dataDir });
   configurePersistenceStore({ dataDir });
   const persistence = createRuntimePersistence();
 
@@ -99,11 +102,17 @@ export async function startH3CodeRuntimeServer(options: H3CodeRuntimeServerOptio
 
   const address = wsServer.address();
   const port = typeof address === "object" && address ? address.port : options.port;
+  const reconciliation = runtime.reconcilePersistedSessions({
+    shouldReconcile: (binding) => isRegisteredSession(binding.sessionId),
+    onError: () => {},
+  });
+  void reconciliation;
 
   return {
     runtime,
     wsServer,
     port,
+    reconciliation,
     close: async () => {
       await runtime.stopAll();
       await new Promise<void>((resolve, reject) => {
