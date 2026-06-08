@@ -17,6 +17,7 @@ import {
   registerH3CodeSession,
   touchRegisteredSession,
 } from "@h3code/agent-metadata";
+import type { RuntimeBinding, SessionReadModel } from "@h3code/agent-protocol";
 import type { WebSocketServer } from "ws";
 
 export type H3CodeRuntimeServerOptions = {
@@ -48,20 +49,43 @@ const piWorkspaceService: WorkspaceService = {
     }
   },
   registerSession(session, binding) {
-    registerH3CodeSession({
-      h3codeSessionId: session.id,
-      repoPath: session.repoPath,
-      providerId: session.providerId,
-      providerSessionRef: binding.providerSessionRef ?? session.providerSessionRef ?? "",
-      name: session.title,
-      messageCount: session.messages.length,
-      firstMessage: session.messages.find((message) => message.role === "user")?.content ?? "",
-    });
+    registerRuntimeSession(session, binding);
   },
   touchSession(sessionId) {
     touchRegisteredSession(sessionId);
   },
 };
+
+function registerRuntimeSession(session: SessionReadModel, binding: RuntimeBinding): void {
+  registerH3CodeSession({
+    h3codeSessionId: session.id,
+    repoPath: session.repoPath || binding.repoPath,
+    providerId: session.providerId || binding.providerId,
+    providerSessionRef: binding.providerSessionRef ?? session.providerSessionRef ?? "",
+    name: session.title,
+    messageCount: session.messages.length,
+    firstMessage: session.messages.find((message) => message.role === "user")?.content ?? "",
+  });
+}
+
+function repairRegisteredSessions(runtime: AgentRuntime): void {
+  for (const binding of runtime.listBindings()) {
+    if (isRegisteredSession(binding.sessionId)) {
+      continue;
+    }
+
+    const session = runtime.getSnapshot(binding.sessionId);
+    if (!session) {
+      continue;
+    }
+
+    try {
+      registerRuntimeSession(session, binding);
+    } catch {
+      // Metadata repair is best-effort; runtime reconciliation can still skip or fail this binding independently.
+    }
+  }
+}
 
 export type H3CodeRuntimeServerHandle = {
   runtime: AgentRuntime;
@@ -89,6 +113,10 @@ export async function startH3CodeRuntimeServer(options: H3CodeRuntimeServerOptio
   }
 
   const workspace = options.workspace ?? piWorkspaceService;
+  if (workspace === piWorkspaceService) {
+    repairRegisteredSessions(runtime);
+  }
+
   const wsServer = createAgentRuntimeWsServer({ runtime, workspace, port: options.port ?? 0, host: options.host });
 
   await new Promise<void>((resolve, reject) => {

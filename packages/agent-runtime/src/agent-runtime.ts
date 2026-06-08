@@ -315,6 +315,10 @@ export class AgentRuntime {
     return this.#store.getBinding(sessionId);
   }
 
+  listBindings(): RuntimeBinding[] {
+    return this.#store.listBindings();
+  }
+
   async stopAll(): Promise<void> {
     const runtimes = this.#store.listProviderRuntimes();
     for (const [sessionId, runtime] of runtimes) {
