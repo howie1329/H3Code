@@ -1,5 +1,5 @@
 import { createEmptySessionReadModel, } from "./read-model.js";
-import { cloneValue, getString, messageIdentity, toRecord } from "./utils.js";
+import { cloneValue, explicitMessageIdentity, getString, messageContentSignature, toRecord } from "./utils.js";
 const MAX_ACTIVITIES = 40;
 const MAX_NOTIFICATIONS = 8;
 export function applySessionEvent(model, event) {
@@ -11,6 +11,8 @@ export function applySessionEvent(model, event) {
             return applyRunStarted(next, event.occurredAt);
         case "run.ended":
             return applyRunEnded(next, event.messages, event.occurredAt);
+        case "run.failed":
+            return applyRunFailed(next, event.errorMessage, event.occurredAt);
         case "turn.started":
             return applyTurnStarted(next, event.occurredAt);
         case "turn.completed":
@@ -89,6 +91,16 @@ function applyRunEnded(model, messages, occurredAt) {
     model.latestTurn = { state: "idle", startedAt: null };
     model.needsRunHousekeeping = true;
     return pushActivity(model, "run.ended", "Agent run ended", occurredAt);
+}
+function applyRunFailed(model, errorMessage, occurredAt) {
+    model.isAgentRunning = false;
+    model.phase = model.isCompacting ? "compacting" : "idle";
+    model.streamingMessage = null;
+    model.streamingError = errorMessage;
+    model.tools = {};
+    model.latestTurn = { state: "idle", startedAt: null };
+    model.needsRunHousekeeping = true;
+    return pushActivity(model, "run.failed", errorMessage, occurredAt);
 }
 function applyTurnStarted(model, occurredAt) {
     model.latestTurn = { state: "running", startedAt: occurredAt };
@@ -235,14 +247,28 @@ function createToolExecutionMessage(tool) {
     };
 }
 function appendUniqueMessage(messages, message) {
-    const id = messageIdentity(message, `${messages.length}`);
-    const index = messages.findIndex((entry) => messageIdentity(entry, "") === id);
+    const explicitId = explicitMessageIdentity(message);
+    const index = explicitId
+        ? messages.findIndex((entry) => explicitMessageIdentity(entry) === explicitId)
+        : findRecentMessageBySignature(messages, message);
     if (index === -1) {
         return [...messages, cloneValue(message)];
     }
     const next = [...messages];
     next[index] = cloneValue(message);
     return next;
+}
+function findRecentMessageBySignature(messages, message) {
+    const signature = messageContentSignature(message);
+    if (!signature) {
+        return -1;
+    }
+    for (let index = messages.length - 1; index >= Math.max(0, messages.length - 4); index -= 1) {
+        if (!explicitMessageIdentity(messages[index]) && messageContentSignature(messages[index]) === signature) {
+            return index;
+        }
+    }
+    return -1;
 }
 function pushActivity(model, type, detail, occurredAt) {
     const activity = {

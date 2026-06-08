@@ -1,28 +1,40 @@
 import { cloneSessionReadModel } from "./pi-session/projector.js";
 export const SESSION_CACHE_MAX_SIZE = 20;
 export { cloneSessionReadModel };
-export function getCachedSession(cache, sessionPath) {
-    const entry = cache[sessionPath];
+function cloneSessionSnapshot(snapshot) {
+    return {
+        ...snapshot,
+        summary: { ...snapshot.summary },
+        messages: [...snapshot.messages],
+        steering: [...snapshot.steering],
+        followUp: [...snapshot.followUp],
+        activeTools: [...snapshot.activeTools],
+        tools: [...snapshot.tools],
+        diagnostics: [...snapshot.diagnostics],
+    };
+}
+export function getCachedSession(cache, sessionRef) {
+    const entry = cache[sessionRef];
     if (!entry) {
         return undefined;
     }
     return {
         ...entry,
         sessionReadModel: cloneSessionReadModel(entry.sessionReadModel),
-        sessionState: { ...entry.sessionState },
-        sessionStats: entry.sessionStats ? { ...entry.sessionStats } : entry.sessionStats,
-        sessionDiff: entry.sessionDiff ? { ...entry.sessionDiff, changedFiles: entry.sessionDiff.changedFiles } : undefined,
+        sessionSnapshot: cloneSessionSnapshot(entry.sessionSnapshot),
+        sessionStats: entry.sessionStats ? { ...entry.sessionStats, tokens: { ...entry.sessionStats.tokens } } : entry.sessionStats,
+        sessionDiff: entry.sessionDiff ? { ...entry.sessionDiff, files: [...entry.sessionDiff.files] } : undefined,
     };
 }
 export function setCachedSession(cache, entry, maxSize = SESSION_CACHE_MAX_SIZE) {
     const next = {
         ...cache,
-        [entry.sessionPath]: {
+        [entry.sessionRef]: {
             ...entry,
             sessionReadModel: cloneSessionReadModel(entry.sessionReadModel),
-            sessionState: { ...entry.sessionState },
-            sessionStats: entry.sessionStats ? { ...entry.sessionStats } : entry.sessionStats,
-            sessionDiff: entry.sessionDiff ? { ...entry.sessionDiff } : undefined,
+            sessionSnapshot: cloneSessionSnapshot(entry.sessionSnapshot),
+            sessionStats: entry.sessionStats ? { ...entry.sessionStats, tokens: { ...entry.sessionStats.tokens } } : entry.sessionStats,
+            sessionDiff: entry.sessionDiff ? { ...entry.sessionDiff, files: [...entry.sessionDiff.files] } : undefined,
             lastAccessedAt: entry.lastAccessedAt,
         },
     };
@@ -30,29 +42,29 @@ export function setCachedSession(cache, entry, maxSize = SESSION_CACHE_MAX_SIZE)
     if (keys.length <= maxSize) {
         return next;
     }
-    let oldestPath = keys[0];
-    let oldestAccessedAt = next[oldestPath].lastAccessedAt;
-    for (const sessionPath of keys) {
-        if (sessionPath === entry.sessionPath) {
+    let oldestRef = keys[0];
+    let oldestAccessedAt = next[oldestRef].lastAccessedAt;
+    for (const sessionRef of keys) {
+        if (sessionRef === entry.sessionRef) {
             continue;
         }
-        const candidate = next[sessionPath];
+        const candidate = next[sessionRef];
         if (candidate.lastAccessedAt < oldestAccessedAt) {
-            oldestPath = sessionPath;
+            oldestRef = sessionRef;
             oldestAccessedAt = candidate.lastAccessedAt;
         }
     }
-    if (oldestPath !== entry.sessionPath) {
-        delete next[oldestPath];
+    if (oldestRef !== entry.sessionRef) {
+        delete next[oldestRef];
     }
     return next;
 }
-export function deleteCachedSession(cache, sessionPath) {
-    if (!(sessionPath in cache)) {
+export function deleteCachedSession(cache, sessionRef) {
+    if (!(sessionRef in cache)) {
         return cache;
     }
     const next = { ...cache };
-    delete next[sessionPath];
+    delete next[sessionRef];
     return next;
 }
 export function clearSessionCache() {

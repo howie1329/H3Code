@@ -2,22 +2,29 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createEmptySessionReadModel } from "./pi-session/read-model.js";
 import { deleteCachedSession, getCachedSession, setCachedSession, SESSION_CACHE_MAX_SIZE, } from "./session-cache.js";
-function makeEntry(sessionPath, lastAccessedAt) {
+function makeSnapshot(sessionRef) {
     return {
-        sessionPath,
-        sessionReadModel: createEmptySessionReadModel(),
-        sessionState: {
-            thinkingLevel: "off",
-            isStreaming: false,
-            isCompacting: false,
-            steeringMode: "one-at-a-time",
-            followUpMode: "one-at-a-time",
-            sessionFile: sessionPath,
-            sessionId: sessionPath,
-            autoCompactionEnabled: true,
-            messageCount: 0,
-            pendingMessageCount: 0,
+        summary: {
+            providerId: "pi",
+            sessionRef,
+            status: "idle",
         },
+        cwd: "/tmp",
+        messages: [],
+        isStreaming: false,
+        isCompacting: false,
+        steering: [],
+        followUp: [],
+        activeTools: [],
+        tools: [],
+        diagnostics: [],
+    };
+}
+function makeEntry(sessionRef, lastAccessedAt) {
+    return {
+        sessionRef,
+        sessionReadModel: createEmptySessionReadModel(),
+        sessionSnapshot: makeSnapshot(sessionRef),
         lastAccessedAt,
     };
 }
@@ -26,7 +33,7 @@ describe("session-cache", () => {
         let cache = setCachedSession({}, makeEntry("/tmp/a.jsonl", 1));
         const cached = getCachedSession(cache, "/tmp/a.jsonl");
         assert.ok(cached);
-        assert.equal(cached.sessionPath, "/tmp/a.jsonl");
+        assert.equal(cached.sessionRef, "/tmp/a.jsonl");
         assert.notEqual(cached.sessionReadModel, cache["/tmp/a.jsonl"].sessionReadModel);
     });
     it("deletes cache entries", () => {

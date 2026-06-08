@@ -20,6 +20,19 @@ export type SessionCacheMap = Record<string, SessionCacheEntry>;
 
 export { cloneSessionReadModel };
 
+function cloneSessionSnapshot(snapshot: SessionSnapshot): SessionSnapshot {
+  return {
+    ...snapshot,
+    summary: { ...snapshot.summary },
+    messages: [...snapshot.messages],
+    steering: [...snapshot.steering],
+    followUp: [...snapshot.followUp],
+    activeTools: [...snapshot.activeTools],
+    tools: [...snapshot.tools],
+    diagnostics: [...snapshot.diagnostics],
+  };
+}
+
 export function getCachedSession(cache: SessionCacheMap, sessionRef: string): SessionCacheEntry | undefined {
   const entry = cache[sessionRef];
 
@@ -30,7 +43,7 @@ export function getCachedSession(cache: SessionCacheMap, sessionRef: string): Se
   return {
     ...entry,
     sessionReadModel: cloneSessionReadModel(entry.sessionReadModel),
-    sessionSnapshot: structuredClone(entry.sessionSnapshot),
+    sessionSnapshot: cloneSessionSnapshot(entry.sessionSnapshot),
     sessionStats: entry.sessionStats ? { ...entry.sessionStats, tokens: { ...entry.sessionStats.tokens } } : entry.sessionStats,
     sessionDiff: entry.sessionDiff ? { ...entry.sessionDiff, files: [...entry.sessionDiff.files] } : undefined,
   };
@@ -46,7 +59,7 @@ export function setCachedSession(
     [entry.sessionRef]: {
       ...entry,
       sessionReadModel: cloneSessionReadModel(entry.sessionReadModel),
-      sessionSnapshot: structuredClone(entry.sessionSnapshot),
+      sessionSnapshot: cloneSessionSnapshot(entry.sessionSnapshot),
       sessionStats: entry.sessionStats ? { ...entry.sessionStats, tokens: { ...entry.sessionStats.tokens } } : entry.sessionStats,
       sessionDiff: entry.sessionDiff ? { ...entry.sessionDiff, files: [...entry.sessionDiff.files] } : undefined,
       lastAccessedAt: entry.lastAccessedAt,
