@@ -1,4 +1,4 @@
-import type { AgentCommand, ProviderAdapter, ProviderDescriptor, RuntimeEvent, SessionId, SessionReadModel, UiSessionEvent } from "@h3code/agent-protocol";
+import type { AgentCommand, ProviderAdapter, ProviderDescriptor, RuntimeEvent, SessionId, SessionReadModel, UiMessage, UiSessionEvent } from "@h3code/agent-protocol";
 import { RuntimeEventBus, type RuntimeEventListener } from "./event-bus.js";
 import { ProviderRegistry } from "./provider-registry.js";
 import { ReadModelProjector } from "./read-model-projector.js";
@@ -48,7 +48,12 @@ export class AgentRuntime {
     this.#store.setReadModel(result.session);
     const binding = this.#store.getBinding(event.sessionId);
     if (binding) {
-      this.#store.setBinding({ ...binding, lastEvent: event.type, lastEventAt: event.occurredAt, activeTurnId: "turnId" in event ? event.turnId : binding.activeTurnId });
+      const activeTurnId = event.type === "turn.started"
+        ? event.turnId
+        : event.type === "turn.completed" || event.type === "session.ended" || (event.type === "session.updated" && event.status && event.status !== "running")
+          ? undefined
+          : binding.activeTurnId;
+      this.#store.setBinding({ ...binding, lastEvent: event.type, lastEventAt: event.occurredAt, activeTurnId });
     }
     for (const uiEvent of result.events) this.#bus.emit(event.sessionId, uiEvent);
     return result.events;
@@ -79,6 +84,7 @@ export class AgentRuntime {
       }
       case "turn.send": {
         const binding = this.#requireBinding(command.sessionId);
+        this.#insertUserMessage(command);
         await this.#registry.get(binding.providerId).sendTurn(binding, command);
         return;
       }
@@ -137,5 +143,32 @@ export class AgentRuntime {
     const session = this.#store.getReadModel(sessionId);
     if (session) this.#store.setReadModel({ ...session, pendingInteractions: session.pendingInteractions.filter((item) => item.id !== requestId), updatedAt: Date.now() });
     this.#bus.emit(sessionId, { type: "interaction.resolved", sessionId, requestId });
+  }
+
+  #insertUserMessage(command: Extract<AgentCommand, { type: "turn.send" }>): void {
+    const text = command.input.text?.trim();
+    if (!text) return;
+
+    const session = this.#store.getReadModel(command.sessionId);
+    if (!session) return;
+
+    const now = Date.now();
+    const message: UiMessage = {
+      id: `msg:${command.sessionId}:user:${now}`,
+      sessionId: command.sessionId,
+      role: "user",
+      content: text,
+      status: "completed",
+      createdAt: now,
+      updatedAt: now,
+      metadata: command.input.metadata,
+    };
+
+    this.#store.setReadModel({
+      ...session,
+      messages: [...session.messages, message],
+      updatedAt: now,
+    });
+    this.#bus.emit(command.sessionId, { type: "thread.message.upserted", sessionId: command.sessionId, message });
   }
 }

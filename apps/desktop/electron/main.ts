@@ -7,6 +7,7 @@ import {
   startAgentServerProcess,
   stopAgentServerProcess,
 } from "./agent-server-lifecycle.js";
+import { registerPreferencesIpc } from "./preferences-ipc.js";
 import { closePreferencesDatabase, revealPreferencesDatabase } from "./preferences.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -94,6 +95,7 @@ ipcMain.handle("preferences:reveal-database", () => {
 });
 
 app.whenReady().then(async () => {
+  registerPreferencesIpc();
   await startAgentServerProcess();
 
   nativeTheme.on("updated", () => {

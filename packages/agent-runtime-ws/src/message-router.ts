@@ -43,7 +43,7 @@ export class AgentRuntimeWsMessageRouter {
         case "session.snapshot.request": {
           const session = this.#runtime.getSnapshot(message.payload.sessionId);
           if (!session) throw Object.assign(new Error(`Session not found: ${message.payload.sessionId}`), { code: "session_not_found" });
-          peer.send({ type: "session.snapshot.response", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { session }, sentAt: Date.now() });
+          peer.send({ type: "session.snapshot.response", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { requestId: message.id, session }, sentAt: Date.now() });
           return;
         }
         default:

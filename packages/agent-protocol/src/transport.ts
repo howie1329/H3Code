@@ -24,7 +24,7 @@ export type ClientToServerMessage =
 export type ServerToClientMessage =
   | ProtocolEnvelope<"command.result", CommandResult>
   | ProtocolEnvelope<"session.event", UiSessionEvent>
-  | ProtocolEnvelope<"session.snapshot.response", { session: SessionReadModel }>
+  | ProtocolEnvelope<"session.snapshot.response", { requestId?: RequestId; session: SessionReadModel }>
   | ProtocolEnvelope<"error", ProtocolError>;
 
 export type CommandResult = {

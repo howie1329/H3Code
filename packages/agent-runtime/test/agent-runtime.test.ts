@@ -26,7 +26,21 @@ test("creates sessions, stores snapshots, and emits subscription events", async 
   await runtime.dispatchCommand({ type: "turn.send", sessionId: "s1", input: { text: "hello" } });
 
   assert.equal(runtime.getSnapshot("s1")?.repoPath, "/repo");
-  assert.deepEqual(emitted, ["session.patch"]);
+  assert.deepEqual(emitted, ["thread.message.upserted", "session.patch"]);
+  assert.equal(runtime.getSnapshot("s1")?.messages[0]?.role, "user");
+  assert.equal(runtime.getSnapshot("s1")?.messages[0]?.content, "hello");
+});
+
+test("clears active runtime binding when a turn completes", async () => {
+  let runtime!: AgentRuntime;
+  runtime = new AgentRuntime({ idFactory: () => "s1", providers: [fakeProvider((event) => { void runtime.ingestRuntimeEvent(event); })] });
+
+  await runtime.dispatchCommand({ type: "session.create", repoPath: "/repo", providerId: "fake" });
+  await runtime.dispatchCommand({ type: "turn.send", sessionId: "s1", input: { text: "hello" } });
+  runtime.ingestRuntimeEvent({ type: "turn.completed", sessionId: "s1", providerId: "fake", turnId: "t1", status: "completed", occurredAt: 3 });
+
+  assert.equal(runtime.getSnapshot("s1")?.status, "idle");
+  assert.equal(runtime.getSnapshot("s1")?.activeTurnId, undefined);
 });
 
 test("does not clear interactions when provider does not support approvals", async () => {

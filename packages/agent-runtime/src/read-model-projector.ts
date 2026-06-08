@@ -32,10 +32,22 @@ export class ReadModelProjector {
       }
       case "session.updated": {
         if (event.status) session.status = event.status === "error" ? "error" : event.status === "running" ? "running" : "idle";
+        if (event.status && event.status !== "running") {
+          const finalStatus = event.status === "error" ? "failed" : "completed";
+          session.activeTurnId = undefined;
+          session.messages = session.messages.map((message) =>
+            message.status === "streaming" ? { ...message, status: finalStatus, updatedAt: event.occurredAt } : message,
+          );
+          session.activities = session.activities.map((activity) =>
+            activity.status === "running" || activity.status === "pending"
+              ? { ...activity, status: finalStatus, updatedAt: event.occurredAt }
+              : activity,
+          );
+        }
         session.providerSessionRef = event.providerSessionRef ?? session.providerSessionRef;
         if (event.title !== undefined) session.title = event.title;
         if (event.model) session.model = { id: event.model, name: event.model, providerId: event.providerId };
-        return patch(session, { status: session.status, title: session.title ?? null, model: session.model ?? null, updatedAt: event.occurredAt });
+        return patch(session, { status: session.status, activeTurnId: session.activeTurnId ?? null, title: session.title ?? null, messages: session.messages, activities: session.activities, model: session.model ?? null, updatedAt: event.occurredAt });
       }
       case "session.ended": {
         session.status = event.status === "failed" ? "error" : "idle";

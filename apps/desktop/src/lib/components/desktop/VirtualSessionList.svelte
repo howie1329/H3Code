@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SessionSummary } from "@h3code/agent-core";
+  import type { SessionSummary } from "$lib/session-types.js";
   import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";

@@ -1,4 +1,10 @@
-import type { ProviderModel } from "@h3code/agent-core";
+export type ProviderModel = {
+  id: string;
+  provider: string;
+  modelId: string;
+  name?: string;
+  reasoning?: boolean;
+};
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 

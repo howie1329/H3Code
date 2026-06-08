@@ -148,13 +148,25 @@ function ensureTurn(state: PiRuntimeEventMapperState, sessionId: SessionId): Tur
 
 function textFromUnknown(value: unknown): string | undefined {
   if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const text = value.map(textFromUnknown).filter(Boolean).join("");
+    return text || undefined;
+  }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    for (const key of ["text", "content", "delta"]) {
-      if (typeof record[key] === "string") return record[key];
+    for (const key of ["partial", "text", "content", "delta", "message"]) {
+      const text = textFromUnknown(record[key]);
+      if (text) return text;
     }
+
+    if (record.type === "text") {
+      const text = textFromUnknown(record.text);
+      if (text) return text;
+    }
+
+    return undefined;
   }
-  return value === undefined ? undefined : String(value);
+  return value === undefined || value === null ? undefined : String(value);
 }
 
 function modelId(value: unknown): string | undefined {

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionSummary } from "@h3code/agent-core";
+  import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "$lib/desktop-types.js";
+  import type { SessionSummary } from "$lib/session-types.js";
   import type { ThinkingLevel } from "$lib/provider-model.js";
   import { onMount } from "svelte";
   import { mode, setMode } from "mode-watcher";
@@ -43,7 +44,7 @@
     !desktopState.canChangeSessionSettings || !desktopState.supportsCompactionSettings,
   );
   const activeModelLabel = $derived.by(() => {
-    const model = normalizeModel(desktopState.sessionSnapshot?.model);
+    const model = normalizeModel(desktopState.sessionReadModel.model);
     return model ? `${model.provider}/${getModelId(model)}` : "—";
   });
 
@@ -190,7 +191,7 @@
             <SegmentedControl
               ariaLabel="Steering delivery mode"
               options={deliveryOptions}
-              value={desktopState.sessionSnapshot?.steeringMode}
+              value={undefined}
               disabled={queueControlsDisabled}
               onChange={(value) => desktopState.setSteeringMode(value as ProviderQueueMode)}
             />
@@ -205,7 +206,7 @@
             <SegmentedControl
               ariaLabel="Follow-up delivery mode"
               options={deliveryOptions}
-              value={desktopState.sessionSnapshot?.followUpMode}
+              value={undefined}
               disabled={queueControlsDisabled}
               onChange={(value) => desktopState.setFollowUpMode(value as ProviderQueueMode)}
             />
@@ -220,7 +221,7 @@
           {#snippet control()}
             <Switch
               id="auto-compaction"
-              checked={desktopState.sessionSnapshot?.autoCompactionEnabled ?? false}
+              checked={false}
               disabled={compactionControlsDisabled}
               onCheckedChange={(checked) => desktopState.setAutoCompaction(checked)}
             />
@@ -240,10 +241,10 @@
               <dt class="text-muted-foreground">Repository</dt>
               <dd class="min-w-0 truncate font-medium">{desktopState.repoName}</dd>
             </div>
-            {#if desktopState.sessionSnapshot?.thinkingLevel}
+            {#if desktopState.sessionReadModel.model?.name}
               <div class="flex flex-wrap items-center justify-between gap-4">
-                <dt class="text-muted-foreground">Thinking</dt>
-                <dd class="font-medium capitalize">{desktopState.sessionSnapshot.thinkingLevel}</dd>
+                <dt class="text-muted-foreground">Model</dt>
+                <dd class="font-medium capitalize">{desktopState.sessionReadModel.model.name}</dd>
               </div>
             {/if}
           </dl>

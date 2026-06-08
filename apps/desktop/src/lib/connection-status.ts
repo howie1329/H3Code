@@ -1,8 +1,10 @@
-import type { ConnectionId, ConnectionState } from "@h3code/agent-core";
+import type { SessionId } from "$lib/session-types.js";
+
+export type ConnectionState = "disconnected" | "starting" | "connected" | "error" | "exited";
 
 export type ConnectionStatus = {
   state: ConnectionState;
-  connectionId?: ConnectionId;
+  sessionId?: SessionId;
   repoPath?: string;
   message?: string;
 };

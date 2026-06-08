@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-runtime-client-test",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "$lib/*": ["src/lib/*"]
+    }
+  },
+  "include": [
+    "src/app.d.ts",
+    "src/lib/runtime-client.ts",
+    "src/lib/runtime-client.test.ts",
+    "src/lib/session-state.test.ts",
+    "src/lib/session-state.ts"
+  ]
+}

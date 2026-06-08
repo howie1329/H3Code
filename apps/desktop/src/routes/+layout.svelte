@@ -79,7 +79,7 @@
       return;
     }
 
-    if (key === "." && (desktopState.isAgentRunning || desktopState.sessionSnapshot?.isStreaming) && !desktopState.isBusy) {
+    if (key === "." && desktopState.isAgentRunning && !desktopState.isBusy) {
       event.preventDefault();
       void desktopState.handleAbort();
     }

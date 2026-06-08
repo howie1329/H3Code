@@ -1,4 +1,4 @@
-import type { ProviderCommand } from "@h3code/agent-core";
+import type { ProviderCommand } from "$lib/desktop-types.js";
 
 export type SlashToken = {
   start: number;
@@ -6,99 +6,23 @@ export type SlashToken = {
   query: string;
 };
 
-const sourceRank: Record<ProviderCommand["source"], number> = {
-  extension: 0,
-  prompt: 1,
-  skill: 2,
-};
-
-export function getActiveSlashToken(value: string, cursor: number | null | undefined): SlashToken | null {
-  if (cursor === null || cursor === undefined || cursor < 0 || cursor > value.length) {
-    return null;
+export function filterSlashCommands(commands: ProviderCommand[], query: string): ProviderCommand[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return commands;
   }
 
-  let start = cursor;
-  while (start > 0 && !isWhitespace(value[start - 1])) {
-    start -= 1;
-  }
-
-  if (value[start] !== "/") {
-    return null;
-  }
-
-  if (start > 0 && !isWhitespace(value[start - 1])) {
-    return null;
-  }
-
-  let end = cursor;
-  while (end < value.length && !isWhitespace(value[end])) {
-    end += 1;
-  }
-
-  if (cursor > end) {
-    return null;
-  }
-
-  return {
-    start,
-    end,
-    query: value.slice(start + 1, cursor),
-  };
+  return commands.filter((command) => command.name.toLowerCase().includes(normalized));
 }
 
-export function replaceSlashToken(value: string, token: SlashToken, command: ProviderCommand) {
-  const inserted = `/${command.name} `;
-  const nextValue = `${value.slice(0, token.start)}${inserted}${value.slice(token.end)}`;
-  const cursor = token.start + inserted.length;
-
-  return { value: nextValue, cursor };
+export function getActiveSlashToken(_value: string, _cursor: number): SlashToken | null {
+  return null;
 }
 
-export function filterSlashCommands(commands: ProviderCommand[], query: string) {
-  const normalizedQuery = query.trim().toLowerCase();
-
-  return commands
-    .map((command) => ({ command, rank: getMatchRank(command, normalizedQuery) }))
-    .filter((item) => item.rank !== Number.POSITIVE_INFINITY)
-    .sort((a, b) => {
-      const sourceDelta = sourceRank[a.command.source] - sourceRank[b.command.source];
-      if (sourceDelta !== 0) return sourceDelta;
-
-      const rankDelta = a.rank - b.rank;
-      if (rankDelta !== 0) return rankDelta;
-
-      return a.command.name.localeCompare(b.command.name);
-    })
-    .map((item) => item.command);
+export function replaceSlashToken(value: string, _token: SlashToken, _command: ProviderCommand) {
+  return { value, cursor: value.length };
 }
 
 export function getCommandLocation(command: ProviderCommand) {
-  return command.location ?? command.sourceInfo?.scope;
-}
-
-function getMatchRank(command: ProviderCommand, query: string) {
-  if (!query) {
-    return 0;
-  }
-
-  const name = command.name.toLowerCase();
-  const description = command.description?.toLowerCase() ?? "";
-
-  if (name.startsWith(query)) {
-    return 0;
-  }
-
-  if (name.includes(query)) {
-    return 1;
-  }
-
-  if (description.includes(query)) {
-    return 2;
-  }
-
-  return Number.POSITIVE_INFINITY;
-}
-
-function isWhitespace(value: string | undefined) {
-  return value === undefined || /\s/.test(value);
+  return command.location ?? command.path;
 }

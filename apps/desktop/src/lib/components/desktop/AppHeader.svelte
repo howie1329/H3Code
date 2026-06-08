@@ -12,9 +12,7 @@
 
   const headerTitle = $derived(desktopState.sessionTitle);
   const gitContextChip = $derived(formatGitContextChip(desktopState.sessionMetadata));
-  const isRunning = $derived(
-    desktopState.isAgentRunning || Boolean(desktopState.sessionSnapshot?.isStreaming),
-  );
+  const isRunning = $derived(desktopState.isAgentRunning);
 
   function openContextPanel() {
     desktopState.setContextPanelOpen(true);

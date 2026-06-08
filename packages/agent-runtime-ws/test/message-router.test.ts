@@ -45,8 +45,9 @@ test("responds to snapshot requests", async () => {
   const runtime = new FakeRuntime();
   const peer = new Peer();
   const router = new AgentRuntimeWsMessageRouter(runtime as never);
-  await router.route(peer, { type: "session.snapshot.request", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { sessionId: "s1" } });
+  await router.route(peer, { id: "snap1", type: "session.snapshot.request", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { sessionId: "s1" } });
   assert.equal(peer.messages[0]?.type, "session.snapshot.response");
+  assert.equal(peer.messages[0]?.payload.requestId, "snap1");
 });
 
 test("forwards subscribed session events", async () => {

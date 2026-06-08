@@ -19,6 +19,25 @@ test("maps PI streaming message events to runtime item and delta events", () => 
   assert.equal(delta.stream, "assistant_text");
 });
 
+test("extracts text from structured PI message objects", () => {
+  const [delta] = mapPiEventToRuntimeEvents(
+    { type: "message.streaming", phase: "update", message: { content: [{ type: "text", text: "hello" }] }, occurredAt: 1 },
+    { sessionId: "s1" },
+  );
+
+  assert.equal(delta.type, "content.delta");
+  assert.equal(delta.delta, "hello");
+});
+
+test("does not stringify unknown message objects", () => {
+  const events = mapPiEventToRuntimeEvents(
+    { type: "message.streaming", phase: "update", message: { type: "metadata", value: { nested: true } }, occurredAt: 1 },
+    { sessionId: "s1" },
+  );
+
+  assert.deepEqual(events, []);
+});
+
 test("does not emit duplicate turn starts for run and turn start pair", () => {
   const state = createPiRuntimeEventMapperState();
   const context = { sessionId: "s1", providerId: "pi", state };
