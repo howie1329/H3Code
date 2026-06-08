@@ -31,10 +31,10 @@ Svelte renderer → AgentClient (WebSocket) → @h3code/agent-server → PiAgent
 Cloud app (`apps/cloud`):
 
 - Frontend in `apps/cloud/src/` (TanStack Router/Start, React 19).
-- Backend in `apps/cloud/convex/` (`auth.config.ts`, `schema.ts`, `github.ts`, `workspaceRepositories.ts`, `sessions.ts`, `users.ts`).
+- Backend in `apps/cloud/convex/` (`auth.config.ts`, `schema.ts`, `github.ts`, `workspaceRepositories.ts`, `sessions.ts`, `sandbox.ts`, `sandboxProvision.ts`, `users.ts`).
 - Auth: `@clerk/tanstack-react-start` + `ConvexProviderWithClerk`; JWT validated via `CLERK_JWT_ISSUER_DOMAIN` in Convex env.
 - GitHub (MVP): Clerk OAuth token retrieved server-side in `src/integrations/github/server.ts`; connection metadata in `githubConnections`; workspace repos in `workspaceRepositories`; GitHub catalog fetched on demand for the add-repository dialog.
-- Convex tables today: `users`, `githubConnections`, `workspaceRepositories`, `sessions`, `messages`. Deferred: `runs`, `control`, `diffs`, `usageEvents` — see `docs/h3code-convex-schema.md`.
+- Convex tables today: `users`, `githubConnections`, `workspaceRepositories`, `sessions`, `messages`. Daytona: **one sandbox per session** (`sandboxProvision` on create); parallel sessions on the same repo use separate sandboxes and (planned) per-session work branches. Deferred: `runs`, `control`, `diffs`, `usageEvents` — see `docs/h3code-convex-schema.md`.
 - Env template: `apps/cloud/.env.example` (`VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, `VITE_CONVEX_URL`).
 
 ## Source Conventions

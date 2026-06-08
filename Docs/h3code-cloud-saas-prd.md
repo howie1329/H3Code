@@ -95,6 +95,8 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 
 ### Execution model
 - Code lives and the agent executes in a **cloud sandbox/container**. Primary backend: **Daytona** (persistent, suspendable dev sandboxes that match the hybrid lifecycle). Fallback/alternative: **Vercel Sandbox** (ephemeral Firecracker microVMs) behind the same orchestrator interface.
+- **One Daytona sandbox per cloud session (1:1).** Each session gets its own isolated compute environment (`sandboxId` on the session row). This is intentional: users can run **multiple sessions in parallel**, including several on the **same repository**, without sharing agent process state, filesystem mutations, or in-flight runs. Idle sessions hibernate so cost tracks **concurrent active work**, not total session count.
+- **Parallel work on one repo:** each session clones from `baseBranch` and works on a dedicated **`workBranch`** (e.g. `h3code/<shortId>`). The agent commits and opens a **pull request** on that branch. **GitHub** is the coordination layer for merge order, review, and conflict resolution—sandboxes do not share a checkout or merge with each other.
 - **Hybrid sandbox lifecycle:** warm while a session is active, hibernate after idle, resume with state intact.
 
 ### Interaction model
@@ -115,7 +117,7 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 
 ### Git integration
 - **GitHub only** for MVP, via **Clerk's GitHub OAuth token** (`repo` scope). A dedicated **GitHub App** is deferred to a later version, for when bot identity, fine-grained per-repo permissions, webhooks, or higher rate limits are needed.
-- Git output: agent works on a **branch and opens a pull request** for review.
+- Git output: agent works on a **session-scoped work branch** and opens a **pull request** for review. Multiple sessions on the same repo each own a separate branch and PR; conflicts are resolved on GitHub at merge time, not inside H3Code sandboxes.
 
 ### Persistence
 - Cloud SaaS **owns session/transcript/diff persistence** in **Convex** (its document database), a deliberate departure from the desktop boundary ("providers own transcripts"), because cross-device history requires it. Provider-native history remains the upstream source of truth where applicable; our Convex store is the durable, queryable, **reactively-synced** cross-device record. No separate SQL database or ORM is used.

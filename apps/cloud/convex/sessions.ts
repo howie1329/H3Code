@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
 
+import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import type { MutationCtx, QueryCtx } from './_generated/server'
@@ -171,7 +172,7 @@ export const create = mutation({
     const sessionId = await ctx.db.insert('sessions', {
       userId,
       execution: 'cloud',
-      status: 'ready',
+      status: 'provisioning',
       providerId: 'pi',
       githubOwner,
       githubRepo,
@@ -189,6 +190,10 @@ export const create = mutation({
       role: 'user',
       content: prompt,
       createdAt: now,
+    })
+
+    await ctx.scheduler.runAfter(0, internal.sandboxProvision.provision, {
+      sessionId,
     })
 
     return { sessionId }
