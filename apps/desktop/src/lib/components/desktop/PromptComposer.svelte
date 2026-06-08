@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionSummary } from "@h3code/agent-core";
+  import type { ThinkingLevel } from "$lib/provider-model.js";
   import { tick } from "svelte";
   import {
     Alert01Icon,
@@ -24,10 +26,12 @@
   import {
     getModelLabel,
     isSameModel,
+    mergeModelWithCatalog,
     modelSupportsThinking,
+    normalizeModel,
     normalizeThinkingLevel,
-    PI_THINKING_LEVELS,
-  } from "$lib/pi-model.js";
+    THINKING_LEVELS,
+  } from "$lib/provider-model.js";
   import { filterSlashCommands, getActiveSlashToken, replaceSlashToken, type SlashToken } from "$lib/slash-commands";
   import {
     PromptInput,
@@ -56,7 +60,7 @@
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
   const isSlashMenuOpen = $derived(activeMenu === "slash" && Boolean(slashToken && tokenKey !== dismissedTokenKey));
-  const isRunning = $derived(desktopState.isAgentRunning || Boolean(desktopState.sessionState?.isStreaming));
+  const isRunning = $derived(desktopState.isAgentRunning || Boolean(desktopState.sessionSnapshot?.isStreaming));
   const showSessionControls = $derived(desktopState.canUseSession);
   const submitStatus = $derived.by((): ChatStatus => {
     if (isRunning) {
@@ -77,7 +81,10 @@
   );
   const selectorsDisabled = $derived(!desktopState.canChangeSessionSettings || !desktopState.canUseSession);
   const settingsDisabled = $derived(selectorsDisabled);
-  const currentModel = $derived(desktopState.sessionState?.model);
+  const currentModel = $derived(
+    mergeModelWithCatalog(desktopState.sessionSnapshot?.model, desktopState.availableModels) ??
+      normalizeModel(desktopState.sessionSnapshot?.model),
+  );
   const flatModels = $derived(desktopState.availableModels);
   const supportsThinking = $derived(modelSupportsThinking(currentModel, flatModels));
   const hasMultipleModels = $derived(flatModels.length > 1);
@@ -91,7 +98,7 @@
   );
   const staticSessionLabel = $derived(getModelLabel(currentModel));
   const settingsItemCount = $derived(
-    flatModels.length + (supportsThinking ? PI_THINKING_LEVELS.length : 0),
+    flatModels.length + (supportsThinking ? THINKING_LEVELS.length : 0),
   );
 
   const promptPlaceholder = $derived.by(() => {
@@ -103,7 +110,7 @@
       return "Select a repo and session…";
     }
 
-    if (desktopState.piStatus.state !== "connected") {
+    if (desktopState.connectionStatus.state !== "connected") {
       return "Connect Pi to send prompts…";
     }
 
@@ -173,8 +180,8 @@
     }
 
     if (supportsThinking) {
-      const level = normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel);
-      return flatModels.length + Math.max(0, PI_THINKING_LEVELS.indexOf(level));
+      const level = normalizeThinkingLevel(desktopState.sessionSnapshot?.thinkingLevel);
+      return flatModels.length + Math.max(0, THINKING_LEVELS.indexOf(level));
     }
 
     return 0;
@@ -316,7 +323,7 @@
     }
   }
 
-  async function insertCommand(command: PiSlashCommand) {
+  async function insertCommand(command: ProviderCommand) {
     if (!textareaRef || !slashToken) {
       return;
     }
@@ -341,14 +348,14 @@
     await desktopState.ensureAvailableModels(true);
   }
 
-  async function selectModel(model: PiModel) {
+  async function selectModel(model: ProviderModel) {
     closeMenus();
     await desktopState.setModel(model.provider, model.id);
     await tick();
     textareaRef?.focus();
   }
 
-  async function selectThinkingLevel(level: PiThinkingLevel) {
+  async function selectThinkingLevel(level: ThinkingLevel) {
     closeMenus();
     await desktopState.setThinkingLevel(level);
     await tick();
@@ -366,7 +373,7 @@
       return;
     }
 
-    const level = PI_THINKING_LEVELS[index - flatModels.length];
+    const level = THINKING_LEVELS[index - flatModels.length];
 
     if (level) {
       await selectThinkingLevel(level);

@@ -36,3 +36,38 @@ export type PreferencesSnapshot = {
   databasePath: string;
   piExecutablePath: string;
 };
+
+export type SessionMessageCacheSyncStatus = "fresh" | "stale" | "syncing" | "error";
+
+export type SessionMessageCacheState = {
+  isStreaming?: boolean;
+  isCompacting?: boolean;
+  sessionRef?: string;
+  sessionId?: string;
+};
+
+export type SessionMessageCacheEntry = {
+  sessionRef: string;
+  repoPath: string;
+  providerId?: string;
+  messages: unknown[];
+  sessionState?: SessionMessageCacheState;
+  messageCount: number;
+  sourceMtimeMs?: number;
+  sourceSizeBytes?: number;
+  contentHash: string;
+  cachedAt: string;
+  syncedAt?: string;
+  lastOpenedAt: string;
+  syncStatus?: SessionMessageCacheSyncStatus;
+};
+
+export type SessionMessageCacheUpsert = Omit<
+  SessionMessageCacheEntry,
+  "contentHash" | "cachedAt" | "messageCount" | "lastOpenedAt"
+> & {
+  messageCount?: number;
+  lastOpenedAt?: string;
+  contentHash?: string;
+  cachedAt?: string;
+};

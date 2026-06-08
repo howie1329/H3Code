@@ -1,10 +1,12 @@
+import type { ProviderCommand } from "@h3code/agent-core";
+
 export type SlashToken = {
   start: number;
   end: number;
   query: string;
 };
 
-const sourceRank: Record<PiSlashCommand["source"], number> = {
+const sourceRank: Record<ProviderCommand["source"], number> = {
   extension: 0,
   prompt: 1,
   skill: 2,
@@ -44,7 +46,7 @@ export function getActiveSlashToken(value: string, cursor: number | null | undef
   };
 }
 
-export function replaceSlashToken(value: string, token: SlashToken, command: PiSlashCommand) {
+export function replaceSlashToken(value: string, token: SlashToken, command: ProviderCommand) {
   const inserted = `/${command.name} `;
   const nextValue = `${value.slice(0, token.start)}${inserted}${value.slice(token.end)}`;
   const cursor = token.start + inserted.length;
@@ -52,7 +54,7 @@ export function replaceSlashToken(value: string, token: SlashToken, command: PiS
   return { value: nextValue, cursor };
 }
 
-export function filterSlashCommands(commands: PiSlashCommand[], query: string) {
+export function filterSlashCommands(commands: ProviderCommand[], query: string) {
   const normalizedQuery = query.trim().toLowerCase();
 
   return commands
@@ -70,11 +72,11 @@ export function filterSlashCommands(commands: PiSlashCommand[], query: string) {
     .map((item) => item.command);
 }
 
-export function getCommandLocation(command: PiSlashCommand) {
+export function getCommandLocation(command: ProviderCommand) {
   return command.location ?? command.sourceInfo?.scope;
 }
 
-function getMatchRank(command: PiSlashCommand, query: string) {
+function getMatchRank(command: ProviderCommand, query: string) {
   if (!query) {
     return 0;
   }

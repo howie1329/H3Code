@@ -3,28 +3,38 @@
 
   import { getActivityIcon } from "$lib/components/desktop/activity-icons.js";
   import { desktopState } from "$lib/desktop-state.svelte";
-  import { getModelLabel } from "$lib/pi-model.js";
+  import { getModelLabel, mergeModelWithCatalog, normalizeModel } from "$lib/provider-model.js";
+  import type { SessionSnapshot } from "@h3code/agent-core";
+  import type { SessionStats } from "$lib/session-stats.js";
+  import { sessionRefToId } from "$lib/session-stats.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
 
-  const sessionStatus = $derived(getSessionStatus(desktopState.sessionState));
-  const sessionId = $derived(desktopState.sessionStats?.sessionId ?? desktopState.sessionState?.sessionId);
+  const sessionStatus = $derived(getSessionStatus(desktopState.sessionSnapshot));
+  const sessionId = $derived(
+    desktopState.sessionStats?.sessionId ??
+      (desktopState.sessionSnapshot ? sessionRefToId(desktopState.sessionSnapshot.summary.sessionRef) : undefined),
+  );
+  const currentModel = $derived(
+    mergeModelWithCatalog(desktopState.sessionSnapshot?.model, desktopState.availableModels) ??
+      normalizeModel(desktopState.sessionSnapshot?.model),
+  );
   const contextPercent = $derived(getContextPercent(desktopState.sessionStats));
   const contextValueText = $derived(
     contextPercent !== undefined ? `${formatPercent(contextPercent)} of context window used` : undefined
   );
 
-  function getSessionStatus(state: PiSessionState | undefined) {
-    if (!state) {
+  function getSessionStatus(snapshot: SessionSnapshot | undefined) {
+    if (!snapshot) {
       return "No session";
     }
 
-    if (state.isCompacting) {
+    if (snapshot.isCompacting) {
       return "Compacting";
     }
 
-    return state.isStreaming ? "Running" : "Idle";
+    return snapshot.isStreaming ? "Running" : "Idle";
   }
 
   function shortId(value: string | undefined) {
@@ -59,7 +69,7 @@
     return `${value.toFixed(Number.isInteger(value) ? 0 : 1)}%`;
   }
 
-  function getContextPercent(stats: PiSessionStats | null) {
+  function getContextPercent(stats: SessionStats | null) {
     const usage = stats?.contextUsage;
 
     if (!usage) {
@@ -132,11 +142,11 @@
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Model</span>
-          <span class="truncate text-right font-medium">{getModelLabel(desktopState.sessionState?.model)}</span>
+          <span class="truncate text-right font-medium">{getModelLabel(currentModel)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Messages</span>
-          <span class="font-medium">{formatCount(desktopState.sessionStats?.totalMessages ?? desktopState.sessionState?.messageCount ?? desktopState.sessionReadModel.messages.length)}</span>
+          <span class="font-medium">{formatCount(desktopState.sessionStats?.totalMessages ?? desktopState.sessionSnapshot?.messages.length ?? desktopState.sessionReadModel.messages.length)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">User / assistant</span>
@@ -148,7 +158,7 @@
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Thinking</span>
-          <span class="font-medium">{desktopState.sessionState?.thinkingLevel ?? "Unknown"}</span>
+          <span class="font-medium">{desktopState.sessionSnapshot?.thinkingLevel ?? "Unknown"}</span>
         </div>
       </div>
 

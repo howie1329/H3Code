@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  import PiStatusIndicator from "$lib/components/desktop/PiStatusIndicator.svelte";
+  import ConnectionStatusIndicator from "$lib/components/desktop/ConnectionStatusIndicator.svelte";
   import { formatGitContextChip } from "$lib/components/desktop/session-metadata.js";
   import { WORKSPACE_COLUMN_INSET_CLASS } from "$lib/components/desktop/workspace-column.js";
   import { desktopState } from "$lib/desktop-state.svelte";
@@ -13,7 +13,7 @@
   const headerTitle = $derived(desktopState.sessionTitle);
   const gitContextChip = $derived(formatGitContextChip(desktopState.sessionMetadata));
   const isRunning = $derived(
-    desktopState.isAgentRunning || Boolean(desktopState.sessionState?.isStreaming),
+    desktopState.isAgentRunning || Boolean(desktopState.sessionSnapshot?.isStreaming),
   );
 
   function openContextPanel() {
@@ -28,7 +28,7 @@
   )}
 >
   <Sidebar.Trigger aria-label="Toggle sidebar" class="size-7 shrink-0" />
-  <PiStatusIndicator status={desktopState.piStatus} showLabel={false} />
+  <ConnectionStatusIndicator status={desktopState.connectionStatus} showLabel={false} />
 
   <div class="flex min-w-0 flex-1 items-center gap-2">
     {#if isRunning}

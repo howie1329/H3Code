@@ -7,37 +7,35 @@
   import AskUserQuestionDialog from "./custom/AskUserQuestionDialog.svelte";
   import ExtensionUiDialog from "./ExtensionUiDialog.svelte";
 
-  const request = $derived(desktopState.extensionUiRequest);
+  const request = $derived(desktopState.providerUiRequest);
   const open = $derived(Boolean(request));
 
   function respondCustom(value: unknown) {
-    if (!request || request.method !== "custom") {
+    if (!request || request.kind !== "custom") {
       return;
     }
 
-    void desktopState.respondToExtensionUi({
-      type: "extension_ui_response",
-      id: request.id,
-      method: "custom",
+    void desktopState.respondToProviderUi({
+      requestId: request.id,
+      kind: "custom",
       value,
     });
   }
 
   function cancelCustom() {
-    if (!request || request.method !== "custom") {
+    if (!request || request.kind !== "custom") {
       return;
     }
 
-    void desktopState.respondToExtensionUi({
-      type: "extension_ui_response",
-      id: request.id,
-      method: "custom",
-      cancelled: true,
+    void desktopState.respondToProviderUi({
+      requestId: request.id,
+      kind: "custom",
+      canceled: true,
     });
   }
 </script>
 
-{#if request?.method === "custom"}
+{#if request?.kind === "custom"}
   {#if request.componentId === CUSTOM_UI_COMPONENT_IDS.askUserQuestion}
     <AskUserQuestionDialog
       {open}

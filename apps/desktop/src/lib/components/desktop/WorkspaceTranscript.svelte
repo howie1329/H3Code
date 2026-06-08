@@ -95,7 +95,7 @@
   const shortcutModifier = $derived(desktopState.platform === "darwin" ? "⌘" : "Ctrl");
 
   $effect(() => {
-    const nextSessionKey = desktopState.selectedSessionPath;
+    const nextSessionKey = desktopState.selectedSessionRef;
 
     if (nextSessionKey !== transcriptSessionKey) {
       transcriptSessionKey = nextSessionKey;
@@ -380,7 +380,7 @@
                 title="Select a session"
                 description="Expand a repository in the sidebar, then open a session or start a new one."
               />
-            {:else if desktopState.piStatus.state !== "connected"}
+            {:else if desktopState.connectionStatus.state !== "connected"}
               <WorkspaceColumnEmpty
                 title="Connect to the agent server"
                 description="Connect for this repository before sending prompts."

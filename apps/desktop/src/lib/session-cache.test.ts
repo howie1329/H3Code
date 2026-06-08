@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import type { SessionSnapshot } from "@h3code/agent-core";
+
 import { createEmptySessionReadModel } from "./pi-session/read-model.js";
 import {
   deleteCachedSession,
@@ -10,22 +12,30 @@ import {
   type SessionCacheEntry,
 } from "./session-cache.js";
 
-function makeEntry(sessionPath: string, lastAccessedAt: number): SessionCacheEntry {
+function makeSnapshot(sessionRef: string): SessionSnapshot {
   return {
-    sessionPath,
-    sessionReadModel: createEmptySessionReadModel(),
-    sessionState: {
-      thinkingLevel: "off",
-      isStreaming: false,
-      isCompacting: false,
-      steeringMode: "one-at-a-time",
-      followUpMode: "one-at-a-time",
-      sessionFile: sessionPath,
-      sessionId: sessionPath,
-      autoCompactionEnabled: true,
-      messageCount: 0,
-      pendingMessageCount: 0,
+    summary: {
+      providerId: "pi",
+      sessionRef,
+      status: "idle",
     },
+    cwd: "/tmp",
+    messages: [],
+    isStreaming: false,
+    isCompacting: false,
+    steering: [],
+    followUp: [],
+    activeTools: [],
+    tools: [],
+    diagnostics: [],
+  };
+}
+
+function makeEntry(sessionRef: string, lastAccessedAt: number): SessionCacheEntry {
+  return {
+    sessionRef,
+    sessionReadModel: createEmptySessionReadModel(),
+    sessionSnapshot: makeSnapshot(sessionRef),
     lastAccessedAt,
   };
 }
@@ -37,7 +47,7 @@ describe("session-cache", () => {
     const cached = getCachedSession(cache, "/tmp/a.jsonl");
 
     assert.ok(cached);
-    assert.equal(cached.sessionPath, "/tmp/a.jsonl");
+    assert.equal(cached.sessionRef, "/tmp/a.jsonl");
     assert.notEqual(cached.sessionReadModel, cache["/tmp/a.jsonl"]!.sessionReadModel);
   });
 

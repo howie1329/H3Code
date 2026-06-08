@@ -36,7 +36,7 @@ Platform metadata (SQLite index, recent repos, desktop settings) is provided by 
 - `workspace.connect` with `providerId: "pi"` delegates to `PiAgentProvider` when using `startH3CodeAgentServer`.
 - Provider events are sent as `session.event`, except `extension.ui.request`, which is uplifted to `provider.ui.request`.
 - Inbound `provider.ui.respond` is routed to the connected provider when supported.
-- Platform commands: `session.list`, `session.delete`, `workspace.diff`, `preferences.get`, `preferences.updateDesktopSettings`, `preferences.setPiExecutablePath`, `preferences.removeRepo`, `preferences.clearIndexed`.
+- Platform commands: `session.list`, `session.delete`, `workspace.diff`, `preferences.get`, `preferences.updateDesktopSettings`, `preferences.setPiExecutablePath`, `preferences.removeRepo`, `preferences.clearIndexed`, `session.cache.get`, `session.cache.upsert`, `session.cache.delete`.
 
 ## Boundaries
 

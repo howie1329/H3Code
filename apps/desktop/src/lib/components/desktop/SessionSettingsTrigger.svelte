@@ -8,9 +8,11 @@
     getModelLabel,
     getThinkingLevelLabel,
     getThinkingLevelShortLabel,
+    mergeModelWithCatalog,
     modelSupportsThinking,
+    normalizeModel,
     normalizeThinkingLevel,
-  } from "$lib/pi-model.js";
+  } from "$lib/provider-model.js";
   import { cn } from "$lib/utils.js";
 
   type Props = {
@@ -22,15 +24,18 @@
 
   let { open, disabled = false, anchor = $bindable(null), onToggle }: Props = $props();
 
-  const model = $derived(desktopState.sessionState?.model);
+  const model = $derived(
+    mergeModelWithCatalog(desktopState.sessionSnapshot?.model, desktopState.availableModels) ??
+      normalizeModel(desktopState.sessionSnapshot?.model),
+  );
   const modelLabel = $derived(desktopState.modelsLoading ? "Loading…" : getModelLabel(model));
   const supportsThinking = $derived(modelSupportsThinking(model, desktopState.availableModels));
   const thinkingShort = $derived(
-    getThinkingLevelShortLabel(normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel)),
+    getThinkingLevelShortLabel(normalizeThinkingLevel(desktopState.sessionSnapshot?.thinkingLevel)),
   );
   const summaryTitle = $derived.by(() => {
     if (supportsThinking) {
-      return `${modelLabel}, thinking level ${getThinkingLevelLabel(desktopState.sessionState?.thinkingLevel)}`;
+      return `${modelLabel}, thinking level ${getThinkingLevelLabel(desktopState.sessionSnapshot?.thinkingLevel)}`;
     }
 
     return modelLabel;

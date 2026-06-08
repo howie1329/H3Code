@@ -196,6 +196,26 @@ export class WsRouter {
           return;
         }
 
+        case "session.cache.get": {
+          const sessionRef = requireString(message.sessionRef, "sessionRef");
+          const entry = this.platform.getSessionMessageCache(sessionRef);
+          send(socket, { type: "session.cache.entry", id: message.id, entry });
+          return;
+        }
+
+        case "session.cache.upsert": {
+          this.platform.upsertSessionMessageCache(message.entry);
+          send(socket, { type: "session.cache.saved", id: message.id });
+          return;
+        }
+
+        case "session.cache.delete": {
+          const sessionRef = requireString(message.sessionRef, "sessionRef");
+          this.platform.deleteSessionMessageCache(sessionRef);
+          send(socket, { type: "session.cache.deleted", id: message.id });
+          return;
+        }
+
         default:
           assertNever(message);
       }

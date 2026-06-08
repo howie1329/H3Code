@@ -1,6 +1,10 @@
-export const PI_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const satisfies readonly PiThinkingLevel[];
+import type { ProviderModel } from "@h3code/agent-core";
 
-export const PI_THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+export const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
   off: "Off",
   minimal: "Minimal",
   low: "Low",
@@ -9,7 +13,7 @@ export const PI_THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
   xhigh: "Extra high",
 };
 
-export const PI_THINKING_LEVEL_SHORT_LABELS: Record<PiThinkingLevel, string> = {
+export const THINKING_LEVEL_SHORT_LABELS: Record<ThinkingLevel, string> = {
   off: "Off",
   minimal: "Min",
   low: "Low",
@@ -18,7 +22,7 @@ export const PI_THINKING_LEVEL_SHORT_LABELS: Record<PiThinkingLevel, string> = {
   xhigh: "XHi",
 };
 
-export function normalizeModel(model: unknown): PiModel | undefined {
+export function normalizeModel(model: unknown): ProviderModel | undefined {
   if (!model || typeof model !== "object") {
     return undefined;
   }
@@ -40,11 +44,11 @@ export function normalizeModel(model: unknown): PiModel | undefined {
   };
 }
 
-export function getModelId(model: PiModel | undefined) {
+export function getModelId(model: ProviderModel | undefined) {
   return model?.id ?? model?.modelId;
 }
 
-export function getModelLabel(model: PiModel | undefined) {
+export function getModelLabel(model: ProviderModel | undefined) {
   if (!model) {
     return "Unknown";
   }
@@ -52,7 +56,7 @@ export function getModelLabel(model: PiModel | undefined) {
   return model.name ?? getModelId(model) ?? "Unknown";
 }
 
-export function isSameModel(a: PiModel | undefined, b: PiModel | undefined) {
+export function isSameModel(a: ProviderModel | undefined, b: ProviderModel | undefined) {
   if (!a || !b) {
     return false;
   }
@@ -63,7 +67,7 @@ export function isSameModel(a: PiModel | undefined, b: PiModel | undefined) {
   return Boolean(a.provider && b.provider && aId && bId && a.provider === b.provider && aId === bId);
 }
 
-export function findCatalogModel(model: PiModel | undefined, catalog: PiModel[]) {
+export function findCatalogModel(model: ProviderModel | undefined, catalog: ProviderModel[]) {
   if (!model) {
     return undefined;
   }
@@ -71,8 +75,7 @@ export function findCatalogModel(model: PiModel | undefined, catalog: PiModel[])
   return catalog.find((entry) => isSameModel(entry, model));
 }
 
-/** Session model payloads from setModel may omit `reasoning`; fall back to the model catalog. */
-export function mergeModelWithCatalog(model: unknown, catalog: PiModel[]): PiModel | undefined {
+export function mergeModelWithCatalog(model: unknown, catalog: ProviderModel[]): ProviderModel | undefined {
   const normalized = normalizeModel(model);
 
   if (!normalized) {
@@ -92,7 +95,7 @@ export function mergeModelWithCatalog(model: unknown, catalog: PiModel[]): PiMod
   };
 }
 
-export function modelSupportsThinking(model: PiModel | undefined, catalog: PiModel[] = []) {
+export function modelSupportsThinking(model: ProviderModel | undefined, catalog: ProviderModel[] = []) {
   if (model?.reasoning === true) {
     return true;
   }
@@ -100,24 +103,24 @@ export function modelSupportsThinking(model: PiModel | undefined, catalog: PiMod
   return findCatalogModel(model, catalog)?.reasoning === true;
 }
 
-export function normalizeThinkingLevel(level: string | undefined): PiThinkingLevel {
-  if (level && PI_THINKING_LEVELS.includes(level as PiThinkingLevel)) {
-    return level as PiThinkingLevel;
+export function normalizeThinkingLevel(level: string | undefined): ThinkingLevel {
+  if (level && THINKING_LEVELS.includes(level as ThinkingLevel)) {
+    return level as ThinkingLevel;
   }
 
   return "off";
 }
 
 export function getThinkingLevelLabel(level: string | undefined) {
-  return PI_THINKING_LEVEL_LABELS[normalizeThinkingLevel(level)];
+  return THINKING_LEVEL_LABELS[normalizeThinkingLevel(level)];
 }
 
 export function getThinkingLevelShortLabel(level: string | undefined) {
-  return PI_THINKING_LEVEL_SHORT_LABELS[normalizeThinkingLevel(level)];
+  return THINKING_LEVEL_SHORT_LABELS[normalizeThinkingLevel(level)];
 }
 
-export function groupModelsByProvider(models: PiModel[]) {
-  const groups: Array<{ provider: string; models: PiModel[] }> = [];
+export function groupModelsByProvider(models: ProviderModel[]) {
+  const groups: Array<{ provider: string; models: ProviderModel[] }> = [];
 
   for (const model of models) {
     const lastGroup = groups.at(-1);

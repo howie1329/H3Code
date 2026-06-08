@@ -13,9 +13,9 @@
   },
   "include": [
     "src/app.d.ts",
-    "src/lib/agent-adapters.ts",
-    "src/lib/agent-adapters.test.ts",
-    "src/lib/pi-model.ts",
+    "src/lib/session-stats.ts",
+    "src/lib/session-stats.test.ts",
+    "src/lib/provider-model.ts",
     "src/lib/components/desktop/custom/ask-user-question.ts",
     "src/lib/components/desktop/custom/ask-user-question.test.ts"
   ]

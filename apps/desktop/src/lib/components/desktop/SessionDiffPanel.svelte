@@ -11,7 +11,7 @@
   let renderError = $state<string | undefined>();
   let fileCount = $state(0);
 
-  const patch = $derived(desktopState.sessionDiff.patch);
+  const patch = $derived(desktopState.sessionDiff.patch ?? "");
   const hasPatch = $derived(patch.trim().length > 0);
   const showLoading = $derived(desktopState.sessionDiffLoading && !hasPatch);
   const showError = $derived(Boolean(renderError || desktopState.sessionDiffError));

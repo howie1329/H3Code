@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionSummary } from "@h3code/agent-core";
+  import type { ThinkingLevel } from "$lib/provider-model.js";
   import { onMount } from "svelte";
   import { mode, setMode } from "mode-watcher";
 
@@ -9,6 +11,7 @@
   import SettingsSection from "$lib/components/desktop/SettingsSection.svelte";
   import SettingsShell from "$lib/components/desktop/SettingsShell.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
+  import { getModelId, normalizeModel } from "$lib/provider-model.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
 
@@ -32,18 +35,17 @@
   let clearIndexBusy = $state(false);
   let repoRemovalBusy = $state(false);
 
-  const sessionConnected = $derived(desktopState.piStatus.state === "connected");
+  const sessionConnected = $derived(desktopState.connectionStatus.state === "connected");
   const queueControlsDisabled = $derived(
     !desktopState.canChangeSessionSettings || !desktopState.supportsQueueSettings,
   );
   const compactionControlsDisabled = $derived(
     !desktopState.canChangeSessionSettings || !desktopState.supportsCompactionSettings,
   );
-  const activeModelLabel = $derived(
-    desktopState.sessionState?.model
-      ? `${desktopState.sessionState.model.provider}/${desktopState.sessionState.model.id}`
-      : "—",
-  );
+  const activeModelLabel = $derived.by(() => {
+    const model = normalizeModel(desktopState.sessionSnapshot?.model);
+    return model ? `${model.provider}/${getModelId(model)}` : "—";
+  });
 
   onMount(() => {
     void window.h3code?.getAppVersion().then((version) => {
@@ -188,9 +190,9 @@
             <SegmentedControl
               ariaLabel="Steering delivery mode"
               options={deliveryOptions}
-              value={desktopState.sessionState?.steeringMode}
+              value={desktopState.sessionSnapshot?.steeringMode}
               disabled={queueControlsDisabled}
-              onChange={(value) => desktopState.setSteeringMode(value as PiQueueMode)}
+              onChange={(value) => desktopState.setSteeringMode(value as ProviderQueueMode)}
             />
           {/snippet}
         </SettingsRow>
@@ -203,9 +205,9 @@
             <SegmentedControl
               ariaLabel="Follow-up delivery mode"
               options={deliveryOptions}
-              value={desktopState.sessionState?.followUpMode}
+              value={desktopState.sessionSnapshot?.followUpMode}
               disabled={queueControlsDisabled}
-              onChange={(value) => desktopState.setFollowUpMode(value as PiQueueMode)}
+              onChange={(value) => desktopState.setFollowUpMode(value as ProviderQueueMode)}
             />
           {/snippet}
         </SettingsRow>
@@ -218,7 +220,7 @@
           {#snippet control()}
             <Switch
               id="auto-compaction"
-              checked={desktopState.sessionState?.autoCompactionEnabled ?? false}
+              checked={desktopState.sessionSnapshot?.autoCompactionEnabled ?? false}
               disabled={compactionControlsDisabled}
               onCheckedChange={(checked) => desktopState.setAutoCompaction(checked)}
             />
@@ -231,22 +233,22 @@
               <dt class="text-muted-foreground">Agent</dt>
               <dd class="flex items-center gap-1.5 font-medium capitalize">
                 <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
-                {desktopState.piStatus.state}
+                {desktopState.connectionStatus.state}
               </dd>
             </div>
             <div class="flex flex-wrap items-center justify-between gap-4">
               <dt class="text-muted-foreground">Repository</dt>
               <dd class="min-w-0 truncate font-medium">{desktopState.repoName}</dd>
             </div>
-            {#if desktopState.sessionState?.thinkingLevel}
+            {#if desktopState.sessionSnapshot?.thinkingLevel}
               <div class="flex flex-wrap items-center justify-between gap-4">
                 <dt class="text-muted-foreground">Thinking</dt>
-                <dd class="font-medium capitalize">{desktopState.sessionState.thinkingLevel}</dd>
+                <dd class="font-medium capitalize">{desktopState.sessionSnapshot.thinkingLevel}</dd>
               </div>
             {/if}
           </dl>
-        {:else if desktopState.piStatus.diagnostic}
-          <p class="px-2 text-[11px] text-destructive">{desktopState.piStatus.diagnostic}</p>
+        {:else if desktopState.connectionStatus.message}
+          <p class="px-2 text-[11px] text-destructive">{desktopState.connectionStatus.message}</p>
         {/if}
       </SettingsSection>
 
@@ -320,10 +322,10 @@
             <dt class="text-muted-foreground">Indexed repos</dt>
             <dd class="font-medium tabular-nums">{desktopState.repos.length}</dd>
           </div>
-          {#if desktopState.piStatus.diagnostic && !sessionConnected}
+          {#if desktopState.connectionStatus.message && !sessionConnected}
             <div class="flex flex-wrap items-start justify-between gap-4">
               <dt class="shrink-0 text-muted-foreground">Diagnostic</dt>
-              <dd class="max-w-md text-right text-muted-foreground">{desktopState.piStatus.diagnostic}</dd>
+              <dd class="max-w-md text-right text-muted-foreground">{desktopState.connectionStatus.message}</dd>
             </div>
           {/if}
         </dl>

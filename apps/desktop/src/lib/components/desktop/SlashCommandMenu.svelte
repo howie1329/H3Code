@@ -1,29 +1,31 @@
 <script lang="ts">
+  import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionSummary } from "@h3code/agent-core";
+  import type { ThinkingLevel } from "$lib/provider-model.js";
   import ComposerSelectMenu from "$lib/components/desktop/ComposerSelectMenu.svelte";
   import { COMPOSER_MENU_GROUP_LABEL_CLASS, composerMenuRowClass } from "$lib/components/desktop/composer-menu.js";
   import { getCommandLocation } from "$lib/slash-commands";
 
   type Props = {
-    commands: PiSlashCommand[];
+    commands: ProviderCommand[];
     loading: boolean;
     error?: string;
     highlightedIndex: number;
     unavailable?: boolean;
-    onSelect: (command: PiSlashCommand) => void;
+    onSelect: (command: ProviderCommand) => void;
     onHighlight: (index: number) => void;
     onRetry: () => void;
   };
 
   let { commands, loading, error, highlightedIndex, unavailable = false, onSelect, onHighlight, onRetry }: Props = $props();
 
-  const sourceLabels: Record<PiSlashCommand["source"], string> = {
+  const sourceLabels: Record<ProviderCommand["source"], string> = {
     extension: "Extensions",
     prompt: "Prompts",
     skill: "Skills",
   };
 
   let groupedCommands = $derived.by(() => {
-    const groups: Array<{ source: PiSlashCommand["source"]; commands: Array<{ command: PiSlashCommand; index: number }> }> = [];
+    const groups: Array<{ source: ProviderCommand["source"]; commands: Array<{ command: ProviderCommand; index: number }> }> = [];
 
     for (const [index, command] of commands.entries()) {
       const lastGroup = groups.at(-1);

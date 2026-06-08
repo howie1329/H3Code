@@ -3,7 +3,6 @@ import { goto } from "$app/navigation";
 import type { PromptInputMessage } from "$lib/components/ai-elements/prompt-input/index.js";
 import { extractSessionMetadata } from "$lib/components/desktop/transcript-normalize.js";
 import { formatMessageRole, formatMessageText } from "$lib/message-format.js";
-import { mergeModelWithCatalog, normalizeThinkingLevel } from "$lib/pi-model.js";
 import type { SessionDomainEvent } from "$lib/pi-session/domain-events.js";
 import type { SessionActivity, SessionReadModel } from "$lib/pi-session/read-model.js";
 import {
@@ -17,9 +16,27 @@ import {
   statusStripLines as selectStatusStripLines,
   transcriptMessages as selectTranscriptMessages,
 } from "$lib/pi-session/selectors.js";
+import type { ActiveProviderUiRequest } from "$lib/agent-session-client.js";
+import type { ConnectionStatus } from "$lib/connection-status.js";
+import { mergeModelWithCatalog, normalizeModel, normalizeThinkingLevel, type ThinkingLevel } from "$lib/provider-model.js";
+import { parseSessionStats, type SessionStats } from "$lib/session-stats.js";
+import { indexedSessionToSummary } from "$lib/session-summary.js";
+import type {
+  DesktopSettings,
+  IndexedSessionPreference,
+  PreferencesSnapshot,
+  ProviderCommand,
+  ProviderModel,
+  ProviderQueueMode,
+  ProviderUiResponse,
+  SessionMessageCacheState,
+  SessionSnapshot,
+  SessionSummary,
+  WorkspaceDiffSummary,
+} from "@h3code/agent-core";
 import type { ProviderCapabilities } from "@h3code/agent-core";
 
-import { getDesktopAgentApi } from "$lib/desktop-agent-api.js";
+import { getAgentSessionClient } from "$lib/agent-session-client.js";
 import { getDesktopShellApi } from "$lib/desktop-shell-api.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
 import {
@@ -30,12 +47,6 @@ import {
   type SessionCacheEntry,
   type SessionCacheMap,
 } from "$lib/session-cache.js";
-import {
-  loadSessionSqlCache,
-  removeSessionSqlCache,
-  saveSessionSqlCache,
-  type SessionSqlCacheState,
-} from "$lib/session-sql-cache.js";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -48,7 +59,7 @@ export type SidebarRepo = {
   name: string;
   path: string;
   expanded?: boolean;
-  sessions?: PiSessionSummary[];
+  sessions?: SessionSummary[];
   sessionsLoaded?: boolean;
   sessionsLoading?: boolean;
   sessionsError?: string;
@@ -71,9 +82,7 @@ const defaultDesktopSettings: DesktopSettings = {
 
 export const LANDING_ADD_REPO_VALUE = "__add_repository__";
 
-type AgentSessionEvent = SessionDomainEvent & {
-  agentId?: string;
-};
+type AgentSessionEvent = SessionDomainEvent & { connectionId?: string };
 
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
@@ -85,47 +94,47 @@ class DesktopState {
   promptValue = $state("");
   landingRepoPath = $state<string | undefined>();
   landingPromptValue = $state("");
-  activeAgentId = $state<string | undefined>();
+  activeConnectionId = $state<string | undefined>();
   repoPath = $state<string | undefined>();
   worktreePath = $state<string | undefined>();
   repos = $state<SidebarRepo[]>([]);
-  sessions = $state<PiSessionSummary[]>([]);
-  selectedSessionPath = $state<string | undefined>();
-  sessionState = $state<PiSessionState | undefined>();
-  sessionStats = $state<PiSessionStats | null>(null);
+  sessions = $state<SessionSummary[]>([]);
+  selectedSessionRef = $state<string | undefined>();
+  sessionSnapshot = $state<SessionSnapshot | undefined>();
+  sessionStats = $state<SessionStats | null>(null);
   sessionStatsLoading = $state(false);
   sessionStatsError = $state<string | undefined>();
-  sessionDiff = $state<PiSessionDiff>({ patch: "", changedFiles: 0 });
+  sessionDiff = $state<WorkspaceDiffSummary>({ files: [], updatedAt: 0, patch: "", changedFiles: 0 });
   sessionDiffLoading = $state(false);
   sessionDiffError = $state<string | undefined>();
   sessionDiffPanelOpen = $state(false);
-  slashCommands = $state<PiSlashCommand[]>([]);
+  slashCommands = $state<ProviderCommand[]>([]);
   slashCommandsLoading = $state(false);
   slashCommandsError = $state<string | undefined>();
   slashCommandsLoaded = $state(false);
   slashCommandsSessionKey = $state<string | undefined>();
-  availableModels = $state<PiModel[]>([]);
+  availableModels = $state<ProviderModel[]>([]);
   modelsLoading = $state(false);
   modelsError = $state<string | undefined>();
   modelsLoaded = $state(false);
   modelsSessionKey = $state<string | undefined>();
   sessionReadModel = $state<SessionReadModel>(createInitialSessionReadModel());
   sessionCaches = $state<SessionCacheMap>({});
-  sessionCacheSyncing = $state(false);
+  messageCacheSyncing = $state(false);
   isSwitchingSession = $state(false);
-  sqlCachePersistTimer: ReturnType<typeof setTimeout> | undefined;
-  reconciledSessionPath = $state<string | undefined>();
+  messageCachePersistTimer: ReturnType<typeof setTimeout> | undefined;
+  reconciledSessionRef = $state<string | undefined>();
   switchGeneration = 0;
-  agentReadModels = $state<Record<string, SessionReadModel>>({});
-  agentStatuses = $state<Record<string, PiStatus>>({});
-  extensionUiRequestsByAgent = $state<Record<string, PiExtensionUiRequest>>({});
-  piStatus = $state<PiStatus>({ state: "disconnected" });
+  connectionReadModels = $state<Record<string, SessionReadModel>>({});
+  connectionStatuses = $state<Record<string, ConnectionStatus>>({});
+  providerUiRequestsByConnection = $state<Record<string, ActiveProviderUiRequest>>({});
+  connectionStatus = $state<ConnectionStatus>({ state: "disconnected" });
   isBusy = $state(false);
   isSendingPrompt = $state(false);
   errorMessage = $state<string | undefined>();
   preferencesLoaded = $state(false);
   preferencesDatabasePath = $state<string | undefined>();
-  extensionUiRequest = $state<PiExtensionUiRequest | undefined>();
+  providerUiRequest = $state<ActiveProviderUiRequest | undefined>();
   desktopSettings = $state<DesktopSettings>(defaultDesktopSettings);
 
   reconcileInFlight = false;
@@ -135,11 +144,11 @@ class DesktopState {
   pendingStreamingUpdates = new Map<string, AgentSessionEvent>();
   streamingUpdateFrame: ReturnType<typeof requestAnimationFrame> | undefined;
 
-  selectedSession = $derived(this.sessions.find((session) => session.path === this.selectedSessionPath));
-  canUseSession = $derived(this.piStatus.state === "connected" && Boolean(this.selectedSessionPath || this.sessionState?.sessionFile));
+  selectedSession = $derived(this.sessions.find((session) => session.sessionRef === this.selectedSessionRef));
+  canUseSession = $derived(this.connectionStatus.state === "connected" && Boolean(this.selectedSessionRef || this.sessionSnapshot?.summary.sessionRef));
   isSessionReconciled = $derived(
-    Boolean(this.selectedSessionPath) &&
-      this.selectedSessionPath === this.reconciledSessionPath &&
+    Boolean(this.selectedSessionRef) &&
+      this.selectedSessionRef === this.reconciledSessionRef &&
       !this.isSwitchingSession,
   );
   canSubmit = $derived(
@@ -150,7 +159,7 @@ class DesktopState {
       this.promptValue.trim().length > 0,
   );
   hasActiveWorkspaceSession = $derived(
-    Boolean(this.selectedSessionPath || this.sessionState?.sessionFile),
+    Boolean(this.selectedSessionRef || this.sessionSnapshot?.summary.sessionRef),
   );
   canSubmitLanding = $derived(
     Boolean(this.landingRepoPath && this.landingPromptValue.trim()) &&
@@ -169,7 +178,7 @@ class DesktopState {
       !this.isBusy &&
       !this.isSendingPrompt &&
       !this.isAgentRunning &&
-      !this.sessionState?.isStreaming,
+      !this.sessionSnapshot?.isStreaming,
   );
   activity = $derived(
     this.sessionReadModel.activities.slice(0, 8).map((item: SessionActivity) => ({
@@ -187,7 +196,7 @@ class DesktopState {
   );
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
-  hasSessionDiff = $derived(this.sessionDiff.patch.trim().length > 0);
+  hasSessionDiff = $derived((this.sessionDiff.patch ?? "").trim().length > 0);
   activeInspector = $derived.by((): WorkspaceInspector | null => {
     if (this.sessionDiffPanelOpen && this.hasSessionDiff) {
       return "diff";
@@ -225,72 +234,77 @@ class DesktopState {
   }
 
   initializeListeners() {
-    const agentApi = getDesktopAgentApi();
+    const agentApi = getAgentSessionClient();
 
-    agentApi.setEventListeners({
-      onSessionEvent: (event) => {
-        this.handleSessionEvent(event);
+    agentApi.setListeners({
+      onSessionEvent: (connectionId, event) => {
+        this.handleSessionEvent({ ...event, connectionId });
       },
-      onPiStatus: (status) => {
-        this.applyPiStatus(status);
+      onConnectionStatus: (status) => {
+        this.applyConnectionStatus({
+          state: status.state,
+          connectionId: status.connectionId,
+          repoPath: status.repoPath,
+          message: status.message,
+        });
       },
-      onExtensionUiRequest: (request) => {
-        this.applyExtensionUiRequest(request);
+      onProviderUiRequest: (request) => {
+        this.applyProviderUiRequest(request);
       },
-      onWorkspaceDiff: (diff) => {
+      onWorkspaceDiff: (_connectionId, diff) => {
         this.applyWorkspaceDiff(diff);
       },
     });
 
     return () => {
-      agentApi.setEventListeners({});
+      agentApi.setListeners({});
     };
   }
 
-  applyPiStatus(status: PiStatus) {
-    if (status.agentId) {
-      this.agentStatuses = {
-        ...this.agentStatuses,
-        [status.agentId]: status,
+  applyConnectionStatus(status: ConnectionStatus) {
+    if (status.connectionId) {
+      this.connectionStatuses = {
+        ...this.connectionStatuses,
+        [status.connectionId]: status,
       };
 
-      if (!this.activeAgentId) {
-        this.activeAgentId = status.agentId;
+      if (!this.activeConnectionId) {
+        this.activeConnectionId = status.connectionId;
       }
     }
 
-    const isActiveStatus = !status.agentId || status.agentId === this.activeAgentId;
+    const isActiveStatus = !status.connectionId || status.connectionId === this.activeConnectionId;
 
     if (isActiveStatus) {
-      this.piStatus = status;
+      this.connectionStatus = status;
 
       if (status.state !== "connected") {
         this.resetSlashCommands();
         this.resetModels();
         this.resetSessionReadModel();
         this.resetSessionDiff();
-        this.clearExtensionUiRequest();
+        this.clearProviderUiRequest();
         this.cancelDebouncedDiffRefresh();
       }
 
-      if (status.diagnostic) {
-        this.errorMessage = status.diagnostic;
+      if (status.message) {
+        this.errorMessage = status.message;
       }
     }
   }
 
-  applyExtensionUiRequest(request: PiExtensionUiRequest) {
-    const agentId = request.agentId ?? this.activeAgentId;
+  applyProviderUiRequest(request: ActiveProviderUiRequest) {
+    const connectionId = request.connectionId ?? this.activeConnectionId;
 
-    if (agentId) {
-      this.extensionUiRequestsByAgent = {
-        ...this.extensionUiRequestsByAgent,
-        [agentId]: request,
+    if (connectionId) {
+      this.providerUiRequestsByConnection = {
+        ...this.providerUiRequestsByConnection,
+        [connectionId]: request,
       };
     }
 
-    if (!agentId || agentId === this.activeAgentId) {
-      this.extensionUiRequest = request;
+    if (!connectionId || connectionId === this.activeConnectionId) {
+      this.providerUiRequest = request;
     }
   }
 
@@ -300,7 +314,7 @@ class DesktopState {
     }
 
     try {
-      const preferences = await this.getAgentApi().getPreferences();
+      const preferences = await this.getSessionClient().getPreferences();
       this.preferencesLoaded = true;
       this.preferencesDatabasePath = preferences.databasePath;
       this.desktopSettings = preferences.desktopSettings;
@@ -360,7 +374,7 @@ class DesktopState {
     });
 
     try {
-      const sessions = await this.getAgentApi().listRepoSessions(nextRepoPath, markRecent);
+      const sessions = await this.getSessionClient().listRepoSessions(nextRepoPath, markRecent);
       this.repos = updateRepo(this.repos, nextRepoPath, {
         sessions,
         sessionsLoaded: true,
@@ -379,31 +393,31 @@ class DesktopState {
     }
   }
 
-  async connectRepo(nextRepoPath: string, selectedSessionPath?: string) {
+  async connectRepo(nextRepoPath: string, selectedSessionRef?: string) {
     await this.withBusy(async () => {
-      await this.connectRepoInternal(nextRepoPath, selectedSessionPath);
+      await this.connectRepoInternal(nextRepoPath, selectedSessionRef);
     });
   }
 
   async connectRepoInternal(
     nextRepoPath: string,
-    selectedSessionPath?: string,
+    selectedSessionRef?: string,
     options: { navigateToWorkspace?: boolean } = {},
   ) {
     const { navigateToWorkspace = true } = options;
     this.errorMessage = undefined;
 
-    if (selectedSessionPath) {
-      await this.applySqlCacheIfPresent(selectedSessionPath, nextRepoPath);
+    if (selectedSessionRef) {
+      await this.applyMessageCacheIfPresent(selectedSessionRef, nextRepoPath);
     }
 
-    const result = await this.getAgentApi().connectRepo(nextRepoPath, selectedSessionPath);
+    const result = await this.getSessionClient().connectRepo(nextRepoPath, selectedSessionRef);
     this.syncProviderCapabilities();
 
     this.repoPath = result.repoPath;
-    this.activeAgentId = result.agentId;
-    this.worktreePath = result.worktreePath;
-    this.syncActiveAgentStatus();
+    this.activeConnectionId = result.connectionId;
+    this.worktreePath = result.repoPath;
+    this.syncActiveConnectionStatus();
     this.repos = upsertRepo(this.repos, result.repoPath, {
       expanded: true,
       sessions: result.sessions,
@@ -412,22 +426,22 @@ class DesktopState {
       sessionsError: undefined,
     });
     this.sessions = result.sessions;
-    this.selectedSessionPath = result.selectedSessionPath;
-    this.sessionState = result.state;
-    this.sessionStats = null;
+    this.selectedSessionRef = result.selectedSessionRef;
+    this.sessionSnapshot = result.snapshot;
+    this.sessionStats = parseSessionStats(result.snapshot);
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
     this.sessionReadModel = hydrateFromSnapshot(
       createInitialSessionReadModel(),
-      result.state,
-      result.messages ?? [],
+      result.snapshot,
+      result.snapshot.messages,
     );
-    this.storeActiveAgentReadModel();
-    this.reconciledSessionPath = this.selectedSessionPath;
-    this.sessionCacheSyncing = false;
+    this.storeActiveConnectionReadModel();
+    this.reconciledSessionRef = this.selectedSessionRef;
+    this.messageCacheSyncing = false;
     this.cacheCurrentSession();
-    void this.persistSessionSqlCacheImmediate();
+    void this.persistSessionMessageCacheImmediate();
     void this.refreshSessionStats();
     void this.refreshSessionDiff();
     void this.ensureAvailableModels(true);
@@ -439,18 +453,18 @@ class DesktopState {
 
   clearWorkspaceSessionState() {
     this.repoPath = undefined;
-    this.activeAgentId = undefined;
+    this.activeConnectionId = undefined;
     this.worktreePath = undefined;
     this.sessions = [];
-    this.selectedSessionPath = undefined;
-    this.reconciledSessionPath = undefined;
+    this.selectedSessionRef = undefined;
+    this.reconciledSessionRef = undefined;
     this.isSwitchingSession = false;
-    this.sessionCacheSyncing = false;
-    this.cancelSqlCachePersist();
+    this.messageCacheSyncing = false;
+    this.cancelMessageCachePersist();
     this.sessionCaches = clearSessionCache();
-    this.sessionState = undefined;
+    this.sessionSnapshot = undefined;
     this.sessionStats = null;
-    this.piStatus = { state: "disconnected" };
+    this.connectionStatus = { state: "disconnected" };
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
@@ -484,12 +498,12 @@ class DesktopState {
 
     await this.ensureWorkspaceRoute();
 
-    if (repoPath !== this.repoPath || this.piStatus.state !== "connected") {
+    if (repoPath !== this.repoPath || this.connectionStatus.state !== "connected") {
       await this.connectRepo(repoPath, sessionPath);
       return;
     }
 
-    if (sessionPath === this.selectedSessionPath && this.isSessionReconciled) {
+    if (sessionPath === this.selectedSessionRef && this.isSessionReconciled) {
       return;
     }
 
@@ -498,7 +512,7 @@ class DesktopState {
     const generation = this.switchGeneration;
 
     this.errorMessage = undefined;
-    this.selectedSessionPath = sessionPath;
+    this.selectedSessionRef = sessionPath;
 
     const cached = getCachedSession(this.sessionCaches, sessionPath);
 
@@ -509,11 +523,11 @@ class DesktopState {
       });
       this.applyCachedSession(cached);
     } else {
-      const sqlApplied = await this.applySqlCacheIfPresent(sessionPath, repoPath);
+      const sqlApplied = await this.applyMessageCacheIfPresent(sessionPath, repoPath);
 
       if (!sqlApplied) {
         this.sessionReadModel = createInitialSessionReadModel();
-        this.sessionState = undefined;
+        this.sessionSnapshot = undefined;
         this.sessionStats = null;
         this.resetSessionDiff();
         this.resetSlashCommands();
@@ -527,30 +541,25 @@ class DesktopState {
 
   async reconcileSessionSwitch(sessionPath: string, generation: number) {
     try {
-      const result = await this.getAgentApi().switchSession(sessionPath);
-
+      const snapshot = await this.getSessionClient().switchSession(sessionPath);
       if (generation !== this.switchGeneration) {
         return;
       }
 
-      this.activeAgentId = result.agentId;
-      this.repoPath = result.repoPath ?? this.repoPath;
-      this.worktreePath = result.worktreePath;
-      this.syncActiveAgentStatus();
-      this.selectedSessionPath = sessionPath;
-      this.sessionState = result.state;
-      this.resetSlashCommands();
-      this.resetModels();
+      this.worktreePath = this.repoPath;
+      this.selectedSessionRef = sessionPath;
+      this.sessionSnapshot = snapshot;
+      this.sessionStats = parseSessionStats(snapshot);
       this.sessionReadModel = hydrateFromSnapshot(
         createInitialSessionReadModel(),
-        result.state,
-        result.messages,
+        snapshot,
+        snapshot.messages,
       );
-      this.reconciledSessionPath = sessionPath;
-      this.sessionCacheSyncing = false;
-      this.storeActiveAgentReadModel();
+      this.reconciledSessionRef = sessionPath;
+      this.messageCacheSyncing = false;
+      this.storeActiveConnectionReadModel();
       this.cacheCurrentSession();
-      void this.persistSessionSqlCacheImmediate();
+      void this.persistSessionMessageCacheImmediate();
       void this.refreshSessionStats();
       void this.refreshSessionDiff();
       void this.ensureAvailableModels(true);
@@ -566,29 +575,22 @@ class DesktopState {
   }
 
   async createNewSessionForRepo(repoPath: string) {
-    const parentSessionPath = this.selectedSessionPath;
-    const result = await this.getAgentApi().newSession(parentSessionPath);
-    this.activeAgentId = result.agentId;
-    this.repoPath = result.repoPath ?? repoPath;
-    this.worktreePath = result.worktreePath;
-    this.syncActiveAgentStatus();
-    this.sessionState = result.state;
-    this.selectedSessionPath = result.state.sessionFile;
-    this.sessionStats = null;
-    this.resetSessionDiff();
-    this.resetSlashCommands();
-    this.resetModels();
+    const parentSessionPath = this.selectedSessionRef;
+    const snapshot = await this.getSessionClient().createSession(parentSessionPath);
+    this.worktreePath = this.repoPath;
+    this.sessionSnapshot = snapshot;
+    this.selectedSessionRef = snapshot.summary.sessionRef;
+    this.sessionStats = parseSessionStats(snapshot);
     this.sessionReadModel = hydrateFromSnapshot(
       createInitialSessionReadModel(),
-      result.state,
-      result.messages,
+      snapshot,
+      snapshot.messages,
     );
-    this.storeActiveAgentReadModel();
-    this.reconciledSessionPath = this.selectedSessionPath;
-    this.sessionCacheSyncing = false;
+    this.reconciledSessionRef = this.selectedSessionRef;
+    this.messageCacheSyncing = false;
     this.cacheCurrentSession();
-    void this.persistSessionSqlCacheImmediate();
-    this.sessions = await this.getAgentApi().listSessions();
+    void this.persistSessionMessageCacheImmediate();
+    this.sessions = await this.getSessionClient().listSessions();
     this.repos = upsertRepo(this.repos, repoPath, {
       expanded: true,
       sessions: this.sessions,
@@ -643,16 +645,16 @@ class DesktopState {
       return;
     }
 
-    const isRunning = this.isAgentRunning || Boolean(this.sessionState?.isStreaming);
+    const isRunning = this.isAgentRunning || Boolean(this.sessionSnapshot?.isStreaming);
     this.isSendingPrompt = true;
 
     try {
       this.errorMessage = undefined;
 
       if (isRunning) {
-        await this.getAgentApi().sendFollowUp(text);
+        await this.getSessionClient().sendFollowUp(text);
       } else {
-        await this.getAgentApi().sendPrompt(text);
+        await this.getSessionClient().sendPrompt(text);
       }
 
       this.promptValue = "";
@@ -667,7 +669,7 @@ class DesktopState {
   async removeRepoFromIndex(repoPath: string) {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const preferences = await this.getAgentApi().removeIndexedRepo(repoPath);
+      const preferences = await this.getSessionClient().removeIndexedRepo(repoPath);
       const indexedSessionsByRepo = groupIndexedSessionsByRepo(preferences.indexedSessions);
       this.preferencesDatabasePath = preferences.databasePath;
       this.desktopSettings = preferences.desktopSettings;
@@ -684,11 +686,11 @@ class DesktopState {
 
       if (this.repoPath === repoPath) {
         this.repoPath = undefined;
-        this.activeAgentId = undefined;
+        this.activeConnectionId = undefined;
         this.worktreePath = undefined;
         this.sessions = [];
-        this.selectedSessionPath = undefined;
-        this.sessionState = undefined;
+        this.selectedSessionRef = undefined;
+        this.sessionSnapshot = undefined;
         this.sessionStats = null;
         this.resetSessionDiff();
         this.resetSlashCommands();
@@ -706,10 +708,10 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const deletingActiveSession = sessionPath === this.selectedSessionPath || sessionPath === this.sessionState?.sessionFile;
+      const deletingActiveSession = sessionPath === this.selectedSessionRef || sessionPath === this.sessionSnapshot?.summary.sessionRef;
       this.sessionCaches = deleteCachedSession(this.sessionCaches, sessionPath);
-      void removeSessionSqlCache(sessionPath);
-      const sessions = await this.getAgentApi().deleteSession(repoPath, sessionPath);
+      void this.getSessionClient().deleteSessionMessageCache(sessionPath);
+      const sessions = await this.getSessionClient().deleteSession(repoPath, sessionPath);
       this.repos = upsertRepo(this.repos, repoPath, {
         sessions,
         sessionsLoaded: true,
@@ -722,8 +724,8 @@ class DesktopState {
       }
 
       if (deletingActiveSession) {
-        this.selectedSessionPath = undefined;
-        this.sessionState = undefined;
+        this.selectedSessionRef = undefined;
+        this.sessionSnapshot = undefined;
         this.sessionStats = null;
         this.resetSessionDiff();
         this.resetSlashCommands();
@@ -743,7 +745,7 @@ class DesktopState {
 
     try {
       this.errorMessage = undefined;
-      await this.getAgentApi().sendSteer(text);
+      await this.getSessionClient().sendSteer(text);
       this.promptValue = "";
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
@@ -771,7 +773,7 @@ class DesktopState {
   async handleAbort() {
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      await this.getAgentApi().abort();
+      await this.getSessionClient().abort();
       await this.refreshActiveSessionData();
     });
   }
@@ -788,39 +790,36 @@ class DesktopState {
     }
 
     try {
-      const result = await this.getAgentApi().getSessionSnapshot();
+      const result = await this.getSessionClient().getSessionSnapshot();
       this.applySessionSnapshot(result);
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
   }
 
-  applySessionSnapshot(result: { state: PiSessionState; messages: unknown[] }) {
-    this.sessionState = result.state;
-
-    if (result.state.sessionFile) {
-      this.selectedSessionPath = result.state.sessionFile;
-    }
-
-    this.sessionReadModel = hydrateFromSnapshot(this.sessionReadModel, result.state, result.messages);
-    this.reconciledSessionPath = this.selectedSessionPath ?? result.state.sessionFile;
-    this.storeActiveAgentReadModel();
+  applySessionSnapshot(snapshot: SessionSnapshot) {
+    this.sessionSnapshot = snapshot;
+    this.selectedSessionRef = snapshot.summary.sessionRef;
+    this.sessionReadModel = hydrateFromSnapshot(this.sessionReadModel, snapshot, snapshot.messages);
+    this.sessionStats = parseSessionStats(snapshot);
+    this.reconciledSessionRef = this.selectedSessionRef;
+    this.storeActiveConnectionReadModel();
   }
 
   async syncSidebarSessionsForActiveRepo() {
-    if (!this.repoPath || this.piStatus.state !== "connected") {
+    if (!this.repoPath || this.connectionStatus.state !== "connected") {
       return;
     }
 
     await this.loadRepoSessions(this.repoPath);
   }
 
-  async syncSidebarSessionsForAgent(agentId: string | undefined) {
-    if (!agentId) {
+  async syncSidebarSessionsForConnection(connectionId: string | undefined) {
+    if (!connectionId) {
       return;
     }
 
-    const repoPath = this.agentStatuses[agentId]?.repoPath;
+    const repoPath = this.connectionStatuses[connectionId]?.repoPath;
 
     if (!repoPath) {
       return;
@@ -830,7 +829,7 @@ class DesktopState {
   }
 
   async refreshSessionStats() {
-    if (!this.selectedSessionPath && !this.sessionState?.sessionFile) {
+    if (!this.selectedSessionRef && !this.sessionSnapshot?.summary.sessionRef) {
       this.sessionStats = null;
       this.sessionStatsError = undefined;
       this.sessionStatsLoading = false;
@@ -841,7 +840,8 @@ class DesktopState {
     this.sessionStatsError = undefined;
 
     try {
-      this.sessionStats = await this.getAgentApi().getSessionStatsFromSnapshot();
+      const snapshot = this.sessionSnapshot ?? (await this.getSessionClient().getSessionSnapshot());
+      this.sessionStats = parseSessionStats(snapshot);
     } catch (error) {
       this.sessionStatsError = getErrorMessage(error);
     } finally {
@@ -850,7 +850,7 @@ class DesktopState {
   }
 
   async refreshSessionDiff() {
-    if (!this.selectedSessionPath && !this.sessionState?.sessionFile) {
+    if (!this.selectedSessionRef && !this.sessionSnapshot?.summary.sessionRef) {
       this.resetSessionDiff();
       return;
     }
@@ -859,7 +859,7 @@ class DesktopState {
     this.sessionDiffError = undefined;
 
     try {
-      this.sessionDiff = await this.getAgentApi().getSessionDiff();
+      this.sessionDiff = await this.getSessionClient().getWorkspaceDiff();
 
       if (!this.hasSessionDiff) {
         this.sessionDiffPanelOpen = false;
@@ -894,7 +894,7 @@ class DesktopState {
 
   resetSessionDiff() {
     this.cancelDebouncedDiffRefresh();
-    this.sessionDiff = { patch: "", changedFiles: 0 };
+    this.sessionDiff = { files: [], updatedAt: Date.now(), patch: "", changedFiles: 0 };
     this.sessionDiffLoading = false;
     this.sessionDiffError = undefined;
     this.sessionDiffPanelOpen = false;
@@ -922,7 +922,7 @@ class DesktopState {
   }
 
   async resyncConnectedSessionIfNeeded() {
-    if (this.piStatus.state !== "connected" || !this.canUseSession || this.sessionReadModel.messages.length > 0) {
+    if (this.connectionStatus.state !== "connected" || !this.canUseSession || this.sessionReadModel.messages.length > 0) {
       return;
     }
 
@@ -933,7 +933,7 @@ class DesktopState {
     }
   }
 
-  applyWorkspaceDiff(diff: PiSessionDiff) {
+  applyWorkspaceDiff(diff: WorkspaceDiffSummary) {
     this.sessionDiff = diff;
     this.sessionDiffLoading = false;
     this.sessionDiffError = undefined;
@@ -946,7 +946,7 @@ class DesktopState {
   }
 
   syncProviderCapabilities() {
-    this.providerCapabilities = this.getAgentApi().getProviderCapabilities() ?? null;
+    this.providerCapabilities = this.getSessionClient().getProviderCapabilities() ?? null;
   }
 
   async ensureSlashCommands(refresh = false) {
@@ -957,7 +957,7 @@ class DesktopState {
       return;
     }
 
-    const sessionKey = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+    const sessionKey = this.selectedSessionRef ?? this.sessionSnapshot?.summary.sessionRef;
 
     if (!this.canUseSession || !sessionKey) {
       this.slashCommands = [];
@@ -978,9 +978,9 @@ class DesktopState {
     this.slashCommandsError = undefined;
 
     try {
-      const commands = await this.getAgentApi().getCommands();
+      const commands = await this.getSessionClient().getCommands();
 
-      if (sessionKey !== (this.selectedSessionPath ?? this.sessionState?.sessionFile)) {
+      if (sessionKey !== (this.selectedSessionRef ?? this.sessionSnapshot?.summary.sessionRef)) {
         return;
       }
 
@@ -1011,7 +1011,7 @@ class DesktopState {
       return;
     }
 
-    const sessionKey = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+    const sessionKey = this.selectedSessionRef ?? this.sessionSnapshot?.summary.sessionRef;
 
     if (!this.canUseSession || !sessionKey) {
       this.availableModels = [];
@@ -1032,9 +1032,9 @@ class DesktopState {
     this.modelsError = undefined;
 
     try {
-      const models = await this.getAgentApi().getAvailableModels();
+      const models = await this.getSessionClient().getAvailableModels();
 
-      if (sessionKey !== (this.selectedSessionPath ?? this.sessionState?.sessionFile)) {
+      if (sessionKey !== (this.selectedSessionRef ?? this.sessionSnapshot?.summary.sessionRef)) {
         return;
       }
 
@@ -1042,12 +1042,13 @@ class DesktopState {
       this.modelsLoaded = true;
       this.modelsSessionKey = sessionKey;
 
-      if (this.sessionState?.model) {
-        const sessionModel = mergeModelWithCatalog(this.sessionState.model, models);
+      if (this.sessionSnapshot?.model) {
+        const sessionModel = mergeModelWithCatalog(this.sessionSnapshot.model, models);
+        const currentModel = normalizeModel(this.sessionSnapshot.model);
 
-        if (sessionModel && sessionModel.reasoning !== this.sessionState.model.reasoning) {
-          this.sessionState = {
-            ...this.sessionState,
+        if (sessionModel && currentModel && sessionModel.reasoning !== currentModel.reasoning) {
+          this.sessionSnapshot = {
+            ...this.sessionSnapshot,
             model: sessionModel,
           };
         }
@@ -1074,33 +1075,26 @@ class DesktopState {
     }
 
     try {
-      const model = await this.getAgentApi().setModel(provider, modelId);
-      const sessionModel = mergeModelWithCatalog(model, this.availableModels);
-
-      if (this.sessionState && sessionModel) {
-        this.sessionState = {
-          ...this.sessionState,
-          model: sessionModel,
-        };
-      }
-
+      await this.getSessionClient().setModel(provider, modelId);
+      const snapshot = await this.getSessionClient().getSessionSnapshot();
+      this.applySessionSnapshot(snapshot);
       void this.refreshSessionStats();
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
   }
 
-  async setThinkingLevel(level: PiThinkingLevel) {
+  async setThinkingLevel(level: ThinkingLevel) {
     if (!this.canChangeSessionSettings) {
       return;
     }
 
     try {
-      await this.getAgentApi().setThinkingLevel(level);
+      await this.getSessionClient().setThinkingLevel(level);
 
-      if (this.sessionState) {
-        this.sessionState = {
-          ...this.sessionState,
+      if (this.sessionSnapshot) {
+        this.sessionSnapshot = {
+          ...this.sessionSnapshot,
           thinkingLevel: normalizeThinkingLevel(level),
         };
       }
@@ -1180,20 +1174,20 @@ class DesktopState {
   }
 
   async clearAllIndexedData() {
-    const preferences = await this.getAgentApi().clearAllIndexedData();
+    const preferences = await this.getSessionClient().clearAllIndexedData();
     this.applyPreferencesSnapshot(preferences);
     this.repoPath = undefined;
-    this.activeAgentId = undefined;
+    this.activeConnectionId = undefined;
     this.worktreePath = undefined;
-    this.selectedSessionPath = undefined;
+    this.selectedSessionRef = undefined;
     this.sessions = [];
-    this.sessionState = undefined;
+    this.sessionSnapshot = undefined;
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
   }
 
-  applyPreferencesSnapshot(preferences: DesktopPreferences) {
+  applyPreferencesSnapshot(preferences: PreferencesSnapshot) {
     this.preferencesDatabasePath = preferences.databasePath;
     this.desktopSettings = preferences.desktopSettings;
 
@@ -1210,25 +1204,25 @@ class DesktopState {
     );
   }
 
-  async setSteeringMode(mode: PiQueueMode) {
+  async setSteeringMode(mode: ProviderQueueMode) {
     if (!this.canChangeSessionSettings || !this.supportsQueueSettings) {
       return;
     }
 
     try {
-      this.sessionState = await this.getAgentApi().setSteeringMode(mode);
+      this.applySessionSnapshot(await this.getSessionClient().setSteeringMode(mode));
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
   }
 
-  async setFollowUpMode(mode: PiQueueMode) {
+  async setFollowUpMode(mode: ProviderQueueMode) {
     if (!this.canChangeSessionSettings || !this.supportsQueueSettings) {
       return;
     }
 
     try {
-      this.sessionState = await this.getAgentApi().setFollowUpMode(mode);
+      this.applySessionSnapshot(await this.getSessionClient().setFollowUpMode(mode));
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
@@ -1240,7 +1234,7 @@ class DesktopState {
     }
 
     try {
-      this.sessionState = await this.getAgentApi().setAutoCompaction(enabled);
+      this.applySessionSnapshot(await this.getSessionClient().setAutoCompaction(enabled));
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
     }
@@ -1251,25 +1245,25 @@ class DesktopState {
     this.desktopSettings = { ...this.desktopSettings, ...settings };
 
     try {
-      await this.getAgentApi().updateDesktopSettings(settings);
+      await this.getSessionClient().updateDesktopSettings(settings);
     } catch (error) {
       this.desktopSettings = previous;
       this.errorMessage = getErrorMessage(error);
     }
   }
 
-  getSessionRowStatus(session: PiSessionSummary): SessionRowStatus {
-    const agentId = session.agentId;
+  getSessionRowStatus(session: SessionSummary): SessionRowStatus {
+    const connectionId = session.liveConnectionId;
 
-    if (!agentId) {
+    if (!connectionId) {
       return session.worktreePath
         ? createSessionRowStatus("mapped")
         : createSessionRowStatus("done");
     }
 
-    const status = this.agentStatuses[agentId];
-    const model = this.agentReadModels[agentId] ?? (agentId === this.activeAgentId ? this.sessionReadModel : undefined);
-    const request = this.extensionUiRequestsByAgent[agentId];
+    const status = this.connectionStatuses[connectionId];
+    const model = this.connectionReadModels[connectionId] ?? (connectionId === this.activeConnectionId ? this.sessionReadModel : undefined);
+    const request = this.providerUiRequestsByConnection[connectionId];
 
     if (
       status?.state === "error" ||
@@ -1294,7 +1288,7 @@ class DesktopState {
       return createSessionRowStatus("working");
     }
 
-    if (status?.state === "connected" || agentId === this.activeAgentId) {
+    if (status?.state === "connected" || connectionId === this.activeConnectionId) {
       return createSessionRowStatus("connected");
     }
 
@@ -1309,41 +1303,41 @@ class DesktopState {
       return;
     }
 
-    this.flushStreamingUpdate(event.agentId ?? this.activeAgentId);
+    this.flushStreamingUpdate(event.connectionId ?? this.activeConnectionId);
 
     this.applySessionEventNow(event);
   }
 
   applySessionEventNow(event: AgentSessionEvent) {
-    const agentId = event.agentId ?? this.activeAgentId;
-    const currentModel = agentId
-      ? (this.agentReadModels[agentId] ?? (agentId === this.activeAgentId ? this.sessionReadModel : createInitialSessionReadModel()))
+    const connectionId = event.connectionId ?? this.activeConnectionId;
+    const currentModel = connectionId
+      ? (this.connectionReadModels[connectionId] ?? (connectionId === this.activeConnectionId ? this.sessionReadModel : createInitialSessionReadModel()))
       : this.sessionReadModel;
     const nextModel = applySessionEvent(currentModel, event);
 
-    if (agentId) {
-      this.agentReadModels = {
-        ...this.agentReadModels,
-        [agentId]: nextModel,
+    if (connectionId) {
+      this.connectionReadModels = {
+        ...this.connectionReadModels,
+        [connectionId]: nextModel,
       };
     }
 
-    if (agentId && this.activeAgentId && agentId !== this.activeAgentId) {
+    if (connectionId && this.activeConnectionId && connectionId !== this.activeConnectionId) {
       if (event.type === "run.started" || event.type === "run.ended" || event.type === "run.failed") {
-        void this.syncSidebarSessionsForAgent(agentId);
+        void this.syncSidebarSessionsForConnection(connectionId);
       }
       return;
     }
 
-    if (agentId) {
-      this.activeAgentId = agentId;
+    if (connectionId) {
+      this.activeConnectionId = connectionId;
     }
 
     this.sessionReadModel = nextModel;
 
     if (event.type === "run.started") {
       this.setSessionStreaming(true);
-      void this.syncSidebarSessionsForAgent(agentId);
+      void this.syncSidebarSessionsForConnection(connectionId);
     }
 
     if (event.type === "run.ended" || event.type === "run.failed") {
@@ -1370,8 +1364,8 @@ class DesktopState {
   }
 
   queueStreamingUpdate(event: AgentSessionEvent) {
-    const agentId = event.agentId ?? this.activeAgentId ?? "__active__";
-    this.pendingStreamingUpdates.set(agentId, event);
+    const connectionId = event.connectionId ?? this.activeConnectionId ?? "__active__";
+    this.pendingStreamingUpdates.set(connectionId, event);
 
     if (this.streamingUpdateFrame !== undefined) {
       return;
@@ -1392,8 +1386,8 @@ class DesktopState {
     });
   }
 
-  flushStreamingUpdate(agentId: string | undefined) {
-    const key = agentId ?? "__active__";
+  flushStreamingUpdate(connectionId: string | undefined) {
+    const key = connectionId ?? "__active__";
     const pending = this.pendingStreamingUpdates.get(key);
 
     if (!pending) {
@@ -1447,121 +1441,126 @@ class DesktopState {
         (item: SessionReadModel["notifications"][number]) => item.id !== notificationId,
       ),
     };
-    this.storeActiveAgentReadModel();
+    this.storeActiveConnectionReadModel();
   }
 
-  clearExtensionUiRequest() {
-    if (this.extensionUiRequest) {
-      const nextRequests = { ...this.extensionUiRequestsByAgent };
-      const requestAgentId = this.extensionUiRequest.agentId ?? this.activeAgentId;
+  clearProviderUiRequest() {
+    if (this.providerUiRequest) {
+      const nextRequests = { ...this.providerUiRequestsByConnection };
+      const requestAgentId = this.providerUiRequest.connectionId ?? this.activeConnectionId;
 
       if (requestAgentId) {
         delete nextRequests[requestAgentId];
       }
 
-      for (const [agentId, request] of Object.entries(nextRequests)) {
-        if (request.id === this.extensionUiRequest.id) {
-          delete nextRequests[agentId];
+      for (const [connectionId, request] of Object.entries(nextRequests)) {
+        if (request.id === this.providerUiRequest.id) {
+          delete nextRequests[connectionId];
         }
       }
 
-      this.extensionUiRequestsByAgent = nextRequests;
+      this.providerUiRequestsByConnection = nextRequests;
     }
 
-    this.extensionUiRequest = undefined;
+    this.providerUiRequest = undefined;
   }
 
-  async respondToExtensionUi(response: PiExtensionUiResponse) {
-    await this.getAgentApi().respondToExtensionUi(response);
-    this.clearExtensionUiRequest();
+  async respondToProviderUi(response: ProviderUiResponse) {
+    await this.getSessionClient().respondToProviderUi(response);
+    this.clearProviderUiRequest();
   }
 
   resetSessionReadModel() {
     this.sessionReadModel = createInitialSessionReadModel();
-    this.storeActiveAgentReadModel();
+    this.storeActiveConnectionReadModel();
   }
 
-  storeActiveAgentReadModel() {
-    if (!this.activeAgentId) {
+  storeActiveConnectionReadModel() {
+    if (!this.activeConnectionId) {
       return;
     }
 
-    this.agentReadModels = {
-      ...this.agentReadModels,
-      [this.activeAgentId]: this.sessionReadModel,
+    this.connectionReadModels = {
+      ...this.connectionReadModels,
+      [this.activeConnectionId]: this.sessionReadModel,
     };
 
     this.cacheCurrentSession();
   }
 
   cacheCurrentSession() {
-    const sessionPath = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+    const sessionRef = this.selectedSessionRef ?? this.sessionSnapshot?.summary.sessionRef;
 
-    if (!sessionPath || !this.sessionState) {
+    if (!sessionRef || !this.sessionSnapshot) {
       return;
     }
 
     this.sessionCaches = setCachedSession(this.sessionCaches, {
-      sessionPath,
+      sessionRef,
       sessionReadModel: this.sessionReadModel,
-      sessionState: this.sessionState,
+      sessionSnapshot: this.sessionSnapshot,
       worktreePath: this.worktreePath,
       sessionStats: this.sessionStats,
       sessionDiff: this.hasSessionDiff ? this.sessionDiff : undefined,
       lastAccessedAt: Date.now(),
     });
-    this.schedulePersistSessionSqlCache();
+    this.schedulePersistSessionMessageCache();
   }
 
-  async applySqlCacheIfPresent(sessionPath: string, repoPath: string): Promise<boolean> {
-    const entry = await loadSessionSqlCache(sessionPath);
+  async applyMessageCacheIfPresent(sessionRef: string, repoPath: string): Promise<boolean> {
+    const entry = await this.getSessionClient().getSessionMessageCache(sessionRef);
 
     if (!entry || entry.messages.length === 0) {
       return false;
     }
 
-    const state = this.sqlCacheStateToPiSessionState(entry.sessionState, sessionPath, entry.messageCount);
-    this.sessionState = state;
-    this.sessionReadModel = hydrateFromSnapshot(createInitialSessionReadModel(), state, entry.messages);
-    this.sessionCacheSyncing = entry.syncStatus !== undefined && entry.syncStatus !== "fresh";
+    const snapshot = this.messageCacheToSnapshot(entry.sessionState, sessionRef, repoPath, entry.messages);
+    this.sessionSnapshot = snapshot;
+    this.sessionReadModel = hydrateFromSnapshot(createInitialSessionReadModel(), snapshot, entry.messages);
+    this.messageCacheSyncing = entry.syncStatus !== undefined && entry.syncStatus !== "fresh";
     this.resetSessionDiff();
     this.resetSlashCommands();
     this.resetModels();
     return true;
   }
 
-  sqlCacheStateToPiSessionState(
-    cached: SessionSqlCacheState | undefined,
-    sessionPath: string,
-    messageCount: number,
-  ): PiSessionState {
-    const sessionId = cached?.sessionId ?? sessionPathToId(sessionPath);
-
+  messageCacheToSnapshot(
+    cached: SessionMessageCacheState | undefined,
+    sessionRef: string,
+    repoPath: string,
+    messages: unknown[],
+  ): SessionSnapshot {
     return {
-      thinkingLevel: "off",
+      summary: {
+        providerId: "pi",
+        sessionRef: cached?.sessionRef ?? sessionRef,
+        status: "idle",
+        repoPath,
+        messageCount: messages.length,
+      },
+      cwd: repoPath,
+      messages,
       isStreaming: cached?.isStreaming ?? false,
       isCompacting: cached?.isCompacting ?? false,
-      steeringMode: "one-at-a-time",
-      followUpMode: "one-at-a-time",
-      sessionFile: cached?.sessionFile ?? sessionPath,
-      sessionId,
-      autoCompactionEnabled: true,
-      messageCount,
-      pendingMessageCount: 0,
+      steering: [],
+      followUp: [],
+      activeTools: [],
+      tools: [],
+      diagnostics: [],
     };
   }
 
-  cancelSqlCachePersist() {
-    if (this.sqlCachePersistTimer === undefined) {
+  cancelMessageCachePersist() {
+    if (this.messageCachePersistTimer === undefined) {
       return;
     }
 
-    clearTimeout(this.sqlCachePersistTimer);
-    this.sqlCachePersistTimer = undefined;
+    clearTimeout(this.messageCachePersistTimer);
+    this.messageCachePersistTimer = undefined;
   }
 
-  schedulePersistSessionSqlCache() {
-    if (!this.repoPath || !this.sessionState) {
+  schedulePersistSessionMessageCache() {
+    if (!this.repoPath || !this.sessionSnapshot) {
       return;
     }
 
@@ -1569,18 +1568,18 @@ class DesktopState {
       return;
     }
 
-    this.cancelSqlCachePersist();
-    this.sqlCachePersistTimer = setTimeout(() => {
-      this.sqlCachePersistTimer = undefined;
-      void this.persistSessionSqlCacheImmediate();
+    this.cancelMessageCachePersist();
+    this.messageCachePersistTimer = setTimeout(() => {
+      this.messageCachePersistTimer = undefined;
+      void this.persistSessionMessageCacheImmediate();
     }, 500);
   }
 
-  async persistSessionSqlCacheImmediate() {
-    const sessionPath = this.selectedSessionPath ?? this.sessionState?.sessionFile;
+  async persistSessionMessageCacheImmediate() {
+    const sessionRef = this.selectedSessionRef ?? this.sessionSnapshot?.summary.sessionRef;
     const repoPath = this.repoPath;
 
-    if (!sessionPath || !repoPath || !this.sessionState) {
+    if (!sessionRef || !repoPath || !this.sessionSnapshot) {
       return;
     }
 
@@ -1592,18 +1591,18 @@ class DesktopState {
       return;
     }
 
-    await saveSessionSqlCache({
-      sessionPath,
+    await this.getSessionClient().upsertSessionMessageCache({
+      sessionRef,
       repoPath,
       messages: this.sessionReadModel.messages,
       sessionState: {
-        isStreaming: this.sessionState.isStreaming,
-        isCompacting: this.sessionState.isCompacting,
-        sessionFile: this.sessionState.sessionFile,
-        sessionId: this.sessionState.sessionId,
+        isStreaming: this.sessionSnapshot.isStreaming,
+        isCompacting: this.sessionSnapshot.isCompacting,
+        sessionRef,
       },
       messageCount: this.sessionReadModel.messages.length,
       syncStatus: "fresh",
+      syncedAt: new Date().toISOString(),
     });
   }
 
@@ -1613,7 +1612,7 @@ class DesktopState {
     }
 
     this.sessionReadModel = entry.sessionReadModel;
-    this.sessionState = entry.sessionState;
+    this.sessionSnapshot = entry.sessionSnapshot;
     this.worktreePath = entry.worktreePath;
 
     if (entry.sessionStats !== undefined) {
@@ -1634,27 +1633,27 @@ class DesktopState {
     this.resetModels();
   }
 
-  syncActiveAgentStatus() {
-    if (!this.activeAgentId) {
+  syncActiveConnectionStatus() {
+    if (!this.activeConnectionId) {
       return;
     }
 
-    const status = this.agentStatuses[this.activeAgentId];
+    const status = this.connectionStatuses[this.activeConnectionId];
 
     if (status) {
-      this.piStatus = status;
+      this.connectionStatus = status;
     }
 
-    this.extensionUiRequest = this.extensionUiRequestsByAgent[this.activeAgentId];
+    this.providerUiRequest = this.providerUiRequestsByConnection[this.activeConnectionId];
   }
 
   setSessionStreaming(isStreaming: boolean) {
-    if (!this.sessionState) {
+    if (!this.sessionSnapshot) {
       return;
     }
 
-    this.sessionState = {
-      ...this.sessionState,
+    this.sessionSnapshot = {
+      ...this.sessionSnapshot,
       isStreaming,
     };
   }
@@ -1675,12 +1674,12 @@ class DesktopState {
     return this.worktreePath ?? this.repoPath;
   }
 
-  getAgentApi() {
+  getSessionClient() {
     if (!window.h3code) {
       throw new Error("Desktop API is unavailable.");
     }
 
-    return getDesktopAgentApi();
+    return getAgentSessionClient();
   }
 
   getShellApi() {
@@ -1732,21 +1731,11 @@ function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: 
 }
 
 function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[]) {
-  const sessionsByRepo = new Map<string, PiSessionSummary[]>();
+  const sessionsByRepo = new Map<string, SessionSummary[]>();
 
   for (const session of indexedSessions) {
     const sessions = sessionsByRepo.get(session.repoPath) ?? [];
-    sessions.push({
-      path: session.path,
-      id: session.id,
-      cwd: session.repoPath,
-      worktreePath: session.worktreePath,
-      name: session.name,
-      created: session.created,
-      modified: session.modified,
-      messageCount: session.messageCount,
-      firstMessage: session.firstMessage,
-    });
+    sessions.push(indexedSessionToSummary(session));
     sessionsByRepo.set(session.repoPath, sessions);
   }
 
@@ -1758,7 +1747,7 @@ function createSessionRowStatus(kind: SessionRowStatusKind): SessionRowStatus {
     case "error":
       return {
         kind,
-        label: "Pi error",
+        label: "Agent error",
         dotClass: "bg-destructive",
       };
     case "needs_input":
@@ -1770,7 +1759,7 @@ function createSessionRowStatus(kind: SessionRowStatusKind): SessionRowStatus {
     case "working":
       return {
         kind,
-        label: "Pi running",
+        label: "Agent running",
         dotClass: "animate-pulse bg-primary",
       };
     case "connected":
