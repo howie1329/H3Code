@@ -51,6 +51,23 @@ class FakePiProvider {
   }
 }
 
+class FailingPiProvider extends FakePiProvider {
+  unsubscribed = false;
+
+  subscribe(listener: (event: unknown) => void) {
+    this.listener = listener;
+    return () => {
+      this.unsubscribed = true;
+      this.listener = undefined;
+    };
+  }
+
+  async start() {
+    throw new Error("boom");
+    return super.start();
+  }
+}
+
 test("starts a PI runtime and returns a runtime binding", async () => {
   const fake = new FakePiProvider();
   const events: unknown[] = [];
@@ -94,4 +111,17 @@ test("buffers startup PI events until runtime session is started", async () => {
   const snapshot = runtime.getSnapshot("s1");
   assert.equal(snapshot?.repoPath, "/repo");
   assert.equal(snapshot?.activeTurnId, "s1-turn-1");
+});
+
+test("cleans up provider when startup fails", async () => {
+  const fake = new FailingPiProvider();
+  const adapter = new PiProviderAdapter({ providerFactory: () => fake as never });
+
+  await assert.rejects(
+    () => adapter.startSession({ sessionId: "s1", providerId: "pi", repoPath: "/repo" }, () => undefined),
+    /boom/,
+  );
+
+  assert.equal(fake.unsubscribed, true);
+  assert.equal(fake.disposed, true);
 });

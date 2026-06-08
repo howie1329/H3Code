@@ -43,7 +43,9 @@ export function mapPiEventToRuntimeEvents(event: PiProviderEvent, context: PiRun
       ];
 
     case "run.started":
+      return [{ ...base, type: "turn.started", turnId: ensureTurn(state, context.sessionId) }];
     case "turn.started": {
+      if (state.turnId) return [];
       const turnId = ensureTurn(state, context.sessionId);
       return [{ ...base, type: "turn.started", turnId }];
     }

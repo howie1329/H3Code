@@ -18,7 +18,13 @@ export class AgentRuntimeWsMessageRouter {
     try {
       switch (message.type) {
         case "command":
-          await this.#runtime.dispatchCommand(message.payload);
+          const session = await this.#runtime.dispatchCommand(message.payload);
+          peer.send({
+            type: "command.result",
+            protocolVersion: AGENT_PROTOCOL_VERSION,
+            payload: session ? { requestId: message.id, session } : { requestId: message.id },
+            sentAt: Date.now(),
+          });
           return;
         case "session.subscribe": {
           const unsubscribe = this.#runtime.subscribe(message.payload.sessionId, (event) => {

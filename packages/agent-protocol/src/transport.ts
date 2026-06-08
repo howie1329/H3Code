@@ -22,9 +22,15 @@ export type ClientToServerMessage =
   | ProtocolEnvelope<"session.snapshot.request", { sessionId: SessionId }>;
 
 export type ServerToClientMessage =
+  | ProtocolEnvelope<"command.result", CommandResult>
   | ProtocolEnvelope<"session.event", UiSessionEvent>
   | ProtocolEnvelope<"session.snapshot.response", { session: SessionReadModel }>
   | ProtocolEnvelope<"error", ProtocolError>;
+
+export type CommandResult = {
+  requestId?: RequestId;
+  session?: SessionReadModel;
+};
 
 export type ProtocolError = {
   code: string;

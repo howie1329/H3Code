@@ -19,6 +19,17 @@ test("maps PI streaming message events to runtime item and delta events", () => 
   assert.equal(delta.stream, "assistant_text");
 });
 
+test("does not emit duplicate turn starts for run and turn start pair", () => {
+  const state = createPiRuntimeEventMapperState();
+  const context = { sessionId: "s1", providerId: "pi", state };
+
+  const [runStarted] = mapPiEventToRuntimeEvents({ type: "run.started", occurredAt: 1 }, context);
+  const duplicateTurnStart = mapPiEventToRuntimeEvents({ type: "turn.started", occurredAt: 2 }, context);
+
+  assert.equal(runStarted.type, "turn.started");
+  assert.deepEqual(duplicateTurnStart, []);
+});
+
 test("maps PI tool events to runtime tool updates", () => {
   const [event] = mapPiEventToRuntimeEvents(
     { type: "tool.updated", phase: "end", toolCallId: "abc", toolName: "read", content: "ok", occurredAt: 1 },

@@ -102,7 +102,14 @@ export class PiProviderAdapter implements ProviderAdapter {
       }
     });
 
-    const snapshot = await provider.start();
+    let snapshot;
+    try {
+      snapshot = await provider.start();
+    } catch (error) {
+      unsubscribe();
+      await provider.dispose();
+      throw error;
+    }
     this.#sessions.set(request.sessionId, provider);
     const providerSessionRef = snapshot.sessionFile ?? snapshot.sessionId;
     const binding: RuntimeBinding = {

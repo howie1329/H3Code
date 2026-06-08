@@ -6,7 +6,11 @@ import { AgentRuntimeWsMessageRouter, type RuntimeWsPeer } from "../src/message-
 class FakeRuntime {
   listener?: (event: UiSessionEvent) => void;
   dispatched: unknown[] = [];
-  async dispatchCommand(command: unknown) { this.dispatched.push(command); }
+  async dispatchCommand(command: unknown) {
+    this.dispatched.push(command);
+    if ((command as { type?: string }).type === "session.create") return this.getSnapshot("s1");
+    return undefined;
+  }
   getSnapshot(sessionId: string) { return { id: sessionId, providerId: "fake", repoPath: "/repo", status: "idle", messages: [], activities: [], pendingInteractions: [], updatedAt: 1 }; }
   subscribe(_sessionId: string, listener: (event: UiSessionEvent) => void) { this.listener = listener; return () => { this.listener = undefined; }; }
 }
@@ -18,9 +22,23 @@ class Peer implements RuntimeWsPeer {
 
 test("routes commands to runtime", async () => {
   const runtime = new FakeRuntime();
+  const peer = new Peer();
   const router = new AgentRuntimeWsMessageRouter(runtime as never);
-  await router.route(new Peer(), { type: "command", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { type: "turn.send", sessionId: "s1", input: { text: "x" } } });
+  await router.route(peer, { id: "req1", type: "command", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { type: "turn.send", sessionId: "s1", input: { text: "x" } } });
   assert.equal(runtime.dispatched.length, 1);
+  assert.equal(peer.messages[0]?.type, "command.result");
+  assert.equal(peer.messages[0]?.payload.requestId, "req1");
+});
+
+test("returns session snapshots from create session commands", async () => {
+  const runtime = new FakeRuntime();
+  const peer = new Peer();
+  const router = new AgentRuntimeWsMessageRouter(runtime as never);
+
+  await router.route(peer, { id: "req1", type: "command", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { type: "session.create", repoPath: "/repo", providerId: "fake" } });
+
+  assert.equal(peer.messages[0]?.type, "command.result");
+  assert.equal(peer.messages[0]?.payload.session?.id, "s1");
 });
 
 test("responds to snapshot requests", async () => {
