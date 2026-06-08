@@ -98,27 +98,27 @@ export class RuntimeClient {
     return this.requireSessionFromCommandResult(response, requestId);
   }
 
-  async switchSession(repoPath: string, providerSessionRef: string): Promise<SessionReadModel> {
+  async switchSession(repoPath: string, sessionId: string): Promise<SessionReadModel> {
     await this.ensureConnected();
     const requestId = this.createRequestId();
     const response = await this.request({
       id: requestId,
       type: "command",
       protocolVersion: AGENT_PROTOCOL_VERSION,
-      payload: { type: "session.switch", repoPath, providerId: "pi", providerSessionRef },
+      payload: { type: "session.switch", repoPath, providerId: "pi", sessionId },
     });
 
     return this.requireSessionFromCommandResult(response, requestId);
   }
 
-  async deleteSession(repoPath: string, providerSessionRef: string, sessionId?: string): Promise<SessionSummary[]> {
+  async deleteSession(repoPath: string, sessionId: string): Promise<SessionSummary[]> {
     await this.ensureConnected();
     const requestId = this.createRequestId();
     const response = await this.request({
       id: requestId,
       type: "command",
       protocolVersion: AGENT_PROTOCOL_VERSION,
-      payload: { type: "session.delete", repoPath, providerId: "pi", providerSessionRef, sessionId },
+      payload: { type: "session.delete", repoPath, providerId: "pi", sessionId },
     });
 
     return this.requireSessionsFromCommandResult(response);

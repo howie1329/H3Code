@@ -24,9 +24,6 @@ const commandTypes = new Set([
   "preferences.setPiExecutablePath",
   "preferences.removeRepo",
   "preferences.clearIndexed",
-  "session.cache.get",
-  "session.cache.upsert",
-  "session.cache.delete",
 ]);
 
 export function parseClientMessage(data: Buffer | ArrayBuffer | Buffer[]): ClientToServerMessage {

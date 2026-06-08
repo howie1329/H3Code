@@ -12,6 +12,7 @@ class FakeRuntime {
     return undefined;
   }
   getSnapshot(sessionId: string) { return { id: sessionId, providerId: "fake", repoPath: "/repo", status: "idle", messages: [], activities: [], pendingInteractions: [], updatedAt: 1 }; }
+  getBinding(sessionId: string) { return { sessionId, providerId: "fake", repoPath: "/repo", providerSessionRef: `${sessionId}.jsonl`, status: "running" as const }; }
   subscribe(_sessionId: string, listener: (event: UiSessionEvent) => void) { this.listener = listener; return () => { this.listener = undefined; }; }
 }
 
@@ -76,7 +77,7 @@ test("lists sessions through the workspace service", async () => {
   const workspace = {
     listSessions: async (input: unknown) => {
       calls.push(input);
-      return [{ providerId: "fake", sessionRef: "/repo/s1", status: "idle" as const, repoPath: "/repo" }];
+      return [{ id: "h3-s1", providerId: "fake", providerSessionRef: "/repo/s1", status: "idle" as const, repoPath: "/repo" }];
     },
   };
   const router = new AgentRuntimeWsMessageRouter(runtime as never, workspace);
@@ -97,7 +98,7 @@ test("deletes sessions through runtime and workspace services", async () => {
     listSessions: async () => [],
     deleteSession: async (input: unknown) => {
       workspaceCalls.push(input);
-      return [{ providerId: "fake", sessionRef: "/repo/s2", status: "idle" as const, repoPath: "/repo" }];
+      return [{ id: "h3-s2", providerId: "fake", providerSessionRef: "/repo/s2", status: "idle" as const, repoPath: "/repo" }];
     },
   };
   const router = new AgentRuntimeWsMessageRouter(runtime as never, workspace);
@@ -106,13 +107,13 @@ test("deletes sessions through runtime and workspace services", async () => {
     id: "delete1",
     type: "command",
     protocolVersion: AGENT_PROTOCOL_VERSION,
-    payload: { type: "session.delete", repoPath: "/repo", providerId: "fake", providerSessionRef: "/repo/s1" },
+    payload: { type: "session.delete", repoPath: "/repo", providerId: "fake", sessionId: "h3-s1" },
   });
 
-  assert.deepEqual(runtime.dispatched, [{ type: "session.delete", repoPath: "/repo", providerId: "fake", providerSessionRef: "/repo/s1" }]);
-  assert.deepEqual(workspaceCalls, [{ repoPath: "/repo", providerId: "fake", providerSessionRef: "/repo/s1" }]);
+  assert.deepEqual(runtime.dispatched, [{ type: "session.delete", repoPath: "/repo", providerId: "fake", sessionId: "h3-s1" }]);
+  assert.deepEqual(workspaceCalls, [{ repoPath: "/repo", providerId: "fake", sessionId: "h3-s1" }]);
   assert.equal(peer.messages[0]?.type, "command.result");
-  assert.equal(peer.messages[0]?.payload.sessions?.[0]?.sessionRef, "/repo/s2");
+  assert.equal(peer.messages[0]?.payload.sessions?.[0]?.id, "h3-s2");
 });
 
 test("errors when no workspace service is configured for session listing", async () => {

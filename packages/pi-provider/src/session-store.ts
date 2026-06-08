@@ -1,29 +1,17 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { ConnectionId, ProviderId, SessionRef, SessionSummary } from "@h3code/agent-core";
 import {
-  getIndexedSessionsForRepo,
-  getRepoWorktrees,
+  getRegisteredSession,
   getSessionWorktree,
-  recordRepoSessionRows,
+  listRegisteredSessionsForRepo,
   recordRepoUsage,
-  removeIndexedSession,
+  removeRegisteredSession,
+  removeSessionWorktreeMapping,
   type IndexedSessionPreference,
 } from "@h3code/agent-metadata";
-
-type DiscoveredSession = {
-  path: string;
-  id: string;
-  cwd: string;
-  worktreePath?: string;
-  name?: string;
-  created: string;
-  modified: string;
-  messageCount: number;
-  firstMessage: string;
-};
 
 export type PiSessionDiscoveryOptions = {
   repoPath: string;
@@ -34,61 +22,56 @@ export type PiSessionDiscoveryOptions = {
 
 export type DeletePiSessionInput = {
   repoPath: string;
-  sessionRef: SessionRef;
+  sessionId: string;
   disconnect?: (connectionId: ConnectionId) => Promise<void>;
-  findConnectionIdForSession?: (sessionRef: SessionRef) => ConnectionId | undefined;
+  findConnectionIdForSession?: (sessionId: string) => ConnectionId | undefined;
   liveConnections?: ReadonlyMap<string, ConnectionId>;
 };
 
 export async function listPiSessionsForRepo(options: PiSessionDiscoveryOptions): Promise<SessionSummary[]> {
   const { repoPath, markRecent = false, providerId = "pi", liveConnections } = options;
-  const indexedSessions = getIndexedSessionsForRepo(repoPath);
-  const discovered = includeIndexedSessionsForRepo(
-    repoPath,
-    await listAllSessionsForLogicalRepo(repoPath),
-    indexedSessions,
-  );
+  const registered = listRegisteredSessionsForRepo(repoPath);
 
   if (markRecent) {
     recordRepoUsage(repoPath);
   }
 
-  recordRepoSessionRows(
-    repoPath,
-    discovered.map((session) => ({
-      path: session.path,
-      id: session.id,
-      name: session.name,
-      created: session.created,
-      modified: session.modified,
-      messageCount: session.messageCount,
-      firstMessage: session.firstMessage,
-    })),
+  const refreshed = await Promise.all(
+    registered.map(async (session) => refreshRegisteredSessionMetadata(session)),
   );
 
-  const sorted = sortSessionsForRepoByIndexedRecency(discovered, indexedSessions);
-  return sorted.map((session) => toSessionSummary(session, providerId, liveConnections));
+  return refreshed
+    .filter((session): session is IndexedSessionPreference => session !== undefined)
+    .map((session) => toSessionSummary(session, providerId, liveConnections));
 }
 
-export async function deletePiSessionForRepo(input: DeletePiSessionInput) {
-  const { repoPath, sessionRef } = input;
-  const sessionWorktree = getSessionWorktree(sessionRef);
-  const sessionCwd = sessionWorktree?.worktreePath ?? repoPath;
-  const sessions = await SessionManager.list(sessionCwd);
-  const session = sessions.find((item) => item.path === sessionRef);
+export async function deleteRegisteredSessionForRepo(input: DeletePiSessionInput) {
+  const { repoPath, sessionId } = input;
+  const registered = getRegisteredSession(sessionId);
 
-  if (!session) {
+  if (!registered || registered.repoPath !== repoPath) {
     throw new Error("Session does not belong to this repo.");
   }
 
-  const connectionId = input.findConnectionIdForSession?.(sessionRef);
+  const sessionWorktree = getSessionWorktree(sessionId);
+  const sessionCwd = sessionWorktree?.worktreePath ?? repoPath;
+  const providerSessionRef = registered.providerSessionRef;
+
+  const connectionId = input.findConnectionIdForSession?.(sessionId);
 
   if (connectionId && input.disconnect) {
     await input.disconnect(connectionId);
   }
 
-  await deleteSessionFile(sessionRef);
-  removeIndexedSession(sessionRef, { removeWorktreeMapping: Boolean(sessionWorktree) });
+  if (existsSync(providerSessionRef)) {
+    await deleteSessionFile(providerSessionRef);
+  }
+
+  if (sessionWorktree) {
+    removeSessionWorktreeMapping(sessionId);
+  }
+
+  removeRegisteredSession(sessionId);
 
   return listPiSessionsForRepo({
     repoPath,
@@ -97,107 +80,50 @@ export async function deletePiSessionForRepo(input: DeletePiSessionInput) {
   });
 }
 
-async function listAllSessionsForLogicalRepo(repoPath: string): Promise<DiscoveredSession[]> {
-  const sessionsByPath = new Map<string, DiscoveredSession>();
-
-  for (const session of await SessionManager.list(repoPath)) {
-    sessionsByPath.set(session.path, serializeSession(session, repoPath));
+async function refreshRegisteredSessionMetadata(session: IndexedSessionPreference) {
+  if (!existsSync(session.providerSessionRef)) {
+    removeRegisteredSession(session.id);
+    return undefined;
   }
 
-  for (const worktree of getRepoWorktrees(repoPath)) {
-    if (!existsSync(worktree.worktreePath)) {
-      continue;
-    }
+  const sessionWorktree = getSessionWorktree(session.id);
+  const sessionCwd = sessionWorktree?.worktreePath ?? session.repoPath;
+  const sessions = await SessionManager.list(sessionCwd);
+  const providerSession = sessions.find((item) => item.path === session.providerSessionRef);
 
-    for (const session of await SessionManager.list(worktree.worktreePath)) {
-      sessionsByPath.set(session.path, {
-        ...serializeSession(session, repoPath),
-        worktreePath: worktree.worktreePath,
-      });
-    }
+  if (!providerSession) {
+    return session;
   }
 
-  return [...sessionsByPath.values()].sort((a, b) => Date.parse(b.modified) - Date.parse(a.modified));
-}
-
-function includeIndexedSessionsForRepo(
-  repoPath: string,
-  sessions: DiscoveredSession[],
-  indexedSessions: IndexedSessionPreference[],
-) {
-  const sessionsByPath = new Map(sessions.map((session) => [session.path, session]));
-
-  for (const session of indexedSessions) {
-    if (session.repoPath !== repoPath || sessionsByPath.has(session.path) || !existsSync(session.path)) {
-      continue;
-    }
-
-    sessionsByPath.set(session.path, {
-      path: session.path,
-      id: session.id,
-      cwd: repoPath,
-      worktreePath: session.worktreePath,
-      name: session.name,
-      created: session.created,
-      modified: session.modified,
-      messageCount: session.messageCount,
-      firstMessage: session.firstMessage,
-    });
-  }
-
-  return [...sessionsByPath.values()];
-}
-
-function sortSessionsForRepoByIndexedRecency(
-  sessions: DiscoveredSession[],
-  indexedSessions: IndexedSessionPreference[],
-) {
-  const indexedOrderByPath = new Map(indexedSessions.map((session, index) => [session.path, index]));
-
-  return [...sessions].sort((a, b) => {
-    const aIndex = indexedOrderByPath.get(a.path) ?? Number.MAX_SAFE_INTEGER;
-    const bIndex = indexedOrderByPath.get(b.path) ?? Number.MAX_SAFE_INTEGER;
-
-    if (aIndex !== bIndex) {
-      return aIndex - bIndex;
-    }
-
-    return Date.parse(b.modified) - Date.parse(a.modified);
-  });
-}
-
-function serializeSession(session: SessionInfo, cwd: string): DiscoveredSession {
   return {
-    path: session.path,
-    id: session.id,
-    cwd,
-    name: session.name,
-    created: session.created.toISOString(),
-    modified: session.modified.toISOString(),
-    messageCount: session.messageCount,
-    firstMessage: session.firstMessage,
+    ...session,
+    providerSessionId: providerSession.id,
+    name: providerSession.name,
+    modified: providerSession.modified.toISOString(),
+    messageCount: providerSession.messageCount,
+    firstMessage: providerSession.firstMessage,
   };
 }
 
 function toSessionSummary(
-  session: DiscoveredSession,
+  session: IndexedSessionPreference,
   providerId: ProviderId,
   liveConnections?: ReadonlyMap<string, ConnectionId>,
 ): SessionSummary {
-  const liveConnectionId = liveConnections?.get(session.path);
-
   return {
+    id: session.id,
     providerId,
-    sessionRef: session.path,
+    providerSessionRef: session.providerSessionRef,
+    sessionRef: session.providerSessionRef,
     status: "idle",
     title: session.name,
     preview: session.firstMessage,
-    repoPath: session.cwd,
+    repoPath: session.repoPath,
     createdAt: Date.parse(session.created),
     updatedAt: Date.parse(session.modified),
     worktreePath: session.worktreePath,
     messageCount: session.messageCount,
-    liveConnectionId,
+    liveConnectionId: liveConnections?.get(session.id),
   };
 }
 

@@ -24,16 +24,6 @@ export function migrateRecentReposSchema(db: DatabaseSync) {
   }
 }
 
-export function migrateRepoSessionsSchema(db: DatabaseSync) {
-  const columns = db.prepare("PRAGMA table_info(repo_sessions)").all() as Array<{ name: string }>;
-  const hasLastOpenedAt = columns.some((column) => column.name === "last_opened_at");
-
-  if (!hasLastOpenedAt) {
-    db.exec("ALTER TABLE repo_sessions ADD COLUMN last_opened_at TEXT");
-  }
-}
-
-export { migrateSessionMessageCacheSchema } from "./session-message-cache.js";
 
 export function getRecentRepos(db: DatabaseSync, limit: number): RecentRepoPreference[] {
   return db.prepare(`

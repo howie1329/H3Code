@@ -8,7 +8,7 @@ export { mapPiSessionEvent } from "./event-mapper.js";
 export { PiSdkProvider } from "./pi-provider.js";
 export { createRealPiRuntime, withRuntimeDefaults } from "./runtime.js";
 export {
-  deletePiSessionForRepo,
+  deleteRegisteredSessionForRepo,
   listPiSessionsForRepo,
   type DeletePiSessionInput,
   type PiSessionDiscoveryOptions,

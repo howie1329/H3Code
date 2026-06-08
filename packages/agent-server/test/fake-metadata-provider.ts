@@ -79,7 +79,9 @@ export class FakeMetadataProvider implements AgentProvider {
   async getSnapshot(connection: ProviderConnection): Promise<SessionSnapshot> {
     return {
       summary: {
+        id: connection.sessionRef ?? "fake-metadata-session",
         providerId: this.id,
+        providerSessionRef: connection.sessionRef ?? "fake-metadata-session",
         sessionRef: connection.sessionRef ?? "fake-metadata-session",
         status: "idle",
         title: "Metadata test session",

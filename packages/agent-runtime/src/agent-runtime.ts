@@ -1,4 +1,5 @@
 import type { AgentCommand, ProviderAdapter, ProviderCommand, ProviderDescriptor, ProviderModel, RuntimeEvent, SessionId, SessionReadModel, UiMessage, UiSessionEvent } from "@h3code/agent-protocol";
+import type { RuntimePersistence } from "@h3code/agent-runtime-persistence";
 import { RuntimeEventBus, type RuntimeEventListener } from "./event-bus.js";
 import { ProviderRegistry } from "./provider-registry.js";
 import { ReadModelProjector } from "./read-model-projector.js";
@@ -10,6 +11,7 @@ export type AgentRuntimeOptions = {
   store?: InMemoryRuntimeStore;
   projector?: ReadModelProjector;
   idFactory?: () => SessionId;
+  persistence?: RuntimePersistence;
 };
 
 export type AgentCommandResult =
@@ -24,12 +26,28 @@ export class AgentRuntime {
   readonly #projector: ReadModelProjector;
   readonly #bus = new RuntimeEventBus();
   readonly #idFactory: () => SessionId;
+  readonly #persistence?: RuntimePersistence;
 
   constructor(options: AgentRuntimeOptions = {}) {
     this.#registry = new ProviderRegistry(options.providers);
     this.#store = options.store ?? new InMemoryRuntimeStore();
     this.#projector = options.projector ?? new ReadModelProjector();
     this.#idFactory = options.idFactory ?? (() => `h3-${crypto.randomUUID()}`);
+    this.#persistence = options.persistence;
+  }
+
+  async loadPersistedState(): Promise<void> {
+    if (!this.#persistence) {
+      return;
+    }
+
+    for (const session of await this.#persistence.loadSessions()) {
+      this.#store.setReadModel(session);
+    }
+
+    for (const binding of await this.#persistence.loadBindings()) {
+      this.#store.setBinding(binding);
+    }
   }
 
   registerProvider(provider: ProviderAdapter): void {
@@ -62,6 +80,7 @@ export class AgentRuntime {
       this.#store.setBinding({ ...binding, lastEvent: event.type, lastEventAt: event.occurredAt, activeTurnId });
     }
     for (const uiEvent of result.events) this.#bus.emit(event.sessionId, uiEvent);
+    void this.#persistSessionState(event.sessionId);
     return result.events;
   }
 
@@ -77,7 +96,12 @@ export class AgentRuntime {
         const runtime = await provider.startSession({ sessionId, providerId: command.providerId, repoPath: command.repoPath, options: command.options }, (event) => { void this.ingestRuntimeEvent(event); });
         this.#store.setBinding(runtime.binding);
         this.#store.setProviderRuntime(sessionId, runtime);
-        return this.#store.getReadModel(sessionId);
+        const created = this.#store.getReadModel(sessionId);
+        if (created) {
+          await this.#persistence?.saveSession(created);
+          await this.#persistence?.saveBinding(runtime.binding);
+        }
+        return created;
       }
       case "session.resume": {
         const binding = this.#store.getBinding(command.sessionId);
@@ -86,36 +110,45 @@ export class AgentRuntime {
         const runtime = await provider.resumeSession({ sessionId: command.sessionId, providerId: binding.providerId, repoPath: binding.repoPath, providerSessionRef: command.providerSessionRef, resumeCursor: command.resumeCursor }, (event) => { void this.ingestRuntimeEvent(event); });
         this.#store.setBinding(runtime.binding);
         this.#store.setProviderRuntime(command.sessionId, runtime);
-        return this.#store.getReadModel(command.sessionId);
+        const resumed = this.#store.getReadModel(command.sessionId);
+        if (resumed) {
+          await this.#persistence?.saveSession(resumed);
+          await this.#persistence?.saveBinding(runtime.binding);
+        }
+        return resumed;
       }
       case "session.switch": {
-        const existingBinding = this.#store.findBindingByProviderSessionRef(command.providerSessionRef);
-        if (existingBinding) {
-          return this.#store.getReadModel(existingBinding.sessionId);
+        const binding = this.#requireBinding(command.sessionId);
+        if (binding.repoPath !== command.repoPath || binding.providerId !== command.providerId) {
+          throw runtimeErrors.sessionNotFound(command.sessionId);
         }
 
-        const sessionId = this.#idFactory();
-        const provider = this.#registry.get(command.providerId);
+        const existingRuntime = this.#store.getProviderRuntime(command.sessionId);
+        if (existingRuntime) {
+          return this.#store.getReadModel(command.sessionId);
+        }
+
+        const provider = this.#registry.get(binding.providerId);
         const runtime = await provider.resumeSession(
           {
-            sessionId,
-            providerId: command.providerId,
-            repoPath: command.repoPath,
-            providerSessionRef: command.providerSessionRef,
+            sessionId: command.sessionId,
+            providerId: binding.providerId,
+            repoPath: binding.repoPath,
+            providerSessionRef: binding.providerSessionRef,
           },
           (event) => { void this.ingestRuntimeEvent(event); },
         );
         this.#store.setBinding(runtime.binding);
-        this.#store.setProviderRuntime(sessionId, runtime);
-        return this.#store.getReadModel(sessionId);
+        this.#store.setProviderRuntime(command.sessionId, runtime);
+        const session = this.#store.getReadModel(command.sessionId);
+        if (session) {
+          await this.#persistence?.saveSession(session);
+          await this.#persistence?.saveBinding(runtime.binding);
+        }
+        return session;
       }
       case "session.delete": {
-        const binding = command.sessionId
-          ? this.#store.getBinding(command.sessionId)
-          : this.#store.findBindingByProviderSessionRef(command.providerSessionRef);
-        if (binding) {
-          await this.stopSession(binding.sessionId);
-        }
+        await this.removeSession(command.sessionId);
         return;
       }
       case "turn.send": {
@@ -202,9 +235,26 @@ export class AgentRuntime {
 
   async stopSession(sessionId: SessionId): Promise<void> {
     const runtime = this.#store.getProviderRuntime(sessionId);
-    if (!runtime) throw runtimeErrors.sessionNotFound(sessionId);
-    await runtime.stop();
+    if (runtime) {
+      await runtime.stop();
+    }
     this.#store.deleteSession(sessionId);
+    await this.#persistence?.deleteSession(sessionId);
+    await this.#persistence?.deleteBinding(sessionId);
+  }
+
+  async removeSession(sessionId: SessionId): Promise<void> {
+    const runtime = this.#store.getProviderRuntime(sessionId);
+    if (runtime) {
+      await runtime.stop();
+    }
+    this.#store.deleteSession(sessionId);
+    await this.#persistence?.deleteSession(sessionId);
+    await this.#persistence?.deleteBinding(sessionId);
+  }
+
+  getBinding(sessionId: SessionId) {
+    return this.#store.getBinding(sessionId);
   }
 
   async stopAll(): Promise<void> {
@@ -252,6 +302,7 @@ export class AgentRuntime {
       updatedAt: now,
     });
     this.#bus.emit(command.sessionId, { type: "thread.message.upserted", sessionId: command.sessionId, message });
+    void this.#persistSessionState(command.sessionId);
   }
 
   #patchSession(sessionId: SessionId, patch: Partial<SessionReadModel>): SessionReadModel {
@@ -271,6 +322,22 @@ export class AgentRuntime {
         updatedAt,
       },
     });
+    void this.#persistSessionState(sessionId);
     return session;
+  }
+
+  async #persistSessionState(sessionId: SessionId): Promise<void> {
+    if (!this.#persistence) {
+      return;
+    }
+
+    const session = this.#store.getReadModel(sessionId);
+    const binding = this.#store.getBinding(sessionId);
+    if (session) {
+      await this.#persistence.saveSession(session);
+    }
+    if (binding) {
+      await this.#persistence.saveBinding(binding);
+    }
   }
 }

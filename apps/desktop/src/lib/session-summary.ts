@@ -4,8 +4,9 @@ import type { SessionSummary } from "$lib/session-types.js";
 
 export function indexedSessionToSummary(session: IndexedSessionPreference): SessionSummary {
   return {
-    providerId: "pi",
-    sessionRef: session.path,
+    id: session.id,
+    providerId: session.providerId,
+    providerSessionRef: session.providerSessionRef,
     status: "idle",
     title: session.name,
     preview: session.firstMessage,

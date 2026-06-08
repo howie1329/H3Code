@@ -135,7 +135,9 @@ export class NoopProvider implements AgentProvider {
   async getSnapshot(connection: ProviderConnection): Promise<SessionSnapshot> {
     return {
       summary: {
+        id: connection.sessionRef ?? "noop-session",
         providerId: this.id,
+        providerSessionRef: connection.sessionRef ?? "noop-session",
         sessionRef: connection.sessionRef ?? "noop-session",
         status: "idle",
         title: "Noop session",

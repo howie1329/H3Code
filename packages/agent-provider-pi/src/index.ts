@@ -5,4 +5,9 @@ export {
   type PiRuntimeEventMapperContext,
   type PiRuntimeEventMapperState,
 } from "./event-mapper.js";
-export { deletePiSessionForRepo, listPiSessionsForRepo, type DeletePiSessionInput, type PiSessionDiscoveryOptions, type SessionSummary } from "./pi-sdk/session-store.js";
+export {
+  deleteRegisteredSessionForRepo,
+  listPiSessionsForRepo,
+  type DeletePiSessionInput,
+  type PiSessionDiscoveryOptions,
+} from "./pi-sdk/session-store.js";

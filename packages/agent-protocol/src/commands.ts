@@ -33,17 +33,16 @@ export type ResumeSessionCommand = {
 
 export type SwitchSessionCommand = {
   type: "session.switch";
+  sessionId: SessionId;
   repoPath: RepoPath;
   providerId: ProviderId;
-  providerSessionRef: ProviderSessionRef;
 };
 
 export type DeleteSessionCommand = {
   type: "session.delete";
+  sessionId: SessionId;
   repoPath: RepoPath;
   providerId?: ProviderId;
-  providerSessionRef: ProviderSessionRef;
-  sessionId?: SessionId;
 };
 
 export type SendTurnCommand = {

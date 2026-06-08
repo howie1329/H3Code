@@ -1,3 +1,5 @@
+import { app } from "electron";
+
 import {
   type H3CodeRuntimeServerHandle,
   startH3CodeRuntimeServer,
@@ -13,6 +15,7 @@ export async function startAgentServerProcess(): Promise<H3CodeRuntimeServerHand
   serverHandle = await startH3CodeRuntimeServer({
     host: "127.0.0.1",
     port: 0,
+    dataDir: app.getPath("userData"),
   });
 
   return serverHandle;

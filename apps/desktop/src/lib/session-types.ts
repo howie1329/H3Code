@@ -1,6 +1,7 @@
 export type SessionSummary = {
+  id: string;
   providerId: string;
-  sessionRef: string;
+  providerSessionRef?: string;
   status: "idle" | "running" | "error";
   title?: string;
   preview?: string;

@@ -181,15 +181,28 @@ runtime_bindings
 
 Keep the first version simple. A durable event store can be added later if the product needs replay, auditability, sync, or cross-device conflict resolution.
 
+## Identity Model
+
+`SessionId` (`h3code_session_id`) is H3Code’s canonical session identifier across runtime persistence, the session registry, sidebar rows, and runtime commands.
+
+Provider-owned handles (`providerSessionRef`, PI internal ids) live on `RuntimeBinding` and as denormalized metadata in `repo_sessions`. They are never primary keys and are not accepted from the client for switch/delete.
+
+## Session Registry
+
+`@h3code/agent-metadata` stores H3Code-registered sessions in `repo_sessions` keyed by `h3code_session_id`.
+
+- Registration happens on `session.create` only.
+- `listSessions` reads the registry; it does not scan provider filesystems.
+- Legacy `session_message_cache` has been removed; use `@h3code/agent-runtime-persistence` for transcript paint on cold start.
+
 ## Relationship To `agent-metadata`
 
 `@h3code/agent-metadata` should remain responsible for app-level local data:
 
 - Known repositories.
-- Recent repositories and sessions.
+- H3Code session registry (`repo_sessions` by `SessionId`).
 - User preferences.
 - Workspace metadata.
-- Local search/index caches.
 - Non-runtime app settings.
 
 It should not own:

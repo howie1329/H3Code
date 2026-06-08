@@ -1,11 +1,27 @@
-import { deletePiSessionForRepo, listPiSessionsForRepo, PiProviderAdapter, type PiProviderAdapterOptions } from "@h3code/agent-provider-pi";
+import {
+  deleteRegisteredSessionForRepo,
+  listPiSessionsForRepo,
+  PiProviderAdapter,
+  type PiProviderAdapterOptions,
+} from "@h3code/agent-provider-pi";
 import { AgentRuntime, type AgentRuntimeOptions } from "@h3code/agent-runtime";
+import {
+  configurePersistenceStore,
+  createRuntimePersistence,
+  resolvePersistenceDataDir,
+} from "@h3code/agent-runtime-persistence";
 import { createAgentRuntimeWsServer, type WorkspaceService } from "@h3code/agent-runtime-ws";
+import {
+  isRegisteredSession,
+  registerH3CodeSession,
+  touchRegisteredSession,
+} from "@h3code/agent-metadata";
 import type { WebSocketServer } from "ws";
 
 export type H3CodeRuntimeServerOptions = {
   port?: number;
   host?: string;
+  dataDir?: string;
   runtime?: AgentRuntime;
   runtimeOptions?: AgentRuntimeOptions;
   piProviderOptions?: PiProviderAdapterOptions;
@@ -21,10 +37,29 @@ const piWorkspaceService: WorkspaceService = {
       markRecent: input.markRecent,
     }),
   deleteSession: (input) =>
-    deletePiSessionForRepo({
+    deleteRegisteredSessionForRepo({
       repoPath: input.repoPath,
-      sessionRef: input.providerSessionRef,
+      sessionId: input.sessionId,
     }),
+  assertRegisteredSession(sessionId) {
+    if (!isRegisteredSession(sessionId)) {
+      throw Object.assign(new Error(`Session is not registered with H3Code: ${sessionId}`), { code: "session_not_registered" });
+    }
+  },
+  registerSession(session, binding) {
+    registerH3CodeSession({
+      h3codeSessionId: session.id,
+      repoPath: session.repoPath,
+      providerId: session.providerId,
+      providerSessionRef: binding.providerSessionRef ?? session.providerSessionRef ?? "",
+      name: session.title,
+      messageCount: session.messages.length,
+      firstMessage: session.messages.find((message) => message.role === "user")?.content ?? "",
+    });
+  },
+  touchSession(sessionId) {
+    touchRegisteredSession(sessionId);
+  },
 };
 
 export type H3CodeRuntimeServerHandle = {
@@ -35,7 +70,16 @@ export type H3CodeRuntimeServerHandle = {
 };
 
 export async function startH3CodeRuntimeServer(options: H3CodeRuntimeServerOptions = {}): Promise<H3CodeRuntimeServerHandle> {
-  const runtime = options.runtime ?? new AgentRuntime(options.runtimeOptions);
+  const dataDir = resolvePersistenceDataDir(options.dataDir);
+  configurePersistenceStore({ dataDir });
+  const persistence = createRuntimePersistence();
+
+  const runtime = options.runtime ?? new AgentRuntime({
+    ...options.runtimeOptions,
+    persistence,
+  });
+  await runtime.loadPersistedState();
+
   const shouldRegisterPiProvider = options.registerPiProvider ?? !options.runtime;
   if (shouldRegisterPiProvider) {
     runtime.registerProvider(new PiProviderAdapter(options.piProviderOptions));

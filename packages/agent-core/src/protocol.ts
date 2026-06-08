@@ -1,12 +1,7 @@
 import type { ProviderUiRequest, ProviderUiResponse } from "./provider-ui.js";
 import type { SessionDomainEvent } from "./events.js";
 import type { ConnectionId, ProviderId, RequestId, RunRef, SessionRef } from "./ids.js";
-import type {
-  DesktopSettings,
-  PreferencesSnapshot,
-  SessionMessageCacheEntry,
-  SessionMessageCacheUpsert,
-} from "./metadata.js";
+import type { DesktopSettings, PreferencesSnapshot } from "./metadata.js";
 import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "./provider-metadata.js";
 import type { ProviderDescriptor } from "./providers.js";
 import type { ConnectionState, MessageMode, NewSessionOptions, SessionSnapshot, SessionSummary } from "./sessions.js";
@@ -63,13 +58,10 @@ export type ClientToServerMessage =
       type: "session.delete";
       id: RequestId;
       repoPath: string;
-      sessionRef: SessionRef;
+      sessionId: string;
       connectionId?: ConnectionId;
     }
-  | { type: "workspace.diff"; id: RequestId; connectionId: ConnectionId }
-  | { type: "session.cache.get"; id: RequestId; sessionRef: SessionRef }
-  | { type: "session.cache.upsert"; id: RequestId; entry: SessionMessageCacheUpsert }
-  | { type: "session.cache.delete"; id: RequestId; sessionRef: SessionRef };
+  | { type: "workspace.diff"; id: RequestId; connectionId: ConnectionId };
 
 export type ServerToClientMessage =
   | { type: "server.ready"; protocolVersion: typeof AGENT_CORE_PROTOCOL_VERSION; providers: ProviderDescriptor[] }
@@ -85,7 +77,4 @@ export type ServerToClientMessage =
   | { type: "session.delete"; id: RequestId; sessions: SessionSummary[] }
   | { type: "session.list"; id: RequestId; sessions: SessionSummary[] }
   | { type: "preferences.snapshot"; id: RequestId; preferences: PreferencesSnapshot }
-  | { type: "session.cache.entry"; id: RequestId; entry?: SessionMessageCacheEntry }
-  | { type: "session.cache.saved"; id: RequestId }
-  | { type: "session.cache.deleted"; id: RequestId }
   | { type: "error"; id?: RequestId; code: string; message: string };

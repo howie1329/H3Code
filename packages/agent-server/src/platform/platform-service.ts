@@ -3,23 +3,16 @@ import type {
   DesktopSettings,
   PreferencesSnapshot,
   ProviderId,
-  SessionMessageCacheEntry,
-  SessionMessageCacheUpsert,
-  SessionRef,
   SessionSummary,
   WorkspaceDiffSummary,
 } from "@h3code/agent-core";
-import { deletePiSessionForRepo, listPiSessionsForRepo } from "@h3code/pi-provider";
+import { deleteRegisteredSessionForRepo, listPiSessionsForRepo } from "@h3code/pi-provider";
 import {
   clearAllIndexedData,
-  deleteSessionMessageCache as deleteMetadataSessionMessageCache,
   getPreferences,
-  getSessionMessageCache as getMetadataSessionMessageCache,
   removeIndexedRepo,
   setPiExecutablePath,
   updateDesktopSettings,
-  upsertSessionMessageCache as upsertMetadataSessionMessageCache,
-  type SessionMessageCacheUpsert as MetadataSessionMessageCacheUpsert,
 } from "@h3code/agent-metadata";
 import type { ConnectionManager } from "../connection-manager.js";
 import { getWorkspaceDiff } from "./git-diff.js";
@@ -49,27 +42,25 @@ export class PlatformService {
 
   async deleteSession(input: {
     repoPath: string;
-    sessionRef: SessionRef;
+    sessionId: string;
     connectionId?: ConnectionId;
   }) {
-    const findConnectionIdForSession = (sessionRef: SessionRef) => {
+    const findConnectionIdForSession = (sessionId: string) => {
       if (input.connectionId) {
         return input.connectionId;
       }
 
-      return this.connections?.findConnectionIdForSession(sessionRef);
+      return this.connections?.findConnectionIdForSession(sessionId);
     };
 
-    const repoPath = input.repoPath;
-
-    const sessions = await deletePiSessionForRepo({
-      repoPath,
-      sessionRef: input.sessionRef,
+    const sessions = await deleteRegisteredSessionForRepo({
+      repoPath: input.repoPath,
+      sessionId: input.sessionId,
       findConnectionIdForSession,
       disconnect: async (connectionId) => {
         await this.connections?.disconnect(connectionId);
       },
-      liveConnections: this.connections?.getLiveSessionConnections(repoPath),
+      liveConnections: this.connections?.getLiveSessionConnections(input.repoPath),
     });
 
     return sessions;
@@ -102,72 +93,4 @@ export class PlatformService {
       liveConnections: this.connections?.getLiveSessionConnections(input.repoPath),
     });
   }
-
-  getSessionMessageCache(sessionRef: SessionRef): SessionMessageCacheEntry | undefined {
-    const entry = getMetadataSessionMessageCache(sessionRef);
-
-    if (!entry) {
-      return undefined;
-    }
-
-    return toCoreSessionMessageCacheEntry(entry);
-  }
-
-  upsertSessionMessageCache(entry: SessionMessageCacheUpsert) {
-    upsertMetadataSessionMessageCache(toMetadataSessionMessageCacheUpsert(entry));
-  }
-
-  deleteSessionMessageCache(sessionRef: SessionRef) {
-    deleteMetadataSessionMessageCache(sessionRef);
-  }
-}
-
-function toCoreSessionMessageCacheEntry(entry: NonNullable<ReturnType<typeof getMetadataSessionMessageCache>>): SessionMessageCacheEntry {
-  return {
-    sessionRef: entry.sessionPath,
-    repoPath: entry.repoPath,
-    providerId: entry.providerId,
-    messages: entry.messages,
-    sessionState: entry.sessionState
-      ? {
-          isStreaming: entry.sessionState.isStreaming,
-          isCompacting: entry.sessionState.isCompacting,
-          sessionRef: entry.sessionState.sessionFile,
-          sessionId: entry.sessionState.sessionId,
-        }
-      : undefined,
-    messageCount: entry.messageCount,
-    sourceMtimeMs: entry.sourceMtimeMs,
-    sourceSizeBytes: entry.sourceSizeBytes,
-    contentHash: entry.contentHash,
-    cachedAt: entry.cachedAt,
-    syncedAt: entry.syncedAt,
-    lastOpenedAt: entry.lastOpenedAt,
-    syncStatus: entry.syncStatus,
-  };
-}
-
-function toMetadataSessionMessageCacheUpsert(entry: SessionMessageCacheUpsert): MetadataSessionMessageCacheUpsert {
-  return {
-    sessionPath: entry.sessionRef,
-    repoPath: entry.repoPath,
-    providerId: entry.providerId,
-    messages: entry.messages,
-    sessionState: entry.sessionState
-      ? {
-          isStreaming: entry.sessionState.isStreaming,
-          isCompacting: entry.sessionState.isCompacting,
-          sessionFile: entry.sessionState.sessionRef,
-          sessionId: entry.sessionState.sessionId,
-        }
-      : undefined,
-    messageCount: entry.messageCount,
-    sourceMtimeMs: entry.sourceMtimeMs,
-    sourceSizeBytes: entry.sourceSizeBytes,
-    contentHash: entry.contentHash,
-    cachedAt: entry.cachedAt,
-    syncedAt: entry.syncedAt,
-    lastOpenedAt: entry.lastOpenedAt,
-    syncStatus: entry.syncStatus,
-  };
 }

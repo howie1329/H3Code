@@ -76,7 +76,7 @@ class DesktopState {
   worktreePath = $state<string | undefined>();
   repos = $state<SidebarRepo[]>([]);
   sessions = $state<SessionSummary[]>([]);
-  selectedSessionRef = $state<string | undefined>();
+  selectedSessionId = $state<string | undefined>();
   sessionReadModel = $state<SessionReadModel>(createEmptySessionReadModel());
   sessionDiff = $state<SessionDiffState>({ files: [], changedFiles: 0, patch: "" });
   sessionDiffLoading = $state(false);
@@ -100,7 +100,7 @@ class DesktopState {
 
   sessionUnsubscribe: (() => void) | undefined;
 
-  selectedSession = $derived(this.sessions.find((session) => session.sessionRef === this.selectedSessionRef));
+  selectedSession = $derived(this.sessions.find((session) => session.id === this.selectedSessionId));
   canUseSession = $derived(this.connectionStatus.state === "connected" && Boolean(this.activeSessionId));
   isSessionReconciled = $derived(Boolean(this.activeSessionId) && !this.isSwitchingSession);
   canSubmit = $derived(
@@ -308,7 +308,7 @@ class DesktopState {
     this.repoPath = nextRepoPath;
     this.worktreePath = nextRepoPath;
     this.sessionReadModel = session;
-    this.selectedSessionRef = session.providerSessionRef;
+    this.selectedSessionId = session.id;
     this.connectionStatus = {
       state: "connected",
       sessionId: session.id,
@@ -337,7 +337,7 @@ class DesktopState {
     this.activeSessionId = undefined;
     this.worktreePath = undefined;
     this.sessions = [];
-    this.selectedSessionRef = undefined;
+    this.selectedSessionId = undefined;
     this.isSwitchingSession = false;
     this.sessionReadModel = createEmptySessionReadModel();
     this.connectionStatus = { state: "disconnected" };
@@ -365,7 +365,7 @@ class DesktopState {
     this.landingRepoPath = selected.path;
   }
 
-  async handleSwitchSession(sessionPath: string, repoPath = this.repoPath) {
+  async handleSwitchSession(sessionId: string, repoPath = this.repoPath) {
     if (!repoPath) {
       this.errorMessage = "Select a repo before switching sessions.";
       return;
@@ -375,7 +375,7 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const session = await getRuntimeClient().switchSession(repoPath, sessionPath);
+      const session = await getRuntimeClient().switchSession(repoPath, sessionId);
       this.resetSessionDiff();
       await this.attachSession(session, repoPath);
       const sessions = await getRuntimeClient().listSessions({ repoPath, markRecent: true });
@@ -459,21 +459,17 @@ class DesktopState {
     });
   }
 
-  async deleteSession(sessionPath: string, repoPath = this.repoPath) {
+  async deleteSession(sessionId: string, repoPath = this.repoPath) {
     if (!repoPath) {
       this.errorMessage = "Select a repo before deleting a session.";
       return;
     }
 
-    const deletingActive = sessionPath === this.selectedSessionRef || sessionPath === this.sessionReadModel.providerSessionRef;
+    const deletingActive = sessionId === this.selectedSessionId || sessionId === this.activeSessionId;
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const sessions = await getRuntimeClient().deleteSession(
-        repoPath,
-        sessionPath,
-        deletingActive ? this.activeSessionId : undefined,
-      );
+      const sessions = await getRuntimeClient().deleteSession(repoPath, sessionId);
       this.sessions = sessions;
       this.repos = updateRepo(this.repos, repoPath, {
         sessions,
@@ -812,20 +808,19 @@ class DesktopState {
   }
 
   mergeLiveSession(sessions: SessionSummary[], session: SessionReadModel, repoPath: string): SessionSummary[] {
-    const sessionRef = session.providerSessionRef ?? session.id;
-    const existingIndex = sessions.findIndex((entry) => entry.sessionRef === sessionRef);
+    const existingIndex = sessions.findIndex((entry) => entry.id === session.id);
 
     if (existingIndex !== -1) {
       return sessions.map((entry, index) =>
-        index === existingIndex ? { ...entry, liveSessionId: session.id } : entry,
+        index === existingIndex ? { ...entry, liveSessionId: session.id, status: session.status } : entry,
       );
     }
 
-    return [liveSessionToSummary(session, repoPath, sessionRef), ...sessions];
+    return [liveSessionToSummary(session, repoPath), ...sessions];
   }
 
   getSessionRowStatus(session: SessionSummary): SessionRowStatus {
-    if (session.liveSessionId === this.activeSessionId) {
+    if (session.id === this.activeSessionId || session.liveSessionId === this.activeSessionId) {
       if (this.providerUiRequest) {
         return createSessionRowStatus("needs_input");
       }
@@ -971,17 +966,14 @@ function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: 
   return currentRepos.map((repo) => (repo.path === nextRepoPath ? { ...repo, ...updates } : repo));
 }
 
-function liveSessionToSummary(
-  session: SessionReadModel,
-  repoPath: string,
-  sessionRef: string,
-): SessionSummary {
+function liveSessionToSummary(session: SessionReadModel, repoPath: string): SessionSummary {
   const timestamp = session.updatedAt || Date.now();
   const firstUserMessage = session.messages.find((message) => message.role === "user");
 
   return {
+    id: session.id,
     providerId: session.providerId ?? "pi",
-    sessionRef,
+    providerSessionRef: session.providerSessionRef,
     status: session.status === "running" ? "running" : session.status === "error" ? "error" : "idle",
     title: session.title,
     preview: typeof firstUserMessage?.content === "string" ? firstUserMessage.content : undefined,

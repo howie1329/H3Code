@@ -197,7 +197,9 @@ function mapSnapshot(providerId: ProviderId, repoPath: string, snapshot: PiProvi
 
   return {
     summary: {
+      id: snapshot.sessionId,
       providerId,
+      providerSessionRef: sessionRef,
       sessionRef,
       status: snapshot.isStreaming || snapshot.isCompacting ? "running" : "idle",
       title: snapshot.sessionName,

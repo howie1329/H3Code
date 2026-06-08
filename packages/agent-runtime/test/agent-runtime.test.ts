@@ -109,23 +109,32 @@ test("routes provider controls and patches the session read model", async () => 
   assert.deepEqual(emitted, ["session.patch", "session.patch", "session.patch", "session.patch"]);
 });
 
-test("switches to an existing provider session and deletes active runtime state", async () => {
+test("switches to a registered session by SessionId", async () => {
+  let runtime!: AgentRuntime;
+  runtime = new AgentRuntime({ idFactory: () => "s1", providers: [fakeProvider((event) => { void runtime.ingestRuntimeEvent(event); })] });
+
+  await runtime.dispatchCommand({ type: "session.create", repoPath: "/repo", providerId: "fake" });
+  const switched = await runtime.dispatchCommand({ type: "session.switch", repoPath: "/repo", providerId: "fake", sessionId: "s1" });
+
+  assert.ok(switched && "id" in switched);
+  assert.equal(switched?.id, "s1");
+});
+
+test("deletes a session by SessionId", async () => {
   let stopped = 0;
+  let runtime!: AgentRuntime;
   const provider: ProviderAdapter = {
-    ...fakeProvider(() => {}),
-    async resumeSession(request, sink) {
-      await sink({ type: "session.started", sessionId: request.sessionId, providerId: request.providerId, repoPath: request.repoPath, providerSessionRef: request.providerSessionRef, occurredAt: 1 });
-      return { binding: { sessionId: request.sessionId, providerId: request.providerId, repoPath: request.repoPath, providerSessionRef: request.providerSessionRef, status: "running" }, async stop() { stopped += 1; } };
+    ...fakeProvider((event) => { void runtime.ingestRuntimeEvent(event); }),
+    async startSession(request, sink) {
+      await sink({ type: "session.started", sessionId: request.sessionId, providerId: request.providerId, repoPath: request.repoPath, providerSessionRef: `${request.sessionId}.jsonl`, occurredAt: 1 });
+      return { binding: { sessionId: request.sessionId, providerId: request.providerId, repoPath: request.repoPath, providerSessionRef: `${request.sessionId}.jsonl`, status: "running" }, async stop() { stopped += 1; } };
     },
   };
-  const runtime = new AgentRuntime({ idFactory: () => "s2", providers: [provider] });
+  runtime = new AgentRuntime({ idFactory: () => "s1", providers: [provider] });
 
-  const switched = await runtime.dispatchCommand({ type: "session.switch", repoPath: "/repo", providerId: "fake", providerSessionRef: "old.jsonl" });
-  assert.ok(switched && "id" in switched);
-  assert.equal(switched?.id, "s2");
-
-  await runtime.dispatchCommand({ type: "session.delete", repoPath: "/repo", providerId: "fake", providerSessionRef: "old.jsonl" });
+  await runtime.dispatchCommand({ type: "session.create", repoPath: "/repo", providerId: "fake" });
+  await runtime.dispatchCommand({ type: "session.delete", repoPath: "/repo", providerId: "fake", sessionId: "s1" });
 
   assert.equal(stopped, 1);
-  assert.equal(runtime.getSnapshot("s2"), undefined);
+  assert.equal(runtime.getSnapshot("s1"), undefined);
 });

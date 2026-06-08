@@ -99,7 +99,7 @@
   const shortcutModifier = $derived(desktopState.platform === "darwin" ? "⌘" : "Ctrl");
 
   $effect(() => {
-    const nextSessionKey = desktopState.selectedSessionRef;
+    const nextSessionKey = desktopState.selectedSessionId;
 
     if (nextSessionKey !== transcriptSessionKey) {
       transcriptSessionKey = nextSessionKey;

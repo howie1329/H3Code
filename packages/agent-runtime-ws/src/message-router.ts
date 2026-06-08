@@ -3,7 +3,9 @@ import {
   type ClientToServerMessage,
   type DeleteSessionInput,
   type ListSessionsInput,
+  type RuntimeBinding,
   type ServerToClientMessage,
+  type SessionReadModel,
   type SessionSummary,
 } from "@h3code/agent-protocol";
 import type { AgentRuntime } from "@h3code/agent-runtime";
@@ -22,6 +24,9 @@ export type RuntimeWsPeer = {
 export type WorkspaceService = {
   listSessions(input: ListSessionsInput): Promise<SessionSummary[]>;
   deleteSession?(input: DeleteSessionInput): Promise<SessionSummary[]>;
+  assertRegisteredSession?(sessionId: string): void | Promise<void>;
+  registerSession?(session: SessionReadModel, binding: RuntimeBinding): void | Promise<void>;
+  touchSession?(sessionId: string): void | Promise<void>;
 };
 
 export class AgentRuntimeWsMessageRouter {
@@ -39,6 +44,7 @@ export class AgentRuntimeWsMessageRouter {
       switch (message.type) {
         case "command":
           if (message.payload.type === "session.delete") {
+            await this.#workspace?.assertRegisteredSession?.(message.payload.sessionId);
             await this.#runtime.dispatchCommand(message.payload);
 
             if (!this.#workspace?.deleteSession) {
@@ -48,7 +54,7 @@ export class AgentRuntimeWsMessageRouter {
             const sessions = await this.#workspace.deleteSession({
               repoPath: message.payload.repoPath,
               providerId: message.payload.providerId,
-              providerSessionRef: message.payload.providerSessionRef,
+              sessionId: message.payload.sessionId,
             });
             peer.send({
               type: "command.result",
@@ -59,7 +65,23 @@ export class AgentRuntimeWsMessageRouter {
             return;
           }
 
+          if (message.payload.type === "session.switch") {
+            await this.#workspace?.assertRegisteredSession?.(message.payload.sessionId);
+          }
+
           const result = await this.#runtime.dispatchCommand(message.payload);
+
+          if (message.payload.type === "session.create" && result && "id" in result) {
+            const binding = this.#runtime.getBinding(result.id);
+            if (binding) {
+              await this.#workspace?.registerSession?.(result, binding);
+            }
+          }
+
+          if (message.payload.type === "session.switch" && result && "id" in result) {
+            await this.#workspace?.touchSession?.(result.id);
+          }
+
           peer.send({
             type: "command.result",
             protocolVersion: AGENT_PROTOCOL_VERSION,

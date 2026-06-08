@@ -8,8 +8,11 @@ export type MessageSource = "extension" | "prompt" | "skill" | "interactive" | (
 export type StreamingBehavior = "steer" | "followUp";
 
 export interface SessionSummary {
+  id: string;
   providerId: ProviderId;
-  sessionRef: SessionRef;
+  providerSessionRef?: SessionRef;
+  /** @deprecated Use id for identity and providerSessionRef for provider file path */
+  sessionRef?: SessionRef;
   status: SessionStatus;
   title?: string;
   preview?: string;

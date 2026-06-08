@@ -11,5 +11,6 @@ export function getSessionDisplayTitle(session: SessionSummary): string {
     return preview.length > 48 ? `${preview.slice(0, 48)}…` : preview;
   }
 
-  return session.sessionRef.split(/[/\\]/).pop()?.replace(/\.jsonl$/i, "") ?? "Untitled session";
+  const providerRef = session.providerSessionRef ?? session.id;
+  return providerRef.split(/[/\\]/).pop()?.replace(/\.jsonl$/i, "") ?? "Untitled session";
 }

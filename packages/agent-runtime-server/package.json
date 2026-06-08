@@ -12,14 +12,16 @@
     }
   },
   "scripts": {
-    "build": "npm run build --workspace @h3code/agent-provider-pi && npm run build --workspace @h3code/agent-runtime-ws && tsc -p tsconfig.json",
+    "build": "npm run build --workspace @h3code/agent-runtime-persistence && npm run build --workspace @h3code/agent-provider-pi && npm run build --workspace @h3code/agent-runtime-ws && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build --workspace @h3code/agent-provider-pi && npm run build --workspace @h3code/agent-runtime-ws && tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js"
   },
   "dependencies": {
+    "@h3code/agent-metadata": "*",
     "@h3code/agent-provider-pi": "*",
     "@h3code/agent-runtime": "*",
+    "@h3code/agent-runtime-persistence": "*",
     "@h3code/agent-runtime-ws": "*",
     "ws": "^8.18.3"
   },

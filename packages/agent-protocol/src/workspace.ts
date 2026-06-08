@@ -6,8 +6,9 @@ import type { ProviderId } from "./ids.js";
  * transcript-oriented `SessionReadModel`.
  */
 export type SessionSummary = {
+  id: string;
   providerId: ProviderId;
-  sessionRef: string;
+  providerSessionRef?: string;
   status: "idle" | "running" | "error";
   title?: string;
   preview?: string;
@@ -27,5 +28,5 @@ export type ListSessionsInput = {
 export type DeleteSessionInput = {
   repoPath: string;
   providerId?: ProviderId;
-  providerSessionRef: string;
+  sessionId: string;
 };

@@ -84,7 +84,9 @@ export class FakeUiProvider implements AgentProvider {
   async getSnapshot(connection: ProviderConnection): Promise<SessionSnapshot> {
     return {
       summary: {
+        id: connection.sessionRef ?? "fake-ui-session",
         providerId: this.id,
+        providerSessionRef: connection.sessionRef ?? "fake-ui-session",
         sessionRef: connection.sessionRef ?? "fake-ui-session",
         status: "idle",
       },
