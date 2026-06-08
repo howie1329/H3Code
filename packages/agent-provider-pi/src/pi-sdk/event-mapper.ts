@@ -40,13 +40,14 @@ export function mapPiSessionEvent(raw: unknown, occurredAt = Date.now()): PiProv
 
     case "message_update": {
       const assistantEvent = toRecord(event.assistantMessageEvent);
+      const assistantEventType = getString(assistantEvent.type);
       return [
         {
           type: "message.streaming",
           phase: "update",
-          message: event.message ?? assistantEvent.partial ?? assistantEvent.message ?? assistantEvent.error,
-          deltaType: getString(assistantEvent.type),
-          errorMessage: assistantEvent.type === "error" ? formatUnknownError(assistantEvent.error) : undefined,
+          message: assistantEventType === "text_delta" ? assistantEvent.delta : undefined,
+          deltaType: assistantEventType,
+          errorMessage: assistantEventType === "error" ? formatUnknownError(assistantEvent.error) : undefined,
           occurredAt,
         },
       ];

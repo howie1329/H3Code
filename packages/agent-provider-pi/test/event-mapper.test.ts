@@ -19,6 +19,26 @@ test("maps PI streaming message events to runtime item and delta events", () => 
   assert.equal(delta.stream, "assistant_text");
 });
 
+test("multiple PI text deltas accumulate without repeated partials", () => {
+  const state = createPiRuntimeEventMapperState();
+  const context = { sessionId: "s1", providerId: "pi", state };
+
+  mapPiEventToRuntimeEvents({ type: "turn.started", occurredAt: 1 }, context);
+  mapPiEventToRuntimeEvents({ type: "message.streaming", phase: "start", occurredAt: 2 }, context);
+  const [hello] = mapPiEventToRuntimeEvents(
+    { type: "message.streaming", phase: "update", message: "Hello", occurredAt: 3 },
+    context,
+  );
+  const [world] = mapPiEventToRuntimeEvents(
+    { type: "message.streaming", phase: "update", message: " world", occurredAt: 4 },
+    context,
+  );
+
+  assert.equal(hello.type, "content.delta");
+  assert.equal(world.type, "content.delta");
+  assert.equal(`${hello.delta}${world.delta}`, "Hello world");
+});
+
 test("extracts text from structured PI message objects", () => {
   const [delta] = mapPiEventToRuntimeEvents(
     { type: "message.streaming", phase: "update", message: { content: [{ type: "text", text: "hello" }] }, occurredAt: 1 },
@@ -68,4 +88,92 @@ test("maps confirm UI requests to approval requests", () => {
 
   assert.equal(event.type, "approval.requested");
   assert.equal(event.requestId, "r1");
+});
+
+test("maps PI snapshot messages to runtime snapshot messages", () => {
+  const [event] = mapPiEventToRuntimeEvents(
+    {
+      type: "session.changed",
+      snapshot: {
+        cwd: "/repo",
+        sessionFile: "/tmp/session.jsonl",
+        sessionId: "pi-session",
+        messages: [
+          { id: "u1", role: "user", content: "hello", createdAt: 10 },
+          { id: "a1", role: "assistant", content: [{ type: "text", text: "hi" }], updatedAt: 20 },
+        ],
+        isStreaming: false,
+        isCompacting: false,
+        steering: [],
+        followUp: [],
+        activeTools: [],
+        tools: [],
+        diagnostics: [],
+      },
+      occurredAt: 30,
+    },
+    { sessionId: "s1", providerId: "pi", includeSnapshotMessages: true },
+  );
+
+  assert.equal(event.type, "session.updated");
+  assert.deepEqual(event.messages?.map((message) => [message.id, message.role, message.content]), [
+    ["snapshot:s1:u1", "user", "hello"],
+    ["snapshot:s1:a1", "assistant", "hi"],
+  ]);
+});
+
+test("ignores PI snapshot messages without renderable role and text", () => {
+  const [event] = mapPiEventToRuntimeEvents(
+    {
+      type: "session.changed",
+      snapshot: {
+        cwd: "/repo",
+        sessionFile: undefined,
+        sessionId: "pi-session",
+        messages: [
+          { type: "metadata", value: { nested: true } },
+          { role: "assistant", content: { type: "metadata", value: true } },
+          { role: "tool", content: "tool output" },
+        ],
+        isStreaming: false,
+        isCompacting: false,
+        steering: [],
+        followUp: [],
+        activeTools: [],
+        tools: [],
+        diagnostics: [],
+      },
+      occurredAt: 1,
+    },
+    { sessionId: "s1", includeSnapshotMessages: true },
+  );
+
+  assert.equal(event.type, "session.updated");
+  assert.deepEqual(event.messages, []);
+});
+
+test("omits PI snapshot messages unless requested", () => {
+  const [event] = mapPiEventToRuntimeEvents(
+    {
+      type: "session.changed",
+      snapshot: {
+        cwd: "/repo",
+        sessionFile: "/tmp/session.jsonl",
+        sessionId: "pi-session",
+        messages: [{ id: "u1", role: "user", content: "hello" }],
+        isStreaming: false,
+        isCompacting: false,
+        steering: [],
+        followUp: [],
+        activeTools: [],
+        tools: [],
+        diagnostics: [],
+      },
+      occurredAt: 1,
+    },
+    { sessionId: "s1" },
+  );
+
+  assert.equal(event.type, "session.updated");
+  assert.equal(event.messages, undefined);
 });

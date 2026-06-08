@@ -9,11 +9,6 @@ export function committedTranscriptMessages(model: SessionReadModel): unknown[] 
 export function liveTranscriptMessages(model: SessionReadModel): unknown[] {
   const extras: unknown[] = [];
 
-  const streaming = model.messages.find((message) => message.status === "streaming");
-  if (streaming) {
-    extras.push(messageToTranscriptShape(streaming));
-  }
-
   for (const activity of model.activities) {
     if (activity.status === "running" || activity.status === "pending") {
       extras.push(activityToTranscriptShape(activity));

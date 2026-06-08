@@ -1,4 +1,11 @@
-import type { ProviderId, RuntimeEvent, RuntimeItemId, SessionId, TurnId } from "@h3code/agent-protocol";
+import type {
+  ProviderId,
+  RuntimeEvent,
+  RuntimeItemId,
+  RuntimeSnapshotMessage,
+  SessionId,
+  TurnId,
+} from "@h3code/agent-protocol";
 import type { PiProviderEvent } from "./pi-sdk/types.js";
 
 export type PiRuntimeEventMapperState = {
@@ -11,6 +18,7 @@ export type PiRuntimeEventMapperContext = {
   sessionId: SessionId;
   providerId?: ProviderId;
   state?: PiRuntimeEventMapperState;
+  includeSnapshotMessages?: boolean;
 };
 
 const defaultProviderId = "pi";
@@ -41,6 +49,9 @@ export function mapPiEventToRuntimeEvents(event: PiProviderEvent, context: PiRun
             followUpMode: event.snapshot.followUpMode,
           },
           autoCompactionEnabled: event.snapshot.autoCompactionEnabled,
+          messages: context.includeSnapshotMessages
+            ? snapshotMessages(event.snapshot.messages, context.sessionId)
+            : undefined,
           metadata: {
             cwd: event.snapshot.cwd,
             diagnostics: event.snapshot.diagnostics,
@@ -174,6 +185,64 @@ function textFromUnknown(value: unknown): string | undefined {
     return undefined;
   }
   return value === undefined || value === null ? undefined : String(value);
+}
+
+function snapshotMessages(messages: unknown[], sessionId: SessionId): RuntimeSnapshotMessage[] {
+  const restored: RuntimeSnapshotMessage[] = [];
+
+  for (const [index, message] of messages.entries()) {
+    const restoredMessage = snapshotMessage(message, sessionId, index);
+    if (restoredMessage) restored.push(restoredMessage);
+  }
+
+  return restored;
+}
+
+function snapshotMessage(message: unknown, sessionId: SessionId, index: number): RuntimeSnapshotMessage | undefined {
+  if (!message || typeof message !== "object") return undefined;
+
+  const record = message as Record<string, unknown>;
+  const role = snapshotRole(record);
+  if (!role) return undefined;
+
+  const content = textFromUnknown(record.content ?? record.message ?? record.text ?? record.parts);
+  if (!content) return undefined;
+
+  const createdAt = timestampFromUnknown(record.createdAt ?? record.created_at ?? record.timestamp);
+  const updatedAt = timestampFromUnknown(record.updatedAt ?? record.updated_at) ?? createdAt;
+
+  return {
+    id: `snapshot:${sessionId}:${providerMessageId(record) ?? index}`,
+    role,
+    content,
+    createdAt,
+    updatedAt,
+    metadata: { providerMessage: message },
+  };
+}
+
+function snapshotRole(record: Record<string, unknown>): RuntimeSnapshotMessage["role"] | undefined {
+  const role = String(record.role ?? record.type ?? "").toLowerCase();
+  if (role === "user" || role === "assistant" || role === "system") return role;
+  return undefined;
+}
+
+function providerMessageId(record: Record<string, unknown>): string | undefined {
+  for (const key of ["id", "messageId", "message_id", "entryId", "entry_id"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return undefined;
+}
+
+function timestampFromUnknown(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
 }
 
 function modelId(value: unknown): string | undefined {

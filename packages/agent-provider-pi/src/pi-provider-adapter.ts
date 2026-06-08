@@ -19,13 +19,21 @@ import type {
   SetProviderQueueCommand,
   SetProviderThinkingCommand,
 } from "@h3code/agent-protocol";
-import type { PiProviderOptions, PiProviderUiResponse } from "./pi-sdk/types.js";
+import type { PiProviderOptions, PiProviderSnapshot, PiProviderUiResponse } from "./pi-sdk/types.js";
 import { createPiRuntimeEventMapperState, mapPiEventToRuntimeEvents } from "./event-mapper.js";
 
 export type PiProviderFactory = (options: PiProviderOptions) => PiSdkProvider;
 
 export type PiProviderAdapterOptions = Omit<PiProviderOptions, "cwd" | "session"> & {
   providerFactory?: PiProviderFactory;
+};
+
+type PiSessionContext = {
+  provider: PiSdkProvider;
+  events: RuntimeEventSink;
+  mapperState: ReturnType<typeof createPiRuntimeEventMapperState>;
+  providerId: string;
+  sessionId: string;
 };
 
 export class PiProviderAdapter implements ProviderAdapter {
@@ -58,7 +66,7 @@ export class PiProviderAdapter implements ProviderAdapter {
 
   readonly #providerFactory: PiProviderFactory;
   readonly #providerOptions: Omit<PiProviderAdapterOptions, "providerFactory">;
-  readonly #sessions = new Map<string, PiSdkProvider>();
+  readonly #sessions = new Map<string, PiSessionContext>();
 
   constructor(options: PiProviderAdapterOptions = {}) {
     this.#providerFactory = options.providerFactory ?? ((providerOptions) => new PiSdkProvider(providerOptions));
@@ -76,42 +84,44 @@ export class PiProviderAdapter implements ProviderAdapter {
   }
 
   async sendTurn(binding: RuntimeBinding, command: SendTurnCommand): Promise<void> {
-    const provider = this.#requireProvider(binding);
-    await provider.prompt({ text: command.input.text ?? "", images: command.input.attachments, source: "prompt" });
+    const context = this.#requireContext(binding);
+    await context.provider.prompt({ text: command.input.text ?? "", images: command.input.attachments, source: "prompt" });
+    await this.#emitCompletedActiveTurn(context);
+    await this.#emitSnapshotUpdate(context, context.provider.snapshot(), { includeSnapshotMessages: false });
   }
 
   async abortTurn(binding: RuntimeBinding, _command: AbortTurnCommand): Promise<void> {
-    await this.#requireProvider(binding).abort();
+    await this.#requireContext(binding).provider.abort();
   }
 
   async listCommands(binding: RuntimeBinding, _command: ListProviderCommandsCommand) {
-    return this.#requireProvider(binding).listCommands();
+    return this.#requireContext(binding).provider.listCommands();
   }
 
   async listModels(binding: RuntimeBinding, _command: ListProviderModelsCommand) {
-    return this.#requireProvider(binding).listModels();
+    return this.#requireContext(binding).provider.listModels();
   }
 
   async setModel(binding: RuntimeBinding, command: SetProviderModelCommand): Promise<void> {
-    await this.#requireProvider(binding).setModel(command.model);
+    await this.#requireContext(binding).provider.setModel(command.model);
   }
 
   async setThinkingLevel(binding: RuntimeBinding, command: SetProviderThinkingCommand): Promise<void> {
-    this.#requireProvider(binding).setThinkingLevel(command.level);
+    this.#requireContext(binding).provider.setThinkingLevel(command.level);
   }
 
   async setQueueSettings(binding: RuntimeBinding, command: SetProviderQueueCommand): Promise<void> {
-    const provider = this.#requireProvider(binding);
+    const provider = this.#requireContext(binding).provider;
     if (command.steeringMode) provider.setSteeringMode(command.steeringMode);
     if (command.followUpMode) provider.setFollowUpMode(command.followUpMode);
   }
 
   async setAutoCompaction(binding: RuntimeBinding, command: SetProviderCompactionCommand): Promise<void> {
-    this.#requireProvider(binding).setAutoCompactionEnabled(command.enabled);
+    this.#requireContext(binding).provider.setAutoCompactionEnabled(command.enabled);
   }
 
   async resolveApproval(binding: RuntimeBinding, command: ResolveApprovalCommand): Promise<void> {
-    this.#requireProvider(binding).respondToUiRequest({
+    this.#requireContext(binding).provider.respondToUiRequest({
       requestId: command.requestId,
       kind: "confirm",
       accepted: command.approved,
@@ -121,7 +131,7 @@ export class PiProviderAdapter implements ProviderAdapter {
 
   async resolveUserInput(binding: RuntimeBinding, command: ResolveUserInputCommand): Promise<void> {
     const value = typeof command.input === "string" ? command.input : JSON.stringify(command.input);
-    this.#requireProvider(binding).respondToUiRequest({ requestId: command.requestId, kind: "input", value });
+    this.#requireContext(binding).provider.respondToUiRequest({ requestId: command.requestId, kind: "input", value });
   }
 
   async #openSession(
@@ -151,7 +161,14 @@ export class PiProviderAdapter implements ProviderAdapter {
       await provider.dispose();
       throw error;
     }
-    this.#sessions.set(request.sessionId, provider);
+    const context: PiSessionContext = {
+      provider,
+      events,
+      mapperState,
+      providerId: request.providerId,
+      sessionId: request.sessionId,
+    };
+    this.#sessions.set(request.sessionId, context);
     const providerSessionRef = snapshot.sessionFile ?? snapshot.sessionId;
     const binding: RuntimeBinding = {
       sessionId: request.sessionId,
@@ -171,7 +188,11 @@ export class PiProviderAdapter implements ProviderAdapter {
       occurredAt: Date.now(),
     });
     started = true;
-    for (const runtimeEvent of pendingStartupEvents) void events(runtimeEvent);
+    for (const runtimeEvent of pendingStartupEvents) await events(runtimeEvent);
+    if (!snapshot.isStreaming && !snapshot.isCompacting) {
+      await this.#emitCompletedActiveTurn(context);
+      await this.#emitSnapshotUpdate(context, snapshot, { includeSnapshotMessages: true });
+    }
 
     return {
       binding,
@@ -183,9 +204,43 @@ export class PiProviderAdapter implements ProviderAdapter {
     };
   }
 
-  #requireProvider(binding: RuntimeBinding): PiSdkProvider {
-    const provider = this.#sessions.get(binding.sessionId);
-    if (!provider) throw new Error(`PI provider session not found: ${binding.sessionId}`);
-    return provider;
+  #requireContext(binding: RuntimeBinding): PiSessionContext {
+    const context = this.#sessions.get(binding.sessionId);
+    if (!context) throw new Error(`PI provider session not found: ${binding.sessionId}`);
+    return context;
+  }
+
+  async #emitCompletedActiveTurn(context: PiSessionContext): Promise<void> {
+    const turnId = context.mapperState.turnId;
+    if (!turnId) return;
+
+    context.mapperState.turnId = undefined;
+    context.mapperState.assistantItemId = undefined;
+    await context.events({
+      type: "turn.completed",
+      sessionId: context.sessionId,
+      providerId: context.providerId,
+      turnId,
+      status: "completed",
+      occurredAt: Date.now(),
+    });
+  }
+
+  async #emitSnapshotUpdate(
+    context: PiSessionContext,
+    snapshot: PiProviderSnapshot,
+    options: { includeSnapshotMessages: boolean },
+  ): Promise<void> {
+    for (const runtimeEvent of mapPiEventToRuntimeEvents(
+      { type: "session.changed", snapshot, occurredAt: Date.now() },
+      {
+        sessionId: context.sessionId,
+        providerId: context.providerId,
+        state: context.mapperState,
+        includeSnapshotMessages: options.includeSnapshotMessages,
+      },
+    )) {
+      await context.events(runtimeEvent);
+    }
   }
 }

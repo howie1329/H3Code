@@ -13,6 +13,7 @@ class FakePiProvider {
   steeringMode: string | undefined;
   followUpMode: string | undefined;
   autoCompactionEnabled: boolean | undefined;
+  messages: unknown[] = [];
   listener?: (event: unknown) => void;
 
   subscribe(listener: (event: unknown) => void) {
@@ -24,11 +25,15 @@ class FakePiProvider {
 
   async start() {
     this.listener?.({ type: "turn.started", occurredAt: Date.now() });
+    return this.snapshot();
+  }
+
+  snapshot() {
     return {
       cwd: "/repo",
       sessionFile: "/tmp/pi-session.jsonl",
       sessionId: "pi-session",
-      messages: [],
+      messages: this.messages,
       isStreaming: false,
       isCompacting: false,
       steering: [],
@@ -162,7 +167,69 @@ test("buffers startup PI events until runtime session is started", async () => {
 
   const snapshot = runtime.getSnapshot("s1");
   assert.equal(snapshot?.repoPath, "/repo");
-  assert.equal(snapshot?.activeTurnId, "s1-turn-1");
+  assert.equal(snapshot?.status, "idle");
+  assert.equal(snapshot?.activeTurnId, undefined);
+});
+
+test("restores PI snapshot messages into the runtime read model", async () => {
+  const fake = new FakePiProvider();
+  fake.messages = [
+    { id: "u1", role: "user", content: "previous prompt" },
+    { id: "a1", role: "assistant", content: "previous answer" },
+  ];
+  const runtime = new AgentRuntime({
+    idFactory: () => "s1",
+    providers: [new PiProviderAdapter({ providerFactory: () => fake as never })],
+  });
+
+  await runtime.dispatchCommand({ type: "session.create", repoPath: "/repo", providerId: "pi" });
+
+  const snapshot = runtime.getSnapshot("s1");
+  assert.equal(snapshot?.messages.length, 2);
+  assert.equal(snapshot?.messages[0]?.role, "user");
+  assert.equal(snapshot?.messages[0]?.content, "previous prompt");
+  assert.equal(snapshot?.messages[1]?.role, "assistant");
+  assert.equal(snapshot?.messages[1]?.content, "previous answer");
+});
+
+test("clears running state when PI prompt resolves without terminal events", async () => {
+  const fake = new FakePiProvider();
+  fake.messages = [];
+  const runtime = new AgentRuntime({
+    idFactory: () => "s1",
+    providers: [new PiProviderAdapter({ providerFactory: () => fake as never })],
+  });
+
+  await runtime.dispatchCommand({ type: "session.create", repoPath: "/repo", providerId: "pi" });
+  fake.listener?.({ type: "turn.started", occurredAt: Date.now() });
+  await runtime.dispatchCommand({ type: "turn.send", sessionId: "s1", input: { text: "hello" } });
+
+  const snapshot = runtime.getSnapshot("s1");
+  assert.equal(snapshot?.status, "idle");
+  assert.equal(snapshot?.activeTurnId, undefined);
+  assert.equal(snapshot?.messages.some((message) => message.role === "user" && message.content === "hello"), true);
+});
+
+test("keeps running state cleared when PI prompt emits terminal events", async () => {
+  class TerminalPiProvider extends FakePiProvider {
+    override async prompt(input: unknown) {
+      this.prompts.push(input);
+      this.listener?.({ type: "turn.started", occurredAt: Date.now() });
+      this.listener?.({ type: "turn.completed", occurredAt: Date.now() });
+    }
+  }
+  const fake = new TerminalPiProvider();
+  const runtime = new AgentRuntime({
+    idFactory: () => "s1",
+    providers: [new PiProviderAdapter({ providerFactory: () => fake as never })],
+  });
+
+  await runtime.dispatchCommand({ type: "session.create", repoPath: "/repo", providerId: "pi" });
+  await runtime.dispatchCommand({ type: "turn.send", sessionId: "s1", input: { text: "hello" } });
+
+  const snapshot = runtime.getSnapshot("s1");
+  assert.equal(snapshot?.status, "idle");
+  assert.equal(snapshot?.activeTurnId, undefined);
 });
 
 test("cleans up provider when startup fails", async () => {

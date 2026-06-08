@@ -2,6 +2,7 @@ import type {
   ActivityId,
   MessageId,
   RuntimeEvent,
+  RuntimeSnapshotMessage,
   RuntimeItemType,
   SessionReadModel,
   SessionReadModelPatch,
@@ -55,6 +56,9 @@ export class ReadModelProjector {
         if (event.thinkingLevel !== undefined) session.thinkingLevel = event.thinkingLevel;
         if (event.queueSettings !== undefined) session.queueSettings = event.queueSettings;
         if (event.autoCompactionEnabled !== undefined) session.autoCompactionEnabled = event.autoCompactionEnabled;
+        if (event.messages !== undefined) {
+          session.messages = event.messages.map((message) => snapshotMessageToUiMessage(message, event.sessionId, event.occurredAt));
+        }
         return patch(session, { status: session.status, activeTurnId: session.activeTurnId ?? null, title: session.title ?? null, messages: session.messages, activities: session.activities, model: session.model ?? null, thinkingLevel: session.thinkingLevel ?? null, queueSettings: session.queueSettings ?? null, autoCompactionEnabled: session.autoCompactionEnabled ?? null, updatedAt: event.occurredAt });
       }
       case "session.ended": {
@@ -125,6 +129,19 @@ function activityKind(type: RuntimeItemType): UiActivity["kind"] { return type =
 function upsertMessage(session: SessionReadModel, id: MessageId, message: Omit<UiMessage, "id">): UiMessage { const next = { id, ...message }; session.messages = [...session.messages.filter((m) => m.id !== id), next]; return next; }
 function upsertActivity(session: SessionReadModel, id: ActivityId, activity: Omit<UiActivity, "id">): UiActivity { const next = { id, ...activity }; session.activities = [...session.activities.filter((a) => a.id !== id), next]; return next; }
 function normalizeUsage(usage: unknown): SessionReadModel["tokenUsage"] | undefined { return usage && typeof usage === "object" ? usage as SessionReadModel["tokenUsage"] : undefined; }
+function snapshotMessageToUiMessage(message: RuntimeSnapshotMessage, sessionId: string, occurredAt: number): UiMessage {
+  const createdAt = message.createdAt ?? occurredAt;
+  return {
+    id: `msg:${sessionId}:${message.id}`,
+    sessionId,
+    role: message.role,
+    content: message.content,
+    status: "completed",
+    createdAt,
+    updatedAt: message.updatedAt ?? createdAt,
+    metadata: message.metadata,
+  };
+}
 function completeActiveItems(session: SessionReadModel, status: "completed" | "failed", updatedAt: number): void {
   session.messages = session.messages.map((message) =>
     message.status === "streaming" ? { ...message, status, updatedAt } : message,

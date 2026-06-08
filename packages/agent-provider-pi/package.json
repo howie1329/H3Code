@@ -15,7 +15,7 @@
     "build": "npm run build --workspace @h3code/agent-protocol && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build --workspace @h3code/agent-protocol && tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js"
+    "test": "npm run build --workspace @h3code/agent-runtime && tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.75.4",

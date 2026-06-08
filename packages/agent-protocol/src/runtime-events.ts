@@ -24,6 +24,15 @@ export type RuntimeEventBase<Type extends string> = {
 
 export type RuntimeSessionStatus = "starting" | "running" | "idle" | "stopped" | "error";
 
+export type RuntimeSnapshotMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt?: number;
+  updatedAt?: number;
+  metadata?: Record<string, unknown>;
+};
+
 export type SessionStartedEvent = RuntimeEventBase<"session.started"> & {
   repoPath?: RepoPath;
   providerSessionRef?: ProviderSessionRef;
@@ -51,6 +60,7 @@ export type SessionUpdatedEvent = RuntimeEventBase<"session.updated"> & {
   };
   autoCompactionEnabled?: boolean;
   title?: string;
+  messages?: RuntimeSnapshotMessage[];
   metadata?: Record<string, unknown>;
 };
 
