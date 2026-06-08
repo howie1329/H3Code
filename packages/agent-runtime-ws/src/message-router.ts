@@ -1,4 +1,10 @@
-import { AGENT_PROTOCOL_VERSION, type ClientToServerMessage, type ServerToClientMessage } from "@h3code/agent-protocol";
+import {
+  AGENT_PROTOCOL_VERSION,
+  type ClientToServerMessage,
+  type ListSessionsInput,
+  type ServerToClientMessage,
+  type SessionSummary,
+} from "@h3code/agent-protocol";
 import type { AgentRuntime } from "@h3code/agent-runtime";
 import { toProtocolError } from "./errors.js";
 
@@ -6,12 +12,24 @@ export type RuntimeWsPeer = {
   send(message: ServerToClientMessage): void;
 };
 
+/**
+ * Workspace platform services owned by the Agent Server (e.g. local session
+ * indexing). Kept separate from the runtime read-model projector so the
+ * transport can answer "what sessions exist for this repo?" without provider
+ * knowledge leaking into the runtime or UI.
+ */
+export type WorkspaceService = {
+  listSessions(input: ListSessionsInput): Promise<SessionSummary[]>;
+};
+
 export class AgentRuntimeWsMessageRouter {
   readonly #runtime: AgentRuntime;
+  readonly #workspace: WorkspaceService | undefined;
   readonly #subscriptions = new Map<RuntimeWsPeer, Map<string, () => void>>();
 
-  constructor(runtime: AgentRuntime) {
+  constructor(runtime: AgentRuntime, workspace?: WorkspaceService) {
     this.#runtime = runtime;
+    this.#workspace = workspace;
   }
 
   async route(peer: RuntimeWsPeer, message: ClientToServerMessage): Promise<void> {
@@ -44,6 +62,14 @@ export class AgentRuntimeWsMessageRouter {
           const session = this.#runtime.getSnapshot(message.payload.sessionId);
           if (!session) throw Object.assign(new Error(`Session not found: ${message.payload.sessionId}`), { code: "session_not_found" });
           peer.send({ type: "session.snapshot.response", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { requestId: message.id, session }, sentAt: Date.now() });
+          return;
+        }
+        case "session.list.request": {
+          if (!this.#workspace) {
+            throw Object.assign(new Error("Workspace session listing is not available."), { code: "unsupported_message" });
+          }
+          const sessions = await this.#workspace.listSessions(message.payload);
+          peer.send({ type: "session.list.response", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { requestId: message.id, sessions }, sentAt: Date.now() });
           return;
         }
         default:

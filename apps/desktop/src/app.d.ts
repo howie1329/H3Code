@@ -1,4 +1,4 @@
-import type { DesktopPreferences, DesktopSettings, IndexedSessionPreference } from "@h3code/agent-metadata";
+import type { DesktopPreferences, DesktopSettings } from "@h3code/agent-metadata";
 
 declare global {
   interface Window {
@@ -14,7 +14,6 @@ declare global {
       removeIndexedRepo: (repoPath: string) => Promise<DesktopPreferences>;
       clearAllIndexedData: () => Promise<DesktopPreferences>;
       setPiExecutablePath: (path: string) => Promise<DesktopPreferences>;
-      listRepoSessions: (repoPath: string, markRecent?: boolean) => Promise<IndexedSessionPreference[]>;
     };
   }
 }

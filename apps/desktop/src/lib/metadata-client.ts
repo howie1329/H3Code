@@ -21,7 +21,3 @@ export async function clearAllIndexedData(): Promise<DesktopPreferences> {
 export async function setPiExecutablePath(path: string): Promise<DesktopPreferences> {
   return window.h3code!.setPiExecutablePath(path);
 }
-
-export async function listRepoSessions(repoPath: string, markRecent = false): Promise<IndexedSessionPreference[]> {
-  return window.h3code!.listRepoSessions(repoPath, markRecent);
-}

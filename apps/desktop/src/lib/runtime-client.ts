@@ -1,10 +1,12 @@
 import {
   AGENT_PROTOCOL_VERSION,
   type ClientToServerMessage,
+  type ListSessionsInput,
   type RequestId,
   type ServerToClientMessage,
   type SessionId,
   type SessionReadModel,
+  type SessionSummary,
   type UiSessionEvent,
 } from "@h3code/agent-protocol";
 
@@ -15,6 +17,11 @@ type PendingRequest = {
 
 type PendingSnapshotRequest = {
   resolve: (session: SessionReadModel) => void;
+  reject: (error: Error) => void;
+};
+
+type PendingListRequest = {
+  resolve: (sessions: SessionSummary[]) => void;
   reject: (error: Error) => void;
 };
 
@@ -30,6 +37,7 @@ export class RuntimeClient {
   private readonly pending = new Map<RequestId, PendingRequest>();
   private readonly sessionEventHandlers = new Map<SessionId, Set<(event: UiSessionEvent) => void>>();
   private readonly snapshotWaiters = new Map<RequestId, PendingSnapshotRequest>();
+  private readonly listWaiters = new Map<RequestId, PendingListRequest>();
   private listeners: RuntimeClientListeners = {};
   private connectPromise: Promise<void> | undefined;
 
@@ -164,6 +172,29 @@ export class RuntimeClient {
     return snapshotPromise;
   }
 
+  async listSessions(input: ListSessionsInput): Promise<SessionSummary[]> {
+    await this.ensureConnected();
+    const requestId = this.createRequestId();
+
+    return new Promise<SessionSummary[]>((resolve, reject) => {
+      this.listWaiters.set(requestId, { resolve, reject });
+      this.send({
+        id: requestId,
+        type: "session.list.request",
+        protocolVersion: AGENT_PROTOCOL_VERSION,
+        payload: input,
+      });
+
+      const timeout = setTimeout(() => {
+        if (this.listWaiters.has(requestId)) {
+          this.listWaiters.delete(requestId);
+          reject(new Error("Runtime session list request timed out."));
+        }
+      }, 30_000);
+      (timeout as unknown as { unref?: () => void }).unref?.();
+    });
+  }
+
   async resolveApproval(
     sessionId: string,
     requestId: string,
@@ -196,6 +227,11 @@ export class RuntimeClient {
       waiter.reject(new Error("Runtime client closed."));
     }
     this.snapshotWaiters.clear();
+
+    for (const waiter of this.listWaiters.values()) {
+      waiter.reject(new Error("Runtime client closed."));
+    }
+    this.listWaiters.clear();
     this.socket?.close();
     this.socket = undefined;
 
@@ -267,6 +303,24 @@ export class RuntimeClient {
       if (waiter) {
         this.snapshotWaiters.delete(requestId);
         waiter.resolve(message.payload.session);
+      }
+
+      return;
+    }
+
+    if (message.type === "session.list.response") {
+      const requestId = message.payload.requestId;
+
+      if (!requestId) {
+        this.listeners.onError?.(new Error("Session list response is missing request id."));
+        return;
+      }
+
+      const waiter = this.listWaiters.get(requestId);
+
+      if (waiter) {
+        this.listWaiters.delete(requestId);
+        waiter.resolve(message.payload.sessions);
       }
 
       return;

@@ -1,6 +1,6 @@
-import { PiProviderAdapter, type PiProviderAdapterOptions } from "@h3code/agent-provider-pi";
+import { listPiSessionsForRepo, PiProviderAdapter, type PiProviderAdapterOptions } from "@h3code/agent-provider-pi";
 import { AgentRuntime, type AgentRuntimeOptions } from "@h3code/agent-runtime";
-import { createAgentRuntimeWsServer } from "@h3code/agent-runtime-ws";
+import { createAgentRuntimeWsServer, type WorkspaceService } from "@h3code/agent-runtime-ws";
 import type { WebSocketServer } from "ws";
 
 export type H3CodeRuntimeServerOptions = {
@@ -10,6 +10,16 @@ export type H3CodeRuntimeServerOptions = {
   runtimeOptions?: AgentRuntimeOptions;
   piProviderOptions?: PiProviderAdapterOptions;
   registerPiProvider?: boolean;
+  workspace?: WorkspaceService;
+};
+
+const piWorkspaceService: WorkspaceService = {
+  listSessions: (input) =>
+    listPiSessionsForRepo({
+      repoPath: input.repoPath,
+      providerId: input.providerId ?? "pi",
+      markRecent: input.markRecent,
+    }),
 };
 
 export type H3CodeRuntimeServerHandle = {
@@ -26,7 +36,8 @@ export async function startH3CodeRuntimeServer(options: H3CodeRuntimeServerOptio
     runtime.registerProvider(new PiProviderAdapter(options.piProviderOptions));
   }
 
-  const wsServer = createAgentRuntimeWsServer({ runtime, port: options.port ?? 0, host: options.host });
+  const workspace = options.workspace ?? piWorkspaceService;
+  const wsServer = createAgentRuntimeWsServer({ runtime, workspace, port: options.port ?? 0, host: options.host });
 
   await new Promise<void>((resolve, reject) => {
     if (wsServer.address()) {

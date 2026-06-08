@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import type { DesktopPreferences, DesktopSettings, IndexedSessionPreference } from "@h3code/agent-metadata";
+import type { DesktopPreferences, DesktopSettings } from "@h3code/agent-metadata";
 
 contextBridge.exposeInMainWorld("h3code", {
   platform: process.platform,
@@ -17,6 +17,4 @@ contextBridge.exposeInMainWorld("h3code", {
   clearAllIndexedData: () => ipcRenderer.invoke("preferences:clearIndexed") as Promise<DesktopPreferences>,
   setPiExecutablePath: (path: string) =>
     ipcRenderer.invoke("preferences:setPiExecutablePath", path) as Promise<DesktopPreferences>,
-  listRepoSessions: (repoPath: string, markRecent = false) =>
-    ipcRenderer.invoke("preferences:listRepoSessions", repoPath, markRecent) as Promise<IndexedSessionPreference[]>,
 });

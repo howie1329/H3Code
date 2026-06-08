@@ -12,7 +12,6 @@ import {
 import {
   clearAllIndexedData,
   getPreferences,
-  listRepoSessions,
   removeIndexedRepo,
   updateDesktopSettings,
   type DesktopPreferences,
@@ -244,8 +243,7 @@ class DesktopState {
     });
 
     try {
-      const indexedSessions = await listRepoSessions(nextRepoPath, markRecent);
-      const sessions = indexedSessions.map(indexedSessionToSummary);
+      const sessions = await getRuntimeClient().listSessions({ repoPath: nextRepoPath, markRecent });
       this.repos = updateRepo(this.repos, nextRepoPath, {
         sessions,
         sessionsLoaded: true,
@@ -283,8 +281,8 @@ class DesktopState {
       const session = await runtime.createSession(nextRepoPath);
       await this.attachSession(session, nextRepoPath);
 
-      const indexedSessions = await listRepoSessions(nextRepoPath, true);
-      const sessions = indexedSessions.map(indexedSessionToSummary);
+      const listedSessions = await getRuntimeClient().listSessions({ repoPath: nextRepoPath, markRecent: true });
+      const sessions = this.mergeLiveSession(listedSessions, session, nextRepoPath);
 
       this.repos = upsertRepo(this.repos, nextRepoPath, {
         expanded: true,
@@ -319,11 +317,8 @@ class DesktopState {
     this.syncPendingInteraction();
     this.applyDiffSummary(session.diffSummary);
 
-    this.sessions = this.sessions.map((entry) =>
-      entry.sessionRef === this.selectedSessionRef
-        ? { ...entry, liveSessionId: session.id }
-        : entry,
-    );
+    this.sessions = this.mergeLiveSession(this.sessions, session, nextRepoPath);
+    this.repos = updateRepo(this.repos, nextRepoPath, { sessions: this.sessions });
 
     this.sessionUnsubscribe = await getRuntimeClient().subscribeSession(session.id, (event) => {
       this.handleUiSessionEvent(event);
@@ -681,6 +676,19 @@ class DesktopState {
     }
   }
 
+  mergeLiveSession(sessions: SessionSummary[], session: SessionReadModel, repoPath: string): SessionSummary[] {
+    const sessionRef = session.providerSessionRef ?? session.id;
+    const existingIndex = sessions.findIndex((entry) => entry.sessionRef === sessionRef);
+
+    if (existingIndex !== -1) {
+      return sessions.map((entry, index) =>
+        index === existingIndex ? { ...entry, liveSessionId: session.id } : entry,
+      );
+    }
+
+    return [liveSessionToSummary(session, repoPath, sessionRef), ...sessions];
+  }
+
   getSessionRowStatus(session: SessionSummary): SessionRowStatus {
     if (session.liveSessionId === this.activeSessionId) {
       if (this.providerUiRequest) {
@@ -826,6 +834,29 @@ function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: 
   }
 
   return currentRepos.map((repo) => (repo.path === nextRepoPath ? { ...repo, ...updates } : repo));
+}
+
+function liveSessionToSummary(
+  session: SessionReadModel,
+  repoPath: string,
+  sessionRef: string,
+): SessionSummary {
+  const timestamp = session.updatedAt || Date.now();
+  const firstUserMessage = session.messages.find((message) => message.role === "user");
+
+  return {
+    providerId: session.providerId ?? "pi",
+    sessionRef,
+    status: session.status === "running" ? "running" : session.status === "error" ? "error" : "idle",
+    title: session.title,
+    preview: typeof firstUserMessage?.content === "string" ? firstUserMessage.content : undefined,
+    repoPath,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    worktreePath: repoPath,
+    messageCount: session.messages.length,
+    liveSessionId: session.id,
+  };
 }
 
 function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[]) {

@@ -2,9 +2,7 @@ import { ipcMain } from "electron";
 
 import {
   clearAllIndexedData,
-  getIndexedSessionsForRepo,
   getPreferences,
-  recordRepoUsage,
   removeIndexedRepo,
   setPiExecutablePath,
   updateDesktopSettings,
@@ -32,13 +30,5 @@ export function registerPreferencesIpc() {
   ipcMain.handle("preferences:setPiExecutablePath", (_event, path: string) => {
     setPiExecutablePath(path);
     return getPreferences();
-  });
-
-  ipcMain.handle("preferences:listRepoSessions", (_event, repoPath: string, markRecent = false) => {
-    if (markRecent) {
-      recordRepoUsage(repoPath);
-    }
-
-    return getIndexedSessionsForRepo(repoPath);
   });
 }

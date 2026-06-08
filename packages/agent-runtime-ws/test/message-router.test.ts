@@ -68,3 +68,34 @@ test("responds with an error for unsupported message types", async () => {
   assert.equal(peer.messages[0]?.type, "error");
   assert.equal(peer.messages[0]?.payload.code, "unsupported_message");
 });
+
+test("lists sessions through the workspace service", async () => {
+  const runtime = new FakeRuntime();
+  const peer = new Peer();
+  const calls: unknown[] = [];
+  const workspace = {
+    listSessions: async (input: unknown) => {
+      calls.push(input);
+      return [{ providerId: "fake", sessionRef: "/repo/s1", status: "idle" as const, repoPath: "/repo" }];
+    },
+  };
+  const router = new AgentRuntimeWsMessageRouter(runtime as never, workspace);
+
+  await router.route(peer, { id: "list1", type: "session.list.request", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { repoPath: "/repo", markRecent: true } });
+
+  assert.deepEqual(calls, [{ repoPath: "/repo", markRecent: true }]);
+  assert.equal(peer.messages[0]?.type, "session.list.response");
+  assert.equal(peer.messages[0]?.payload.requestId, "list1");
+  assert.equal(peer.messages[0]?.payload.sessions.length, 1);
+});
+
+test("errors when no workspace service is configured for session listing", async () => {
+  const runtime = new FakeRuntime();
+  const peer = new Peer();
+  const router = new AgentRuntimeWsMessageRouter(runtime as never);
+
+  await router.route(peer, { id: "list1", type: "session.list.request", protocolVersion: AGENT_PROTOCOL_VERSION, payload: { repoPath: "/repo" } });
+
+  assert.equal(peer.messages[0]?.type, "error");
+  assert.equal(peer.messages[0]?.payload.code, "unsupported_message");
+});
