@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionSummary } from "@h3code/agent-core";
+  import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "$lib/desktop-types.js";
+  import type { SessionSummary } from "$lib/session-types.js";
   import type { ThinkingLevel } from "$lib/provider-model.js";
   import CheckIcon from "@lucide/svelte/icons/check";
 
@@ -45,14 +46,14 @@
   }: Props = $props();
 
   const currentModel = $derived(
-    mergeModelWithCatalog(desktopState.sessionSnapshot?.model, desktopState.availableModels) ??
-      normalizeModel(desktopState.sessionSnapshot?.model),
+    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
+      normalizeModel(desktopState.sessionReadModel.model),
   );
   const groupedModels = $derived(groupModelsByProvider(desktopState.availableModels));
   const flatModels = $derived(desktopState.availableModels);
   const catalog = $derived(desktopState.availableModels);
   const supportsThinking = $derived(modelSupportsThinking(currentModel, catalog));
-  const currentThinkingLevel = $derived(normalizeThinkingLevel(desktopState.sessionSnapshot?.thinkingLevel));
+  const currentThinkingLevel = $derived("off" as const);
   const thinkingOffset = $derived(flatModels.length);
 
   function modelFlatIndex(model: ProviderModel) {

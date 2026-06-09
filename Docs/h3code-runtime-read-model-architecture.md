@@ -16,8 +16,8 @@ The core architecture is:
 Provider SDK
   -> Provider adapter
     -> H3Code runtime events
-      -> Agent Server runtime ingestion
-        -> Server session read model
+      -> AgentRuntime ingestion
+        -> Runtime session read model
           -> Desktop / cloud UI
 ```
 
@@ -41,7 +41,7 @@ Provider adapters own translation:
 - Provider-specific edge cases, feature detection, and capability reporting.
 - Provider-native request/response correlation for approvals and interactive input.
 
-Agent Server owns H3Code runtime state:
+Agent runtime owns H3Code runtime state:
 
 - Provider registry and capability-gated routing.
 - H3Code session IDs and provider runtime bindings.
@@ -66,7 +66,7 @@ The provider adapter answers:
 What happened in the provider runtime?
 ```
 
-The Agent Server answers:
+The runtime answers:
 
 ```txt
 What is the H3Code session now?
@@ -84,7 +84,7 @@ This distinction keeps provider behavior out of the UI and keeps display project
 
 H3Code has two event vocabularies.
 
-Runtime events are produced by provider adapters and consumed by the Agent Server. They describe provider execution facts.
+Runtime events are produced by provider adapters and consumed by `@h3code/agent-runtime`. They describe provider execution facts.
 
 Examples:
 
@@ -160,7 +160,7 @@ type RuntimeEvent =
     };
 ```
 
-UI read model events are produced by the Agent Server and consumed by UI clients. They describe app-level state changes.
+UI read model events are produced by the runtime and consumed by UI clients. They describe app-level state changes.
 
 Examples:
 
@@ -199,7 +199,7 @@ type UiSessionEvent =
 
 Runtime events may contain thread, session, turn, and item IDs. The difference is not whether events have IDs. The difference is who applies those events to build the current session state.
 
-In this architecture, the Agent Server applies runtime events and owns the current H3Code session read model.
+In this architecture, `@h3code/agent-runtime` applies runtime events and owns the current H3Code session read model.
 
 ## Session Read Model
 
@@ -254,18 +254,18 @@ The binding lets the server route commands, recover sessions, reconnect after re
 
 ## Session Creation and Routing
 
-The Agent Server knows which repo, thread, and provider a runtime belongs to because it creates or records a runtime binding before provider execution starts.
+The runtime knows which repo, thread, and provider a session belongs to because it creates or records a runtime binding before provider execution starts.
 
 Desktop session creation:
 
 ```txt
 UI
   -> session.create({ repoPath, providerId })
-    -> Agent Server creates H3Code sessionId
-      -> Agent Server calls provider.startSession({ repoPath })
+    -> AgentRuntime creates H3Code sessionId
+      -> AgentRuntime calls provider.startSession({ repoPath })
         -> Provider SDK creates or opens provider-native session
           -> Provider adapter returns providerSessionRef / resumeCursor
-            -> Agent Server stores RuntimeBinding
+            -> AgentRuntime stores RuntimeBinding
 ```
 
 Example binding:
@@ -285,11 +285,11 @@ Every later command routes through that binding:
 
 ```txt
 turn.send({ sessionId: "h3-session-123", input })
-  -> Agent Server loads RuntimeBinding
+  -> AgentRuntime loads RuntimeBinding
     -> providerId = "pi"
     -> repoPath = "/Users/me/project"
     -> providerSessionRef = "/Users/me/.pi/sessions/session.jsonl"
-    -> Agent Server calls PI adapter
+    -> AgentRuntime calls PI adapter
       -> PI adapter calls PI SDK
 ```
 
@@ -325,7 +325,7 @@ UI clients send H3Code commands, not provider-native calls.
 ```txt
 UI
   -> turn.send
-    -> Agent Server routes by session binding
+    -> AgentRuntime routes by session binding
       -> Provider adapter maps command to provider SDK call
         -> Provider SDK executes
 ```
@@ -354,7 +354,7 @@ When a provider streams, the flow is:
 Provider SDK native event
   -> Provider adapter
     -> RuntimeEvent
-      -> Agent Server ingestion
+      -> AgentRuntime ingestion
         -> SessionReadModel update
           -> UiSessionEvent
             -> UI store
@@ -375,16 +375,16 @@ If the UI disconnects or remounts, it can request the current `SessionReadModel`
 
 ## Desktop Runtime
 
-Desktop uses a local Agent Server.
+Desktop uses a local runtime server.
 
 ```txt
 Electron main
-  -> starts local Agent Server
+  -> starts local runtime server
     -> starts/registers local provider adapters
       -> PI SDK / Codex App Server / Cursor runtime
 
 Svelte renderer
-  -> connects to local Agent Server
+  -> connects to local runtime server
     -> subscribes to session read model updates
 ```
 
@@ -426,7 +426,7 @@ The client store mirrors server state and owns only presentation-local concerns 
 Target package responsibilities:
 
 ```txt
-packages/agent-core
+packages/agent-protocol
   RuntimeEvent
   SessionReadModel
   command types
@@ -434,16 +434,18 @@ packages/agent-core
   provider contract
   transport protocol types
 
-packages/agent-server
+packages/agent-runtime
   provider registry
   runtime binding store
   runtime event ingestion
   session read model projector
   session store/cache
+
+packages/agent-runtime-server
   WebSocket/IPC transport
   workspace platform services
 
-packages/pi-provider
+packages/agent-provider-pi
   PI SDK lifecycle wrapper
   PI event -> RuntimeEvent mapper
   H3Code command -> PI SDK call mapper
@@ -479,7 +481,7 @@ Current desktop shape:
 PI SDK
   -> PI provider wrapper
     -> H3Code-ish session events and snapshots
-      -> Agent Server forwards over WebSocket
+      -> server forwards over WebSocket
         -> Desktop PI/session projector builds display state
           -> UI renders
 ```
@@ -489,17 +491,17 @@ Target shape:
 ```txt
 Provider SDK
   -> Provider adapter emits runtime events
-    -> Agent Server projects runtime events into SessionReadModel
+    -> AgentRuntime projects runtime events into SessionReadModel
       -> UI store mirrors SessionReadModel
         -> UI renders
 ```
 
-The target moves H3Code session interpretation from the desktop renderer into the Agent Server. The UI remains provider-neutral, but it also becomes runtime-event-neutral: it renders server-projected session state instead of applying low-level stream mechanics itself.
+The target moves H3Code session interpretation from the desktop renderer into `@h3code/agent-runtime`. The UI remains provider-neutral, but it also becomes runtime-event-neutral: it renders server-projected session state instead of applying low-level stream mechanics itself.
 
 ## Acceptance Criteria
 
 - A provider can be added by implementing the provider contract and emitting `RuntimeEvent`s.
-- The Agent Server can build a complete `SessionReadModel` from runtime events plus provider snapshots.
+- `@h3code/agent-runtime` can build a complete `SessionReadModel` from runtime events plus provider snapshots.
 - The desktop UI can render a session without PI-specific projection code.
 - The cloud UI can consume the same session read model shape as desktop.
 - A disconnected UI can reconnect and request the current session snapshot.
@@ -510,8 +512,8 @@ The target moves H3Code session interpretation from the desktop renderer into th
 
 The current desktop implementation can migrate in phases:
 
-1. Define `RuntimeEvent`, `RuntimeBinding`, and `SessionReadModel` in `@h3code/agent-core`.
-2. Update `@h3code/pi-provider` to emit runtime events internally.
+1. Define `RuntimeEvent`, `RuntimeBinding`, and `SessionReadModel` in `@h3code/agent-protocol`.
+2. Update `@h3code/agent-provider-pi` to emit runtime events internally.
 3. Add server runtime ingestion that projects runtime events into the existing desktop session shape.
 4. Move transcript/session projection out of `apps/desktop/src/lib/pi-session` and into server/shared read model code.
 5. Update the desktop client store to consume server read model snapshots and patches.

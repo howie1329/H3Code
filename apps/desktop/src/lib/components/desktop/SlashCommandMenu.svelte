@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionSummary } from "@h3code/agent-core";
+  import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "$lib/desktop-types.js";
+  import type { SessionSummary } from "$lib/session-types.js";
   import type { ThinkingLevel } from "$lib/provider-model.js";
   import ComposerSelectMenu from "$lib/components/desktop/ComposerSelectMenu.svelte";
   import { COMPOSER_MENU_GROUP_LABEL_CLASS, composerMenuRowClass } from "$lib/components/desktop/composer-menu.js";

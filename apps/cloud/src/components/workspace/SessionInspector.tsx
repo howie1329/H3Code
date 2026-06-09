@@ -1,15 +1,17 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import type { SessionStatus } from '@h3code/agent-core'
 
 import { Badge } from '#/components/ui/badge.tsx'
-import type { SessionDetail } from '#/lib/session/types.ts'
+import type {
+  CloudSessionDisplayStatus,
+  SessionDetail,
+} from '#/lib/session/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 type SessionInspectorProps = {
   title: string
-  status: SessionStatus
+  status: CloudSessionDisplayStatus
   repositoryFullName: string
   repositoryName?: string
   sandboxId?: string

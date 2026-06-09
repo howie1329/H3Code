@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionSummary } from "@h3code/agent-core";
+  import type { SessionSummary } from "$lib/session-types.js";
   import type { ThinkingLevel } from "$lib/provider-model.js";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -57,12 +57,12 @@
     await desktopState.enterLanding(repoPath ? { repoPath } : {});
   }
 
-  function handleSessionClick(sessionPath: string, repoPath: string) {
+  function handleSessionClick(sessionId: string, repoPath: string) {
     if (page.url.pathname !== "/workspace") {
       void goto("/workspace");
     }
 
-    void desktopState.handleSwitchSession(sessionPath, repoPath);
+    void desktopState.handleSwitchSession(sessionId, repoPath);
   }
 
   function openCommandMenu() {
@@ -317,7 +317,7 @@
   busy={desktopState.isBusy}
   onConfirm={async () => {
     if (sessionDeletionTarget) {
-      await desktopState.deleteSession(sessionDeletionTarget.session.sessionRef, sessionDeletionTarget.repo.path);
+      await desktopState.deleteSession(sessionDeletionTarget.session.id, sessionDeletionTarget.repo.path);
       sessionDeletionTarget = undefined;
     }
   }}

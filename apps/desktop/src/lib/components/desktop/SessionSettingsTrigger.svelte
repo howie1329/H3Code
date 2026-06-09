@@ -4,15 +4,7 @@
 
   import { SESSION_SETTINGS_TRIGGER_CLASS } from "$lib/components/desktop/composer-menu.js";
   import { desktopState } from "$lib/desktop-state.svelte";
-  import {
-    getModelLabel,
-    getThinkingLevelLabel,
-    getThinkingLevelShortLabel,
-    mergeModelWithCatalog,
-    modelSupportsThinking,
-    normalizeModel,
-    normalizeThinkingLevel,
-  } from "$lib/provider-model.js";
+  import { getModelLabel, mergeModelWithCatalog, modelSupportsThinking, normalizeModel } from "$lib/provider-model.js";
   import { cn } from "$lib/utils.js";
 
   type Props = {
@@ -25,21 +17,13 @@
   let { open, disabled = false, anchor = $bindable(null), onToggle }: Props = $props();
 
   const model = $derived(
-    mergeModelWithCatalog(desktopState.sessionSnapshot?.model, desktopState.availableModels) ??
-      normalizeModel(desktopState.sessionSnapshot?.model),
+    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
+      normalizeModel(desktopState.sessionReadModel.model),
   );
   const modelLabel = $derived(desktopState.modelsLoading ? "Loading…" : getModelLabel(model));
   const supportsThinking = $derived(modelSupportsThinking(model, desktopState.availableModels));
-  const thinkingShort = $derived(
-    getThinkingLevelShortLabel(normalizeThinkingLevel(desktopState.sessionSnapshot?.thinkingLevel)),
-  );
-  const summaryTitle = $derived.by(() => {
-    if (supportsThinking) {
-      return `${modelLabel}, thinking level ${getThinkingLevelLabel(desktopState.sessionSnapshot?.thinkingLevel)}`;
-    }
-
-    return modelLabel;
-  });
+  const thinkingShort = $derived(desktopState.sessionReadModel.thinkingLevel ?? "Off");
+  const summaryTitle = $derived(modelLabel);
 </script>
 
 <button

@@ -11,6 +11,6 @@
     "outDir": "dist-electron",
     "types": ["node"]
   },
-  "include": ["electron/**/*.ts", "src/lib/pi-session/**/*.ts"],
-  "exclude": ["electron/**/*.test.ts", "src/lib/pi-session/**/*.test.ts"]
+  "include": ["electron/**/*.ts"],
+  "exclude": ["electron/**/*.test.ts"]
 }

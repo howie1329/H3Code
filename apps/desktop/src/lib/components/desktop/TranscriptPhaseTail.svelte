@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ComposerPhaseLine } from "$lib/pi-session/selectors.js";
+  import type { ComposerPhaseLine } from "$lib/transcript-selectors.js";
 
   let { phase }: { phase: ComposerPhaseLine } = $props();
 

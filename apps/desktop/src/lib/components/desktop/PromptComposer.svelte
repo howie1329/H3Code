@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionSummary } from "@h3code/agent-core";
+  import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "$lib/desktop-types.js";
+  import type { SessionSummary } from "$lib/session-types.js";
   import type { ThinkingLevel } from "$lib/provider-model.js";
   import { tick } from "svelte";
   import {
@@ -60,7 +61,7 @@
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
   const isSlashMenuOpen = $derived(activeMenu === "slash" && Boolean(slashToken && tokenKey !== dismissedTokenKey));
-  const isRunning = $derived(desktopState.isAgentRunning || Boolean(desktopState.sessionSnapshot?.isStreaming));
+  const isRunning = $derived(desktopState.isAgentRunning);
   const showSessionControls = $derived(desktopState.canUseSession);
   const submitStatus = $derived.by((): ChatStatus => {
     if (isRunning) {
@@ -82,8 +83,8 @@
   const selectorsDisabled = $derived(!desktopState.canChangeSessionSettings || !desktopState.canUseSession);
   const settingsDisabled = $derived(selectorsDisabled);
   const currentModel = $derived(
-    mergeModelWithCatalog(desktopState.sessionSnapshot?.model, desktopState.availableModels) ??
-      normalizeModel(desktopState.sessionSnapshot?.model),
+    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
+      normalizeModel(desktopState.sessionReadModel.model),
   );
   const flatModels = $derived(desktopState.availableModels);
   const supportsThinking = $derived(modelSupportsThinking(currentModel, flatModels));
@@ -180,7 +181,7 @@
     }
 
     if (supportsThinking) {
-      const level = normalizeThinkingLevel(desktopState.sessionSnapshot?.thinkingLevel);
+      const level = normalizeThinkingLevel(undefined);
       return flatModels.length + Math.max(0, THINKING_LEVELS.indexOf(level));
     }
 

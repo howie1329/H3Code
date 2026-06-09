@@ -1,9 +1,11 @@
-import type { IndexedSessionPreference, SessionSummary } from "@h3code/agent-core";
+import type { IndexedSessionPreference } from "@h3code/agent-metadata";
+import type { SessionSummary } from "@h3code/agent-protocol";
 
 export function indexedSessionToSummary(session: IndexedSessionPreference): SessionSummary {
   return {
-    providerId: "pi",
-    sessionRef: session.path,
+    id: session.id,
+    providerId: session.providerId,
+    providerSessionRef: session.providerSessionRef,
     status: "idle",
     title: session.name,
     preview: session.firstMessage,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SessionSummary } from "@h3code/agent-core";
+  import type { SessionSummary } from "$lib/session-types.js";
   import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
@@ -22,7 +22,7 @@
   }: {
     repo: SidebarRepo;
     sessions: SessionSummary[];
-    onSessionClick: (sessionPath: string, repoPath: string) => void;
+    onSessionClick: (sessionId: string, repoPath: string) => void;
     onSessionDeleteRequest: (repo: SidebarRepo, session: SessionSummary) => void;
   } = $props();
 
@@ -42,7 +42,7 @@
     getScrollElement: () => scrollElement,
     estimateSize: () => sessionRowHeight,
     gap: sessionRowGap,
-    getItemKey: (index) => orderedSessions[index]?.sessionRef ?? index,
+    getItemKey: (index) => orderedSessions[index]?.id ?? index,
     overscan: 8,
   });
 
@@ -69,7 +69,7 @@
     {#each $sessionVirtualizer.getVirtualItems() as virtualItem (virtualItem.key)}
       {@const session = orderedSessions[virtualItem.index]}
       {#if session}
-        {@const isSessionActive = session.sessionRef === desktopState.selectedSessionRef}
+        {@const isSessionActive = session.id === desktopState.selectedSessionId}
         {@const isSessionSwitching = isSessionActive && desktopState.isSwitchingSession}
         {@const sessionLabel = getSessionDisplayTitle(session)}
         {@const sessionModified = formatSessionUpdatedAt(session)}
@@ -94,7 +94,7 @@
                     aria-current={isSessionActive ? "page" : undefined}
                     aria-busy={isSessionSwitching}
                     aria-label={`${sessionLabel}, ${sessionStatus.label}`}
-                    onclick={() => onSessionClick(session.sessionRef, repo.path)}
+                    onclick={() => onSessionClick(session.id, repo.path)}
                   >
                     <span
                       class="size-1.5 shrink-0 rounded-full {sessionStatus.dotClass}"
