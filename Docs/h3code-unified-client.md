@@ -83,7 +83,7 @@ apps/desktop/ (or embedded dist from apps/cloud build)
 ### Electron responsibilities (unchanged from today)
 
 - Native **folder picker** → `repoPath`.
-- Start/stop **local Agent Server** (`@h3code/agent-server` + `PiAgentProvider`).
+- Start/stop **local Agent Server** (`@h3code/agent-runtime-server` + `PiProviderAdapter`).
 - Optional: expose `agent.*` IPC that mirrors mutations (send, abort, subscribe events).
 - Window chrome, deep links, auto-update (later).
 
@@ -104,13 +104,13 @@ packages/
 
 apps/
   cloud/               # TanStack Start: routes, providers, VITE_RUNTIME=cloud
-                       # Depends: app-shell, runtime-cloud, agent-core, convex
+                       # Depends: app-shell, runtime-cloud, agent-protocol, convex
 
   desktop/             # Electron wrapper; VITE_RUNTIME=desktop build of same SPA
-                       # Depends: app-shell, runtime-desktop, agent-core
+                       # Depends: app-shell, runtime-desktop, agent-protocol
 ```
 
-**Rule:** `app-shell` imports only `agent-core` types and generic hooks interfaces—not Convex or `ws`.
+**Rule:** `app-shell` imports only `agent-protocol` types and generic hooks interfaces—not Convex or `ws`.
 
 ## Routing & Guards
 
@@ -187,7 +187,7 @@ Register the implementation in a root provider:
 
 1. Clerk sign-in + GitHub connection (`repo` scope).
 2. List repos (Convex action + GitHub API via Clerk token).
-3. `createSession` mutation → `execution: "cloud"`, provision Daytona (action).
+3. `createSession` mutation → `execution: "cloud"`, status `provisioning`, schedule provision action → **one Daytona sandbox per session** (clone repo, session `workBranch` when git workflow lands).
 4. Sandbox adapter writes coalesced chunks → Convex; UI subscribes.
 5. Steer/abort → control mutation; sandbox subscribes to control query.
 

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "$lib/desktop-types.js";
+  import type { SessionSummary } from "$lib/session-types.js";
+  import type { ThinkingLevel } from "$lib/provider-model.js";
   import CheckIcon from "@lucide/svelte/icons/check";
 
   import ComposerSelectMenu from "$lib/components/desktop/ComposerSelectMenu.svelte";
@@ -14,19 +17,21 @@
     getModelLabel,
     groupModelsByProvider,
     isSameModel,
+    mergeModelWithCatalog,
     modelSupportsThinking,
+    normalizeModel,
     normalizeThinkingLevel,
-    PI_THINKING_LEVEL_LABELS,
-    PI_THINKING_LEVELS,
-  } from "$lib/pi-model.js";
+    THINKING_LEVEL_LABELS,
+    THINKING_LEVELS,
+  } from "$lib/provider-model.js";
 
   type Props = {
     open: boolean;
     anchor: HTMLElement | null;
     highlightedIndex: number;
     onHighlight: (index: number) => void;
-    onSelectModel: (model: PiModel) => void;
-    onSelectThinkingLevel: (level: PiThinkingLevel) => void;
+    onSelectModel: (model: ProviderModel) => void;
+    onSelectThinkingLevel: (level: ThinkingLevel) => void;
     onRetryModels: () => void;
   };
 
@@ -40,19 +45,22 @@
     onRetryModels,
   }: Props = $props();
 
-  const currentModel = $derived(desktopState.sessionState?.model);
+  const currentModel = $derived(
+    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
+      normalizeModel(desktopState.sessionReadModel.model),
+  );
   const groupedModels = $derived(groupModelsByProvider(desktopState.availableModels));
   const flatModels = $derived(desktopState.availableModels);
   const catalog = $derived(desktopState.availableModels);
   const supportsThinking = $derived(modelSupportsThinking(currentModel, catalog));
-  const currentThinkingLevel = $derived(normalizeThinkingLevel(desktopState.sessionState?.thinkingLevel));
+  const currentThinkingLevel = $derived("off" as const);
   const thinkingOffset = $derived(flatModels.length);
 
-  function modelFlatIndex(model: PiModel) {
+  function modelFlatIndex(model: ProviderModel) {
     return flatModels.findIndex((entry) => isSameModel(entry, model));
   }
 
-  function isModelHighlighted(model: PiModel) {
+  function isModelHighlighted(model: ProviderModel) {
     const index = modelFlatIndex(model);
     return index >= 0 && index === highlightedIndex;
   }
@@ -111,7 +119,7 @@
           <div class={COMPOSER_MENU_HEADER_TITLE_CLASS}>Thinking levels</div>
           <div class={COMPOSER_MENU_HEADER_DESC_CLASS}>How much extended thinking the model uses for this session.</div>
         </div>
-        {#each PI_THINKING_LEVELS as level, index}
+        {#each THINKING_LEVELS as level, index}
           <button
             type="button"
             class={composerMenuRowClass(isThinkingHighlighted(index))}
@@ -122,7 +130,7 @@
             onclick={() => onSelectThinkingLevel(level)}
           >
             <span class="min-w-0 flex-1 truncate text-xs leading-tight text-foreground">
-              {PI_THINKING_LEVEL_LABELS[level]}
+              {THINKING_LEVEL_LABELS[level]}
             </span>
             {#if level === currentThinkingLevel}
               <CheckIcon class="size-3 shrink-0 text-foreground" aria-hidden="true" />

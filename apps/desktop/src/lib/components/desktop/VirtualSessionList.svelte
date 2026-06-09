@@ -1,11 +1,13 @@
 <script lang="ts">
+  import type { SessionSummary } from "$lib/session-types.js";
   import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
   import { HugeiconsIcon } from "@hugeicons/svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { get } from "svelte/store";
 
   import { desktopState, type SidebarRepo } from "$lib/desktop-state.svelte";
-  import { formatSessionModified, getSessionDisplayTitle } from "$lib/session-display-title.js";
+  import { formatSessionUpdatedAt, getSessionUpdatedAt } from "$lib/session-summary.js";
+  import { getSessionDisplayTitle } from "$lib/session-display-title.js";
   import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
@@ -19,9 +21,9 @@
     onSessionDeleteRequest,
   }: {
     repo: SidebarRepo;
-    sessions: PiSessionSummary[];
-    onSessionClick: (sessionPath: string, repoPath: string) => void;
-    onSessionDeleteRequest: (repo: SidebarRepo, session: PiSessionSummary) => void;
+    sessions: SessionSummary[];
+    onSessionClick: (sessionId: string, repoPath: string) => void;
+    onSessionDeleteRequest: (repo: SidebarRepo, session: SessionSummary) => void;
   } = $props();
 
   let scrollElement = $state<HTMLDivElement | null>(null);
@@ -31,7 +33,7 @@
 
   const orderedSessions = $derived(
     [...sessions].sort(
-      (left, right) => new Date(right.modified).getTime() - new Date(left.modified).getTime(),
+      (left, right) => getSessionUpdatedAt(right) - getSessionUpdatedAt(left),
     ),
   );
 
@@ -40,7 +42,7 @@
     getScrollElement: () => scrollElement,
     estimateSize: () => sessionRowHeight,
     gap: sessionRowGap,
-    getItemKey: (index) => orderedSessions[index]?.path ?? index,
+    getItemKey: (index) => orderedSessions[index]?.id ?? index,
     overscan: 8,
   });
 
@@ -67,10 +69,10 @@
     {#each $sessionVirtualizer.getVirtualItems() as virtualItem (virtualItem.key)}
       {@const session = orderedSessions[virtualItem.index]}
       {#if session}
-        {@const isSessionActive = session.path === desktopState.selectedSessionPath}
+        {@const isSessionActive = session.id === desktopState.selectedSessionId}
         {@const isSessionSwitching = isSessionActive && desktopState.isSwitchingSession}
         {@const sessionLabel = getSessionDisplayTitle(session)}
-        {@const sessionModified = formatSessionModified(session.modified)}
+        {@const sessionModified = formatSessionUpdatedAt(session)}
         {@const sessionStatus = desktopState.getSessionRowStatus(session)}
         <div
           role="listitem"
@@ -92,7 +94,7 @@
                     aria-current={isSessionActive ? "page" : undefined}
                     aria-busy={isSessionSwitching}
                     aria-label={`${sessionLabel}, ${sessionStatus.label}`}
-                    onclick={() => onSessionClick(session.path, repo.path)}
+                    onclick={() => onSessionClick(session.id, repo.path)}
                   >
                     <span
                       class="size-1.5 shrink-0 rounded-full {sessionStatus.dotClass}"

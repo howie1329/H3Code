@@ -13,11 +13,10 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "svelte-check --tsconfig ./tsconfig.json",
-    "test:pi-session": "tsc -p tsconfig.pi-session-test.json && node --test dist-electron/src/lib/pi-session/*.test.js",
+    "test:runtime-client": "tsc -p tsconfig.runtime-client-test.json && node --test dist-runtime-client-test/runtime-client.test.js dist-runtime-client-test/session-state.test.js",
     "test:preferences": "npm run test --workspace @h3code/agent-metadata",
-    "test:agent-lib": "tsc -p tsconfig.agent-lib-test.json && node --test dist-agent-lib-test/agent-adapters.test.js dist-agent-lib-test/components/desktop/custom/ask-user-question.test.js",
-    "test:transcript-normalize": "tsc -p tsconfig.transcript-test.json && node --test dist-transcript-test/transcript-render.test.js",
-    "test:session-cache": "tsc -p tsconfig.session-cache-test.json && node --test dist-session-cache-test/lib/session-cache.test.js"
+    "test:agent-lib": "tsc -p tsconfig.agent-lib-test.json && node --test dist-agent-lib-test/session-stats.test.js dist-agent-lib-test/components/desktop/custom/ask-user-question.test.js",
+    "test:transcript-normalize": "tsc -p tsconfig.transcript-test.json && node --test dist-transcript-test/transcript-render.test.js"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",
@@ -46,9 +45,9 @@
     "wait-on": "^9.0.0"
   },
   "dependencies": {
-    "@h3code/agent-core": "*",
     "@h3code/agent-metadata": "*",
-    "@h3code/agent-server": "*",
+    "@h3code/agent-protocol": "*",
+    "@h3code/agent-runtime-server": "*",
     "@lucide/svelte": "^1.16.0",
     "@pierre/diffs": "^1.2.3",
     "@shikijs/langs": "^4.1.0",

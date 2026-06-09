@@ -14,7 +14,7 @@
 
 ## Problem Statement
 
-Today H3Code only works as a local Electron desktop app. The agent runtime (`@h3code/agent-server`) runs on the user's own machine, executes the PI provider in-process, and can only operate on repositories that live on that machine's local disk. This means:
+Today H3Code only works as a local Electron desktop app. The agent runtime (`@h3code/agent-runtime-server`) runs on the user's own machine, executes the PI provider in-process, and can only operate on repositories that live on that machine's local disk. This means:
 
 - A developer can only do agent work at the one machine where H3Code is installed and where the repo is checked out.
 - There is no way to start, watch, or steer a coding session from a phone, a borrowed laptop, or a second computer.
@@ -90,11 +90,13 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 ## Implementation Decisions
 
 ### Codebase relationship
-- Build a **separate cloud backend** in a (possibly shared) monorepo. **Reuse `@h3code/agent-core`** (provider-neutral protocol: sessions, runs, messages, capabilities, provider contract). **Do not depend** on `@h3code/agent-server`, the Electron packages, or native shell affordances, which are localhost/in-process specific.
+- Build a **separate cloud backend** in a (possibly shared) monorepo. **Reuse `@h3code/agent-protocol`** (provider-neutral protocol: sessions, runs, messages, capabilities, provider contract). **Do not depend** on `@h3code/agent-runtime-server`, the Electron packages, or native shell affordances, which are localhost/in-process specific.
 - Web/mobile clients speak the existing H3Code WebSocket protocol so the contract stays consistent with the desktop app.
 
 ### Execution model
 - Code lives and the agent executes in a **cloud sandbox/container**. Primary backend: **Daytona** (persistent, suspendable dev sandboxes that match the hybrid lifecycle). Fallback/alternative: **Vercel Sandbox** (ephemeral Firecracker microVMs) behind the same orchestrator interface.
+- **One Daytona sandbox per cloud session (1:1).** Each session gets its own isolated compute environment (`sandboxId` on the session row). This is intentional: users can run **multiple sessions in parallel**, including several on the **same repository**, without sharing agent process state, filesystem mutations, or in-flight runs. Idle sessions hibernate so cost tracks **concurrent active work**, not total session count.
+- **Parallel work on one repo:** each session clones from `baseBranch` and works on a dedicated **`workBranch`** (e.g. `h3code/<shortId>`). The agent commits and opens a **pull request** on that branch. **GitHub** is the coordination layer for merge order, review, and conflict resolution—sandboxes do not share a checkout or merge with each other.
 - **Hybrid sandbox lifecycle:** warm while a session is active, hibernate after idle, resume with state intact.
 
 ### Interaction model
@@ -102,7 +104,7 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 - Notifications are a convenience layer over live sessions.
 
 ### Providers
-- **Multi-provider**, switchable like the desktop app, behind the `agent-core` provider contract.
+- **Multi-provider**, switchable like the desktop app, behind the `agent-protocol` provider contract.
 - **Key model: both.** Managed inference by default (we hold keys, meter and resell tokens); BYO keys for power users (platform/compute billed only).
 
 ### Clients
@@ -115,7 +117,7 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 
 ### Git integration
 - **GitHub only** for MVP, via **Clerk's GitHub OAuth token** (`repo` scope). A dedicated **GitHub App** is deferred to a later version, for when bot identity, fine-grained per-repo permissions, webhooks, or higher rate limits are needed.
-- Git output: agent works on a **branch and opens a pull request** for review.
+- Git output: agent works on a **session-scoped work branch** and opens a **pull request** for review. Multiple sessions on the same repo each own a separate branch and PR; conflicts are resolved on GitHub at merge time, not inside H3Code sandboxes.
 
 ### Persistence
 - Cloud SaaS **owns session/transcript/diff persistence** in **Convex** (its document database), a deliberate departure from the desktop boundary ("providers own transcripts"), because cross-device history requires it. Provider-native history remains the upstream source of truth where applicable; our Convex store is the durable, queryable, **reactively-synced** cross-device record. No separate SQL database or ORM is used.
@@ -127,9 +129,9 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 
 Convex absorbs the realtime, persistence, scheduling, and orchestration-trigger responsibilities, so the module set is reshaped accordingly. **Architectural rule: Convex orchestrates and persists; it does not host the agent loop. The agent runs in the Daytona sandbox and streams results back into Convex.**
 
-1. **`agent-core` (reused):** provider-neutral protocol — sessions, runs, messages, capabilities, multi-provider contract. Interface essentially unchanged; shared types used by client, Convex functions, and the in-sandbox adapter.
+1. **`agent-protocol` (reused):** provider-neutral protocol — sessions, runs, messages, capabilities, multi-provider contract. Interface essentially unchanged; shared types used by client, Convex functions, and the in-sandbox adapter.
 2. **Sandbox Orchestrator (Convex actions + Daytona client):** `acquire(repo, session) → Sandbox`, `suspend`, `resume`, `destroy`. Convex actions drive lifecycle; hides Daytona API, warm-pool management, hibernation, and the lifecycle state machine. Backend swappable (Daytona / Vercel Sandbox fallback).
-3. **Provider Runtime Adapter (in-sandbox):** runs the multi-provider agent loop *inside* the sandbox, maps the provider's native stream to H3Code protocol messages, and **persists coalesced (~150–250ms debounced) chunks to Convex via HTTP**. Subscribes to a Convex "control" query to react to steer/abort. Hides PI/Codex/Cursor differences; reuses `agent-core` contracts.
+3. **Provider Runtime Adapter (in-sandbox):** runs the multi-provider agent loop *inside* the sandbox, maps the provider's native stream to H3Code protocol messages, and **persists coalesced (~150–250ms debounced) chunks to Convex via HTTP**. Subscribes to a Convex "control" query to react to steer/abort. Hides PI/Codex/Cursor differences; reuses `agent-protocol` contracts.
 4. **Realtime Sync (Convex reactive queries):** replaces a hand-rolled WebSocket gateway. Multi-device session synchronization, fan-out, and reconnection are provided by Convex subscriptions over its managed WebSocket. The only custom surface is the schema and the query/mutation functions for messages, runs, and control signals.
 5. **Git/GitHub Service:** `cloneInto(sandbox)`, `diff`, `commit`, `openPR`. Uses the Clerk-provided GitHub OAuth token (MVP); hides branch naming and PR creation. Invoked from Convex actions / in-sandbox steps. Auth source is swappable to a GitHub App later.
 6. **Identity & Billing:** **Clerk** for accounts + GitHub OAuth; key vault (managed + BYO provider keys) stored server-side; usage metering (`meter(event)`) written to Convex; Stripe usage-based billing driven by Convex actions/cron.
@@ -138,7 +140,7 @@ Convex absorbs the realtime, persistence, scheduling, and orchestration-trigger 
 
 ### Proposed stack
 - **Frontend/PWA:** SvelteKit 2 + Svelte 5, Tailwind v4, shadcn-svelte, existing design system; `convex-svelte` client; Vercel AI SDK + Streamdown + Shiki for transcript rendering. `@vite-pwa/sveltekit` for installability/offline shell. **Hosted on Vercel.**
-- **Backend:** **Convex** — document database, reactive queries (realtime sync), mutations/actions (orchestration triggers, GitHub, Stripe), HTTP actions (webhooks + sandbox chunk ingestion), scheduler/cron. Reuses `agent-core` types. No separate Node service, SQL database, ORM, or custom WebSocket server.
+- **Backend:** **Convex** — document database, reactive queries (realtime sync), mutations/actions (orchestration triggers, GitHub, Stripe), HTTP actions (webhooks + sandbox chunk ingestion), scheduler/cron. Reuses `agent-protocol` types. No separate Node service, SQL database, ORM, or custom WebSocket server.
 - **Sandboxes:** **Daytona** (primary) running the agent + in-sandbox Provider Runtime Adapter; **Vercel Sandbox** as a swappable fallback behind the orchestrator interface.
 - **Realtime:** Convex reactive subscriptions (no custom gateway).
 - **Auth:** **Clerk** with Convex integration — email/password login plus a **GitHub social connection** (`repo` scope) that provides the OAuth token used for clone/PR work. GitHub App deferred.
@@ -161,7 +163,7 @@ Convex ─► Stripe (usage billing)   Convex ─► Web Push (notifications)
 
 ## Testing Decisions
 
-A good test verifies **external, observable behavior through a module's public interface**, not internal implementation details. Tests should treat each deep module as a black box, drive it through its documented interface, and assert on outputs and state transitions a caller would observe. They must not assert on private structure, exact internal call sequences, or provider-specific shapes that the protocol is designed to hide. Prior art: the existing Node tests for `@h3code/agent-server` (`npm run test --workspace @h3code/agent-server`); for Convex functions, use `convex-test` with Vitest.
+A good test verifies **external, observable behavior through a module's public interface**, not internal implementation details. Tests should treat each deep module as a black box, drive it through its documented interface, and assert on outputs and state transitions a caller would observe. They must not assert on private structure, exact internal call sequences, or provider-specific shapes that the protocol is designed to hide. Prior art: the existing Node tests for `@h3code/agent-runtime-server` (`npm run test --workspace @h3code/agent-runtime-server`); for Convex functions, use `convex-test` with Vitest.
 
 Modules to be tested in the MVP:
 
@@ -174,7 +176,7 @@ Modules **not** prioritized for tests in MVP (manual/integration verification in
 
 ## Out of Scope
 
-- The Electron desktop app and any dependency on `@h3code/agent-server` or native shell affordances. This SaaS is standalone.
+- The Electron desktop app and any dependency on `@h3code/agent-runtime-server` or native shell affordances. This SaaS is standalone.
 - Native iOS/Android app-store applications (PWA only for MVP).
 - Teams/orgs, shared workspaces, roles, and permissions (solo accounts only; future version).
 - Git hosts other than GitHub (no GitLab/Bitbucket in MVP).

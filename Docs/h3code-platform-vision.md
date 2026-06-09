@@ -14,10 +14,10 @@ This document is the **product map**. Cloud MVP requirements live in the cloud P
 
 ```txt
 apps/desktop (Electron + SvelteKit)
-  → WebSocket → @h3code/agent-server (localhost)
-    → PiAgentProvider (@h3code/pi-provider, PI SDK in-process)
+  → WebSocket → @h3code/agent-runtime-server (localhost)
+    → PiProviderAdapter (@h3code/agent-provider-pi, PI SDK in-process)
 
-packages/agent-core     — H3Code protocol + AgentProvider contract
+packages/agent-protocol     — H3Code protocol + ProviderAdapter contract
 packages/agent-metadata — SQLite prefs, session index, message display cache
 apps/web                — marketing only
 ```
@@ -32,7 +32,7 @@ H3Code (product)
 └── Cloud platform      — agent in sandbox: Clerk, GitHub repos, Daytona, Convex, PR workflow
 ```
 
-Both legs speak **`agent-core`** at the UI boundary. Both can share **one TanStack Start client** with `runtime: desktop | cloud` (see [unified client doc](./h3code-unified-client.md)).
+Both legs speak **`agent-protocol`** at the UI boundary. Both can share **one TanStack Start client** with `runtime: desktop | cloud` (see [unified client doc](./h3code-unified-client.md)).
 
 ## Cursor Parity (Conceptual, Not a Clone)
 
@@ -51,7 +51,7 @@ Both legs speak **`agent-core`** at the UI boundary. Both can share **one TanSta
 ### Pattern A — Wrap providers (MVP)
 
 - Agent loop runs **inside** the provider runtime (PI SDK locally; PI in Daytona for cloud).
-- H3Code **adapter** maps native stream → `agent-core` events → UI / Convex.
+- H3Code **adapter** maps native stream → `agent-protocol` events → UI / Convex.
 - Convex stores **H3Code-shaped** messages for display and reload—not provider-native blobs.
 
 ### Pattern B — Own harness (future)
@@ -65,7 +65,7 @@ Both legs speak **`agent-core`** at the UI boundary. Both can share **one TanSta
 ### Three decoupled layers (learned from Cursor cloud)
 
 1. **Agent loop** — provider (A) or harness (B).
-2. **Machine state** — local repo + process, or Daytona sandbox (hibernate/resume).
+2. **Machine state** — local repo + process, or **one Daytona sandbox per cloud session** (hibernate/resume when idle). Parallel sessions on the same repo use separate sandboxes and work branches; GitHub handles PR merge conflicts.
 3. **Conversation state** — Convex for cloud; optional Convex + SQLite for desktop fast paint.
 
 **Continue vs reload:** Convex (and desktop cache) answer **fast UI reload**. **Continuing the agent** requires provider reconnect with stored `providerId` + `providerSessionRef`, or replay into provider on cold start—not automatic from Convex alone.
@@ -93,7 +93,7 @@ Both legs speak **`agent-core`** at the UI boundary. Both can share **one TanSta
 
 ### Phase 3 — Provider expansion
 
-- Claude Code + Codex adapters (API-key auth) behind `agent-core`.
+- Claude Code + Codex adapters (API-key auth) behind `agent-protocol`.
 - GitHub App optional upgrade from Clerk OAuth if webhooks / bot identity needed.
 
 ### Phase 4 — Desktop cloud mode
@@ -114,9 +114,9 @@ apps/
   desktop/       # Electron shell → loads unified SPA (Phase 2+); until then current Svelte app
   cloud/         # TanStack Start, Vercel, runtime=cloud
 packages/
-  agent-core/    # protocol (shared)
-  agent-server/  # local host (desktop); cloud uses Convex instead of WS to browser
-  pi-provider/   # PI adapter (local + in-sandbox)
+  agent-protocol/    # protocol (shared)
+  agent-runtime-server/  # local host (desktop); cloud uses Convex instead of WS to browser
+  agent-provider-pi/   # PI adapter (local + in-sandbox)
   agent-metadata/# desktop prefs/cache (may shrink if Convex owns display cache)
   # Phase 2+
   app-shell/     # layout, transcript, composer (presentational)

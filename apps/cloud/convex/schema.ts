@@ -52,13 +52,16 @@ export default defineSchema({
     baseBranch: v.optional(v.string()),
     title: v.optional(v.string()),
     preview: v.optional(v.string()),
+    sandboxId: v.optional(v.string()),
+    provisionError: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastActivityAt: v.number(),
   })
     .index('by_user', ['userId'])
     .index('by_user_and_execution', ['userId', 'execution'])
-    .index('by_user_and_repo', ['userId', 'githubOwner', 'githubRepo']),
+    .index('by_user_and_repo', ['userId', 'githubOwner', 'githubRepo'])
+    .index('by_sandboxId', ['sandboxId']),
 
   messages: defineTable({
     sessionId: v.id('sessions'),

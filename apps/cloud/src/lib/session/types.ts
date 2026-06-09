@@ -1,4 +1,4 @@
-import type { SessionStatus, SessionSummary } from '@h3code/agent-core'
+import type { SessionSummary } from '@h3code/agent-protocol'
 
 export type TranscriptUserMessage = {
   id: string
@@ -67,7 +67,7 @@ export type WorkspaceRepository = {
 export type SidebarSession = {
   id: string
   repositoryId: string
-  summary: SessionSummary
+  summary: CloudSessionSummary
   preview?: string
 }
 
@@ -86,3 +86,12 @@ export type ConvexSessionStatus =
   | 'suspended'
   | 'error'
   | 'archived'
+
+export type CloudSessionDisplayStatus =
+  | SessionSummary['status']
+  | 'waiting'
+  | 'archived'
+
+export type CloudSessionSummary = Omit<SessionSummary, 'status'> & {
+  status: CloudSessionDisplayStatus
+}

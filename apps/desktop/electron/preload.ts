@@ -1,5 +1,6 @@
-import type { SessionMessageCacheUpsert } from "@h3code/agent-metadata";
 import { contextBridge, ipcRenderer } from "electron";
+
+import type { DesktopPreferences, DesktopSettings } from "@h3code/agent-metadata";
 
 contextBridge.exposeInMainWorld("h3code", {
   platform: process.platform,
@@ -8,9 +9,12 @@ contextBridge.exposeInMainWorld("h3code", {
   selectRepo: () => ipcRenderer.invoke("repo:select"),
   revealPath: (targetPath: string) => ipcRenderer.invoke("shell:reveal-path", targetPath),
   revealPreferencesDatabase: () => ipcRenderer.invoke("preferences:reveal-database"),
-  getSessionMessageCache: (sessionPath: string) => ipcRenderer.invoke("session-cache:get", sessionPath),
-  upsertSessionMessageCache: (input: SessionMessageCacheUpsert) =>
-    ipcRenderer.invoke("session-cache:upsert", input),
-  deleteSessionMessageCache: (sessionPath: string) =>
-    ipcRenderer.invoke("session-cache:delete", sessionPath),
+  getPreferences: () => ipcRenderer.invoke("preferences:get") as Promise<DesktopPreferences>,
+  updateDesktopSettings: (settings: Partial<DesktopSettings>) =>
+    ipcRenderer.invoke("preferences:updateDesktopSettings", settings) as Promise<DesktopSettings>,
+  removeIndexedRepo: (repoPath: string) =>
+    ipcRenderer.invoke("preferences:removeRepo", repoPath) as Promise<DesktopPreferences>,
+  clearAllIndexedData: () => ipcRenderer.invoke("preferences:clearIndexed") as Promise<DesktopPreferences>,
+  setPiExecutablePath: (path: string) =>
+    ipcRenderer.invoke("preferences:setPiExecutablePath", path) as Promise<DesktopPreferences>,
 });

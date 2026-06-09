@@ -1,17 +1,20 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import type { SessionStatus } from '@h3code/agent-core'
 
 import { Badge } from '#/components/ui/badge.tsx'
-import type { SessionDetail } from '#/lib/session/types.ts'
+import type {
+  CloudSessionDisplayStatus,
+  SessionDetail,
+} from '#/lib/session/types.ts'
 import { cn } from '#/lib/utils.ts'
 
 type SessionInspectorProps = {
   title: string
-  status: SessionStatus
+  status: CloudSessionDisplayStatus
   repositoryFullName: string
   repositoryName?: string
+  sandboxId?: string
   detail: SessionDetail
   className?: string
 }
@@ -54,6 +57,7 @@ export function SessionInspector({
   status,
   repositoryFullName,
   repositoryName,
+  sandboxId,
   detail,
   className,
 }: SessionInspectorProps) {
@@ -77,6 +81,14 @@ export function SessionInspector({
           </Badge>
         </div>
       </InspectorSection>
+
+      {sandboxId ? (
+        <InspectorSection title="Sandbox">
+          <p className="break-all font-mono text-[11px] leading-snug text-muted-foreground">
+            {sandboxId}
+          </p>
+        </InspectorSection>
+      ) : null}
 
       <InspectorSection title="Repository">
         <dl className="space-y-2 text-[11px]">

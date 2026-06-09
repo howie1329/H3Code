@@ -1,7 +1,7 @@
 # H3Code — Stack Guidance
 
 <!-- agentkit:start stack -->
-Monorepo managed with npm workspaces and Turborepo. Primary product is the Electron desktop app; cloud and web apps are secondary surfaces sharing `@h3code/agent-core`.
+Monorepo managed with npm workspaces and Turborepo. Primary product is the Electron desktop app; cloud and web apps are secondary surfaces sharing `@h3code/agent-protocol`.
 
 ## Workspace Layout
 
@@ -11,30 +11,33 @@ Monorepo managed with npm workspaces and Turborepo. Primary product is the Elect
 | `apps/web` | SvelteKit, Vite, Tailwind 4, shadcn-svelte | Marketing site |
 | `apps/cloud` | TanStack React Start, React 19, Convex, Clerk, Tailwind 4, Vitest | Cloud workbench (GitHub sync live; agent sessions planned) |
 | `apps/desktop-zero` | Zig | Experimental native shell |
-| `packages/agent-core` | TypeScript | Protocol, domain events, provider contracts |
-| `packages/agent-server` | Node, `ws`, TypeScript | Local WebSocket server |
+| `packages/agent-protocol` | TypeScript | Protocol, runtime events, read models, provider contracts |
+| `packages/agent-runtime` | TypeScript | Runtime bindings, event ingestion, read-model projection |
+| `packages/agent-runtime-ws` | Node, `ws`, TypeScript | Runtime WebSocket transport |
+| `packages/agent-runtime-persistence` | TypeScript, SQLite | Runtime read-model and binding persistence |
+| `packages/agent-runtime-server` | Node, `ws`, TypeScript | Local runtime server composition |
 | `packages/agent-metadata` | TypeScript, SQLite | Local metadata and preferences |
-| `packages/pi-provider` | TypeScript | In-process PI SDK provider |
+| `packages/agent-provider-pi` | TypeScript | In-process PI SDK provider adapter |
 
 ## Architecture Boundaries
 
 Desktop data flow:
 
 ```txt
-Svelte renderer → AgentClient (WebSocket) → @h3code/agent-server → PiAgentProvider
+Svelte renderer → RuntimeClient (WebSocket) → @h3code/agent-runtime-server → AgentRuntime → PiProviderAdapter
 ```
 
 - **Providers** own sessions, message history, tools, models, queueing, compaction, and retry.
 - **H3Code** owns desktop UI, local server orchestration, repo/workspace context, metadata indexing, and preferences.
-- Keep renderer types provider-neutral above the H3Code WebSocket protocol; avoid reintroducing PI-shaped types in the UI layer.
+- Keep renderer types provider-neutral above the H3Code WebSocket protocol; render server-projected `SessionReadModel` state instead of provider-native shapes.
 
 Cloud app (`apps/cloud`):
 
 - Frontend in `apps/cloud/src/` (TanStack Router/Start, React 19).
-- Backend in `apps/cloud/convex/` (`auth.config.ts`, `schema.ts`, `github.ts`, `workspaceRepositories.ts`, `sessions.ts`, `users.ts`).
+- Backend in `apps/cloud/convex/` (`auth.config.ts`, `schema.ts`, `github.ts`, `workspaceRepositories.ts`, `sessions.ts`, `sandbox.ts`, `sandboxProvision.ts`, `users.ts`).
 - Auth: `@clerk/tanstack-react-start` + `ConvexProviderWithClerk`; JWT validated via `CLERK_JWT_ISSUER_DOMAIN` in Convex env.
 - GitHub (MVP): Clerk OAuth token retrieved server-side in `src/integrations/github/server.ts`; connection metadata in `githubConnections`; workspace repos in `workspaceRepositories`; GitHub catalog fetched on demand for the add-repository dialog.
-- Convex tables today: `users`, `githubConnections`, `workspaceRepositories`, `sessions`, `messages`. Deferred: `runs`, `control`, `diffs`, `usageEvents` — see `docs/h3code-convex-schema.md`.
+- Convex tables today: `users`, `githubConnections`, `workspaceRepositories`, `sessions`, `messages`. Daytona: **one sandbox per session** (`sandboxProvision` on create); parallel sessions on the same repo use separate sandboxes and (planned) per-session work branches. Deferred: `runs`, `control`, `diffs`, `usageEvents` — see `docs/h3code-convex-schema.md`.
 - Env template: `apps/cloud/.env.example` (`VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, `VITE_CONVEX_URL`).
 
 ## Source Conventions
@@ -63,7 +66,7 @@ Cloud app (`apps/cloud`):
 **Packages**
 
 - Build with `tsc`; exports from `src/`, compiled output in `dist/`
-- `@h3code/agent-server` tests compile to `dist-test/` and run with Node's test runner
+- Runtime package tests compile to `dist-test/` and run with Node's test runner
 
 ## Validation
 
@@ -83,16 +86,15 @@ npm run dev:web              # marketing site
 npm run dev:cloud            # cloud + convex dev
 npm run check:cloud          # cloud formatting/check
 npm run test --workspace @h3code/cloud   # cloud vitest
-npm run test --workspace @h3code/agent-server
+npm run test --workspace @h3code/agent-runtime-server
 ```
 
 Desktop targeted tests (from `apps/desktop` workspace):
 
 ```bash
-npm run test:pi-session --workspace @h3code/desktop
 npm run test:agent-lib --workspace @h3code/desktop
 npm run test:transcript-normalize --workspace @h3code/desktop
-npm run test:session-cache --workspace @h3code/desktop
+npm run test:runtime-client --workspace @h3code/desktop
 ```
 
 Run checks for the narrowest workspace you touched before handoff.

@@ -10,7 +10,11 @@
   import { fly } from "svelte/transition";
 
   import { desktopState } from "$lib/desktop-state.svelte";
-  import { liveTranscriptMessages } from "$lib/pi-session/selectors.js";
+  import {
+    committedTranscriptMessages,
+    liveTranscriptMessages,
+    streamingMessage as getStreamingMessage,
+  } from "$lib/transcript-adapter.js";
   import {
     Message,
     MessageContent,
@@ -47,7 +51,7 @@
 
   const composerScrollInsetPx = $derived(composerInsetPx + 8);
 
-  const committedTranscriptView = $derived(buildTranscriptViewModel(desktopState.sessionReadModel.messages));
+  const committedTranscriptView = $derived(buildTranscriptViewModel(committedTranscriptMessages(desktopState.sessionReadModel)));
   const liveTranscriptView = $derived(buildTranscriptViewModel(liveTranscriptMessages(desktopState.sessionReadModel)));
   const transcriptMessages = $derived([
     ...committedTranscriptView.messages,
@@ -64,7 +68,7 @@
     return phase;
   });
   const streamingThinkingText = $derived(
-    extractStreamingThinkingText(desktopState.sessionReadModel.streamingMessage)
+    extractStreamingThinkingText(getStreamingMessage(desktopState.sessionReadModel))
   );
   const transcriptItems = $derived([
     ...transcriptMessages.map((message) => ({ kind: "message" as const, key: message.id, message })),
@@ -95,7 +99,7 @@
   const shortcutModifier = $derived(desktopState.platform === "darwin" ? "⌘" : "Ctrl");
 
   $effect(() => {
-    const nextSessionKey = desktopState.selectedSessionPath;
+    const nextSessionKey = desktopState.selectedSessionId;
 
     if (nextSessionKey !== transcriptSessionKey) {
       transcriptSessionKey = nextSessionKey;
@@ -380,7 +384,7 @@
                 title="Select a session"
                 description="Expand a repository in the sidebar, then open a session or start a new one."
               />
-            {:else if desktopState.piStatus.state !== "connected"}
+            {:else if desktopState.connectionStatus.state !== "connected"}
               <WorkspaceColumnEmpty
                 title="Connect to the agent server"
                 description="Connect for this repository before sending prompts."

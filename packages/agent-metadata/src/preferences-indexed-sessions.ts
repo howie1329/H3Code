@@ -1,24 +1,30 @@
 import type { DatabaseSync } from "node:sqlite";
 
 export type IndexedSessionPreference = {
-  path: string;
-  repoPath: string;
-  worktreePath?: string;
   id: string;
+  providerSessionRef: string;
+  repoPath: string;
+  providerId: string;
+  worktreePath?: string;
+  providerSessionId?: string;
   name?: string;
   created: string;
   modified: string;
   lastOpenedAt?: string;
   messageCount: number;
   firstMessage: string;
+  /** @deprecated Use providerSessionRef */
+  path: string;
 };
 
 export function getIndexedSessions(db: DatabaseSync): IndexedSessionPreference[] {
   return db.prepare(`
     SELECT
-      sessions.session_path AS path,
+      sessions.h3code_session_id AS id,
+      sessions.provider_session_ref AS providerSessionRef,
       sessions.repo_path AS repoPath,
-      sessions.session_id AS id,
+      sessions.provider_id AS providerId,
+      sessions.provider_session_id AS providerSessionId,
       worktrees.worktree_path AS worktreePath,
       sessions.name,
       sessions.created_at AS created,
@@ -28,7 +34,7 @@ export function getIndexedSessions(db: DatabaseSync): IndexedSessionPreference[]
       sessions.first_message AS firstMessage
     FROM repo_sessions AS sessions
     LEFT JOIN session_worktrees AS worktrees
-      ON worktrees.session_path = sessions.session_path
+      ON worktrees.h3code_session_id = sessions.h3code_session_id
     ORDER BY
       CASE
         WHEN sessions.last_opened_at > sessions.modified_at THEN sessions.last_opened_at
@@ -41,9 +47,11 @@ export function getIndexedSessions(db: DatabaseSync): IndexedSessionPreference[]
 export function getIndexedSessionsForRepo(db: DatabaseSync, repoPath: string): IndexedSessionPreference[] {
   return db.prepare(`
     SELECT
-      sessions.session_path AS path,
+      sessions.h3code_session_id AS id,
+      sessions.provider_session_ref AS providerSessionRef,
       sessions.repo_path AS repoPath,
-      sessions.session_id AS id,
+      sessions.provider_id AS providerId,
+      sessions.provider_session_id AS providerSessionId,
       worktrees.worktree_path AS worktreePath,
       sessions.name,
       sessions.created_at AS created,
@@ -53,7 +61,7 @@ export function getIndexedSessionsForRepo(db: DatabaseSync, repoPath: string): I
       sessions.first_message AS firstMessage
     FROM repo_sessions AS sessions
     LEFT JOIN session_worktrees AS worktrees
-      ON worktrees.session_path = sessions.session_path
+      ON worktrees.h3code_session_id = sessions.h3code_session_id
     WHERE sessions.repo_path = ?
     ORDER BY
       CASE
@@ -65,11 +73,16 @@ export function getIndexedSessionsForRepo(db: DatabaseSync, repoPath: string): I
 }
 
 function rowToIndexedSession(row: Record<string, unknown>): IndexedSessionPreference {
+  const providerSessionRef = String(row.providerSessionRef);
+
   return {
-    path: String(row.path),
-    repoPath: String(row.repoPath),
-    worktreePath: toOptionalString(row.worktreePath),
     id: String(row.id),
+    providerSessionRef,
+    path: providerSessionRef,
+    repoPath: String(row.repoPath),
+    providerId: String(row.providerId),
+    worktreePath: toOptionalString(row.worktreePath),
+    providerSessionId: toOptionalString(row.providerSessionId),
     name: toOptionalString(row.name),
     created: String(row.created),
     modified: String(row.modified),

@@ -6,10 +6,11 @@
 
 ## Principles
 
-1. **Store H3Code protocol shapes only**—messages, runs, capabilities as defined in `@h3code/agent-core`, not PI/Codex-native payloads.
+1. **Store H3Code protocol shapes only**—messages, runs, capabilities as defined in `@h3code/agent-protocol`, not PI/Codex-native payloads.
 2. **Convex is the UI’s source of truth** for subscribed clients. The provider runtime (PI in sandbox or locally) owns **live** conversation context while connected.
 3. **Coalesce writes** (~150–250ms) from the adapter; do not persist per-token rows.
 4. **Large blobs** (full diffs, huge tool output) may exceed Convex’s per-document size limit (~1 MiB)—store artifact references or chunked rows (see `diffArtifacts` / `messageChunks`).
+5. **One sandbox per cloud session.** `sessions.sandboxId` is unique to that session’s Daytona environment. Parallel sessions on the same `githubOwner`/`githubRepo` are isolated by separate sandboxes and separate `workBranch` values; git reconciliation happens on GitHub (PR merge), not via shared sandbox state.
 
 ## Execution Modes
 
@@ -21,8 +22,8 @@ type Execution = "local" | "cloud";
 |-------|---------|---------|
 | Workspace | `repoPath` on disk | `githubOwner`, `githubRepo`, `baseBranch` |
 | Agent runs in | User machine (Agent Server) | Daytona sandbox |
-| Sandbox | — | `sandboxId`, lifecycle status |
-| Git remote | User’s own git | Clone via Clerk GitHub token; PR via API |
+| Sandbox | — | One Daytona sandbox per session (`sandboxId`); lifecycle on session row |
+| Git remote | User’s own git | Clone via Clerk GitHub token; per-session `workBranch`; PR via API |
 
 Filter session lists by `execution` so desktop does not surface cloud sessions until product enables it.
 
@@ -64,8 +65,8 @@ Synced from Clerk webhooks or created on first sign-in.
 | `githubOwner` | string? | `cloud` |
 | `githubRepo` | string? | |
 | `baseBranch` | string? | |
-| `workBranch` | string? | e.g. `h3code/<shortId>` |
-| `sandboxId` | string? | Daytona id |
+| `workBranch` | string? | Session-owned branch (e.g. `h3code/<shortId>`); created at provision for parallel sessions on same repo |
+| `sandboxId` | string? | Daytona id; 1:1 with this session |
 | `prUrl` | string? | |
 | `prNumber` | number? | |
 | `title` | string? | User or generated summary |
@@ -97,7 +98,7 @@ Append-only H3Code-shaped transcript rows. UI subscribes `by_session` ordered by
 | `runId` | id → runs? | |
 | `seq` | number | Monotonic per session |
 | `role` | enum | `user`, `assistant`, `tool`, `system` |
-| `content` | string | Or structured JSON matching agent-core |
+| `content` | string | Or structured JSON matching agent-protocol |
 | `toolCallId` | string? | |
 | `toolName` | string? | |
 | `isPartial` | boolean | true until chunk flush completes |
@@ -127,7 +128,7 @@ Sandbox holds Convex client subscription on `control` for `sessionId` (or polls 
 |-------|------|-------|
 | `sessionId` | id → sessions | |
 | `runId` | id → runs? | |
-| `summary` | object | Paths changed, stats—agent-core `WorkspaceDiffSummary` |
+| `summary` | object | Paths changed, stats—agent-protocol `WorkspaceDiffSummary` |
 | `patch` | string? | Optional; if large, use `artifactId` |
 | `artifactId` | id? | → file storage |
 | `createdAt` | number | |
@@ -154,7 +155,7 @@ Web Push endpoint + keys per user/device for run-completed notifications.
 
 ```txt
 PI (or provider) event
-  → map to agent-core
+  → map to agent-protocol
   → debounce buffer
   → mutation: appendMessage / patchMessage
   → optional: upsertDiff after run segment
@@ -232,7 +233,7 @@ Store everything needed for step 1 on the session row at connect time.
 
 ## Related Types
 
-Implement validators alongside tables using shapes from `@h3code/agent-core` (`SessionDomainEvent`, `WorkspaceDiffSummary`, `ProviderCapabilities`) to avoid drift.
+Implement validators alongside tables using shapes from `@h3code/agent-protocol` (`SessionDomainEvent`, `WorkspaceDiffSummary`, `ProviderCapabilities`) to avoid drift.
 
 ## Open Questions
 

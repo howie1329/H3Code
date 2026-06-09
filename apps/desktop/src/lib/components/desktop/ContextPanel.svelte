@@ -3,29 +3,19 @@
 
   import { getActivityIcon } from "$lib/components/desktop/activity-icons.js";
   import { desktopState } from "$lib/desktop-state.svelte";
-  import { getModelLabel } from "$lib/pi-model.js";
+  import { getModelLabel, mergeModelWithCatalog, normalizeModel } from "$lib/provider-model.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
 
-  const sessionStatus = $derived(getSessionStatus(desktopState.sessionState));
-  const sessionId = $derived(desktopState.sessionStats?.sessionId ?? desktopState.sessionState?.sessionId);
-  const contextPercent = $derived(getContextPercent(desktopState.sessionStats));
-  const contextValueText = $derived(
-    contextPercent !== undefined ? `${formatPercent(contextPercent)} of context window used` : undefined
+  const sessionStatus = $derived(
+    desktopState.isAgentRunning ? "Running" : desktopState.sessionReadModel.status === "error" ? "Error" : "Idle",
   );
-
-  function getSessionStatus(state: PiSessionState | undefined) {
-    if (!state) {
-      return "No session";
-    }
-
-    if (state.isCompacting) {
-      return "Compacting";
-    }
-
-    return state.isStreaming ? "Running" : "Idle";
-  }
+  const sessionId = $derived(desktopState.activeSessionId);
+  const currentModel = $derived(
+    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
+      normalizeModel(desktopState.sessionReadModel.model),
+  );
 
   function shortId(value: string | undefined) {
     return value ? value.slice(0, 8) : "None";
@@ -42,49 +32,15 @@
     }).format(value);
   }
 
-  function formatCost(value: number | null | undefined) {
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      return "Not reported";
-    }
-
-    return new Intl.NumberFormat(undefined, {
-      currency: "USD",
-      maximumFractionDigits: value < 0.01 ? 4 : 3,
-      minimumFractionDigits: 3,
-      style: "currency",
-    }).format(value);
-  }
-
-  function formatPercent(value: number) {
-    return `${value.toFixed(Number.isInteger(value) ? 0 : 1)}%`;
-  }
-
-  function getContextPercent(stats: PiSessionStats | null) {
-    const usage = stats?.contextUsage;
-
-    if (!usage) {
-      return undefined;
-    }
-
-    if (typeof usage.percent === "number" && Number.isFinite(usage.percent)) {
-      return clampPercent(usage.percent);
-    }
-
-    if (typeof usage.tokens === "number" && typeof usage.contextWindow === "number" && usage.contextWindow > 0) {
-      return clampPercent((usage.tokens / usage.contextWindow) * 100);
-    }
-
-    return undefined;
-  }
-
-  function clampPercent(value: number) {
-    return Math.min(Math.max(value, 0), 100);
-  }
-
-  function getContextBarClass(value: number) {
-    return value >= 85 ? "bg-destructive" : "bg-primary";
-  }
-
+  const userMessages = $derived(
+    desktopState.sessionReadModel.messages.filter((message) => message.role === "user").length,
+  );
+  const assistantMessages = $derived(
+    desktopState.sessionReadModel.messages.filter((message) => message.role === "assistant").length,
+  );
+  const toolActivities = $derived(
+    desktopState.sessionReadModel.activities.filter((activity) => activity.kind === "tool").length,
+  );
 </script>
 
 <aside
@@ -132,31 +88,21 @@
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Model</span>
-          <span class="truncate text-right font-medium">{getModelLabel(desktopState.sessionState?.model)}</span>
+          <span class="truncate text-right font-medium">{getModelLabel(currentModel)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Messages</span>
-          <span class="font-medium">{formatCount(desktopState.sessionStats?.totalMessages ?? desktopState.sessionState?.messageCount ?? desktopState.sessionReadModel.messages.length)}</span>
+          <span class="font-medium">{formatCount(desktopState.sessionReadModel.messages.length)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">User / assistant</span>
-          <span class="font-medium">{formatCount(desktopState.sessionStats?.userMessages)} / {formatCount(desktopState.sessionStats?.assistantMessages)}</span>
+          <span class="font-medium">{formatCount(userMessages)} / {formatCount(assistantMessages)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Tools</span>
-          <span class="font-medium">{formatCount(desktopState.sessionStats?.toolCalls)} calls, {formatCount(desktopState.sessionStats?.toolResults)} results</span>
-        </div>
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-muted-foreground">Thinking</span>
-          <span class="font-medium">{desktopState.sessionState?.thinkingLevel ?? "Unknown"}</span>
+          <span class="font-medium">{formatCount(toolActivities)} activities</span>
         </div>
       </div>
-
-      {#if desktopState.sessionStatsError}
-        <p class="text-[11px] leading-snug text-muted-foreground">Stats unavailable: {desktopState.sessionStatsError}</p>
-      {:else if desktopState.sessionStatsLoading && !desktopState.sessionStats}
-        <p class="text-[11px] text-muted-foreground">Loading session stats...</p>
-      {/if}
     </section>
 
     <Separator />
@@ -168,94 +114,35 @@
           {#each desktopState.sessionMetadata as entry (entry.label)}
             <div class="grid grid-cols-[minmax(4rem,auto)_1fr] gap-x-3 gap-y-0.5 text-xs leading-snug">
               <dt class="text-muted-foreground">{entry.label}</dt>
-              <dd class="min-w-0 truncate font-mono font-medium text-foreground" title={entry.value}>{entry.value}</dd>
+              <dd class="min-w-0 break-words font-medium">{entry.value}</dd>
             </div>
           {/each}
         </dl>
       {:else}
-        <p class="text-xs leading-snug text-muted-foreground">No branch or commit metadata for this session yet.</p>
+        <p class="text-[11px] text-muted-foreground">No session metadata yet.</p>
       {/if}
     </section>
 
     <Separator />
 
     <section class="flex flex-col gap-2">
-      <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Usage</h3>
-
-      {#if desktopState.sessionStats}
-        <div class="grid gap-2 text-xs">
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">Tokens</span>
-            <span class="font-medium">{formatCount(desktopState.sessionStats.tokens.total)}</span>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">Input / output</span>
-            <span class="font-medium">{formatCount(desktopState.sessionStats.tokens.input)} / {formatCount(desktopState.sessionStats.tokens.output)}</span>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">Cache R / W</span>
-            <span class="font-medium">{formatCount(desktopState.sessionStats.tokens.cacheRead)} / {formatCount(desktopState.sessionStats.tokens.cacheWrite)}</span>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-muted-foreground">Cost</span>
-            <span class="font-medium">{formatCost(desktopState.sessionStats.cost)}</span>
-          </div>
-        </div>
-
-        <div class="mt-1 grid gap-1.5">
-          <div class="flex items-center justify-between gap-3 text-xs">
-            <span class="text-muted-foreground">Context window</span>
-            {#if contextPercent !== undefined}
-              <span class="font-medium">{formatPercent(contextPercent)}</span>
-            {:else}
-              <span class="text-muted-foreground">Unavailable</span>
-            {/if}
-          </div>
-          {#if contextPercent !== undefined}
-            <div
-              class="h-1.5 overflow-hidden rounded-full bg-muted"
-              role="meter"
-              aria-label="Context window usage"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={contextPercent}
-              aria-valuetext={contextValueText}
-            >
-              <div class={`h-full rounded-full ${getContextBarClass(contextPercent)}`} style={`width: ${contextPercent}%;`}></div>
-            </div>
-            <div class="flex items-center justify-between gap-3 text-[11px] text-foreground/70">
-              <span>{formatCount(desktopState.sessionStats.contextUsage?.tokens)} used</span>
-              <span>{formatCount(desktopState.sessionStats.contextUsage?.contextWindow)} window</span>
-            </div>
-          {:else}
-            <p class="text-[11px] leading-snug text-muted-foreground">Context usage is unavailable until Pi reports a fresh estimate.</p>
-          {/if}
-        </div>
-      {:else}
-        <p class="text-xs leading-5 text-muted-foreground">Select a session to see token usage, cost, and context window estimates.</p>
-      {/if}
-    </section>
-
-    <Separator />
-
-    <section class="flex flex-col gap-2">
-      <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tool activity</h3>
-      {#if desktopState.activity.length === 0}
-        <p class="px-2 py-1 text-xs leading-5 text-muted-foreground">Tool calls and PI runtime events appear here while a session runs.</p>
-      {:else}
-        <ul class="flex flex-col gap-1" role="list">
-          {#each desktopState.activity as event (event.type + event.detail)}
-            <li>
-              <div class="flex h-8 items-center justify-between gap-2 rounded-full px-2 text-xs hover:bg-accent">
-                <span class="flex min-w-0 items-center gap-2">
-                  <HugeiconsIcon icon={getActivityIcon(event.type)} data-icon />
-                  <span class="truncate font-mono text-[11px]">{event.detail}</span>
-                </span>
-                <span class="shrink-0 text-[11px] text-foreground/70">{event.type}</span>
-              </div>
+      <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recent activity</h3>
+      {#if desktopState.sessionReadModel.activities.length > 0}
+        <ul class="flex flex-col gap-1.5">
+          {#each desktopState.sessionReadModel.activities.slice(-8).reverse() as activity (activity.id)}
+            <li class="flex items-start gap-2 text-xs">
+              <HugeiconsIcon icon={getActivityIcon(activity.kind)} class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              <span class="min-w-0">
+                <span class="block truncate font-medium">{activity.title ?? activity.kind}</span>
+                {#if activity.content}
+                  <span class="block truncate text-muted-foreground">{activity.content}</span>
+                {/if}
+              </span>
             </li>
           {/each}
         </ul>
+      {:else}
+        <p class="text-[11px] text-muted-foreground">No activity yet.</p>
       {/if}
     </section>
   </div>

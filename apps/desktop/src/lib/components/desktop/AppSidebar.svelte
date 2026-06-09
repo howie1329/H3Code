@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { SessionSummary } from "$lib/session-types.js";
+  import type { ThinkingLevel } from "$lib/provider-model.js";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import {
@@ -17,7 +19,7 @@
   import { mode, toggleMode } from "mode-watcher";
 
   import ConfirmDeleteDialog from "$lib/components/desktop/ConfirmDeleteDialog.svelte";
-  import PiStatusIndicator from "$lib/components/desktop/PiStatusIndicator.svelte";
+  import ConnectionStatusIndicator from "$lib/components/desktop/ConnectionStatusIndicator.svelte";
   import VirtualSessionList from "$lib/components/desktop/VirtualSessionList.svelte";
   import { desktopState, type SidebarRepo } from "$lib/desktop-state.svelte";
   import { commandMenuController } from "$lib/command-menu-controller.svelte.js";
@@ -29,14 +31,14 @@
   let repoRemovalOpen = $state(false);
   let repoRemovalTarget = $state<SidebarRepo | undefined>();
   let sessionDeletionOpen = $state(false);
-  let sessionDeletionTarget = $state<{ repo: SidebarRepo; session: PiSessionSummary } | undefined>();
+  let sessionDeletionTarget = $state<{ repo: SidebarRepo; session: SessionSummary } | undefined>();
 
   function requestRepoRemoval(repo: SidebarRepo) {
     repoRemovalTarget = repo;
     repoRemovalOpen = true;
   }
 
-  function requestSessionDelete(repo: SidebarRepo, session: PiSessionSummary) {
+  function requestSessionDelete(repo: SidebarRepo, session: SessionSummary) {
     sessionDeletionTarget = { repo, session };
     sessionDeletionOpen = true;
   }
@@ -55,12 +57,12 @@
     await desktopState.enterLanding(repoPath ? { repoPath } : {});
   }
 
-  function handleSessionClick(sessionPath: string, repoPath: string) {
+  function handleSessionClick(sessionId: string, repoPath: string) {
     if (page.url.pathname !== "/workspace") {
       void goto("/workspace");
     }
 
-    void desktopState.handleSwitchSession(sessionPath, repoPath);
+    void desktopState.handleSwitchSession(sessionId, repoPath);
   }
 
   function openCommandMenu() {
@@ -247,7 +249,7 @@
 
   <Sidebar.Footer class="shrink-0 gap-1 border-t border-sidebar-border p-0 {sidebarInset} py-2">
     <div class="flex items-center justify-between gap-2 px-0.5">
-      <PiStatusIndicator status={desktopState.piStatus} class="min-w-0 text-[11px]" showLabel />
+      <ConnectionStatusIndicator status={desktopState.connectionStatus} class="min-w-0 text-[11px]" showLabel />
       <Button
         variant="ghost"
         size="icon-sm"
@@ -315,7 +317,7 @@
   busy={desktopState.isBusy}
   onConfirm={async () => {
     if (sessionDeletionTarget) {
-      await desktopState.deleteSession(sessionDeletionTarget.session.path, sessionDeletionTarget.repo.path);
+      await desktopState.deleteSession(sessionDeletionTarget.session.id, sessionDeletionTarget.repo.path);
       sessionDeletionTarget = undefined;
     }
   }}

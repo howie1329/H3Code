@@ -6,7 +6,7 @@ Guidance for review, refactor, and maintainability. Commands live in `AGENTS.md`
 ## Review Priorities
 
 1. **Boundary respect** — Providers own runtime and transcripts; H3Code owns local UI and orchestration. Do not blur ownership.
-2. **Protocol neutrality** — Keep renderer and shared types aligned with `@h3code/agent-core`, not PI-specific shapes.
+2. **Protocol neutrality** — Keep renderer and shared types aligned with `@h3code/agent-protocol`, not PI-specific shapes.
 3. **Scope discipline** — No drive-by refactors, unrelated formatting, or dependency churn.
 4. **Type safety** — Prefer explicit types at protocol boundaries; use `svelte-check` / `tsc` clean passes.
 5. **UI consistency** — Reuse shadcn primitives: Svelte in `apps/desktop` / `apps/web`; React in `apps/cloud/src/components/ui/`. Follow `DESIGN.md` tokens.
