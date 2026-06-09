@@ -226,6 +226,11 @@ export class AgentRuntime {
         if (!provider.listCommands) throw runtimeErrors.unsupportedCommand(command.type);
         return { commands: await provider.listCommands(binding, command) };
       }
+      case "provider.models.discover": {
+        const provider = this.#registry.get(command.providerId);
+        if (!provider.discoverModels) throw runtimeErrors.unsupportedCommand(command.type);
+        return { models: await provider.discoverModels(command) };
+      }
       case "provider.models.list": {
         const binding = this.#requireBinding(command.sessionId);
         const provider = this.#registry.get(binding.providerId);

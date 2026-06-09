@@ -77,6 +77,19 @@ export function findCatalogModel(model: ProviderModel | undefined, catalog: Prov
   return catalog.find((entry) => isSameModel(entry, model));
 }
 
+export function findProviderModel(catalog: ProviderModel[], provider: string | undefined, modelId: string) {
+  const providerMatch = catalog.find((entry) => {
+    const entryId = getModelId(entry);
+    return Boolean(provider && entry.provider === provider && entryId && (entry.id === modelId || entry.modelId === modelId));
+  });
+
+  if (providerMatch) {
+    return providerMatch;
+  }
+
+  return catalog.find((entry) => entry.id === modelId || entry.modelId === modelId);
+}
+
 export function mergeModelWithCatalog(model: unknown, catalog: ProviderModel[]): ProviderModel | undefined {
   const normalized = normalizeModel(model);
 

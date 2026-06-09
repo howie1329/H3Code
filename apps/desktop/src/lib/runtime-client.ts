@@ -28,6 +28,11 @@ type PendingListRequest = {
   reject: (error: Error) => void;
 };
 
+export type CreateSessionOptions = {
+  model?: ProviderModel;
+  thinkingLevel?: string;
+};
+
 export type RuntimeClientListeners = {
   onSessionEvent?: (sessionId: SessionId, event: UiSessionEvent) => void;
   onConnectionStatus?: (status: { connected: boolean; message?: string }) => void;
@@ -68,14 +73,14 @@ export class RuntimeClient {
     }
   }
 
-  async createSession(repoPath: string): Promise<SessionReadModel> {
+  async createSession(repoPath: string, options?: CreateSessionOptions): Promise<SessionReadModel> {
     await this.ensureConnected();
     const requestId = this.createRequestId();
     const response = await this.request({
       id: requestId,
       type: "command",
       protocolVersion: AGENT_PROTOCOL_VERSION,
-      payload: { type: "session.create", repoPath, providerId: "pi" },
+      payload: { type: "session.create", repoPath, providerId: "pi", ...(options ? { options } : {}) },
     });
 
     return this.requireSessionFromCommandResult(response, requestId);
@@ -148,6 +153,19 @@ export class RuntimeClient {
       type: "command",
       protocolVersion: AGENT_PROTOCOL_VERSION,
       payload: { type: "provider.models.list", sessionId },
+    });
+
+    return this.requireProviderModelsFromCommandResult(response);
+  }
+
+  async discoverProviderModels(providerId: string, repoPath?: string): Promise<ProviderModel[]> {
+    await this.ensureConnected();
+    const requestId = this.createRequestId();
+    const response = await this.request({
+      id: requestId,
+      type: "command",
+      protocolVersion: AGENT_PROTOCOL_VERSION,
+      payload: { type: "provider.models.discover", providerId, ...(repoPath ? { repoPath } : {}) },
     });
 
     return this.requireProviderModelsFromCommandResult(response);

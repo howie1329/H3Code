@@ -73,6 +73,26 @@ test("closing runtime client rejects pending snapshot requests", async () => {
   restoreWebSocket();
 });
 
+test("discovers provider models through a provider-scoped command", async () => {
+  const sockets = installFakeWebSocket();
+  const client = new RuntimeClient(async () => "ws://runtime");
+
+  const promise = client.discoverProviderModels("pi", "/repo");
+  const socket = await waitForSocket(sockets);
+  await waitForSent(socket, 1);
+  const request = JSON.parse(socket.sent[0]!) as ClientToServerMessage;
+
+  assert.deepEqual(request.payload, { type: "provider.models.discover", providerId: "pi", repoPath: "/repo" });
+
+  socket.receive(commandResponse(request.id!, {
+    providerModels: { models: [{ id: "model", provider: "pi", modelId: "model" }] },
+  }));
+
+  assert.deepEqual(await promise, [{ id: "model", provider: "pi", modelId: "model" }]);
+  client.close();
+  restoreWebSocket();
+});
+
 let originalWebSocket: typeof WebSocket | undefined;
 
 function installFakeWebSocket() {
@@ -106,6 +126,16 @@ async function waitForSent(socket: FakeWebSocket, count: number) {
   }
 
   throw new Error(`Expected ${count} sent messages, got ${socket.sent.length}.`);
+}
+
+async function waitForSocket(sockets: FakeWebSocket[]) {
+  for (let index = 0; index < 20; index += 1) {
+    const socket = sockets[0];
+    if (socket) return socket;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  throw new Error("Expected a WebSocket to be created.");
 }
 
 
@@ -151,6 +181,17 @@ function snapshotResponse(requestId: string, session: SessionReadModel): ServerT
     type: "session.snapshot.response",
     protocolVersion: AGENT_PROTOCOL_VERSION,
     payload: { requestId, session },
+  };
+}
+
+function commandResponse(
+  requestId: string,
+  payload: Omit<Extract<ServerToClientMessage, { type: "command.result" }>["payload"], "requestId">,
+): ServerToClientMessage {
+  return {
+    type: "command.result",
+    protocolVersion: AGENT_PROTOCOL_VERSION,
+    payload: { requestId, ...payload },
   };
 }
 

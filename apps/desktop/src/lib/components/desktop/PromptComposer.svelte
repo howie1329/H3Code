@@ -351,7 +351,7 @@
 
   async function selectModel(model: ProviderModel) {
     closeMenus();
-    await desktopState.setModel(model.provider, model.id);
+    await desktopState.setProviderModel(model);
     await tick();
     textareaRef?.focus();
   }

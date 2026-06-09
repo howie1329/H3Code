@@ -29,6 +29,7 @@ import {
   streamingMessage,
   transcriptMessages,
 } from "$lib/transcript-adapter.js";
+import { findProviderModel } from "$lib/provider-model.js";
 import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionDiffState, SessionNotification } from "$lib/desktop-types.js";
 import type { SessionReadModel, SessionSummary, UiSessionEvent } from "@h3code/agent-protocol";
 
@@ -85,6 +86,8 @@ class DesktopState {
   slashCommandsLoading = $state(false);
   slashCommandsError = $state<string | undefined>();
   availableModels = $state<ProviderModel[]>([]);
+  pendingModel = $state<ProviderModel | undefined>();
+  pendingThinkingLevel = $state<string | undefined>();
   modelsLoading = $state(false);
   modelsError = $state<string | undefined>();
   isSwitchingSession = $state(false);
@@ -277,7 +280,12 @@ class DesktopState {
 
     try {
       const runtime = getRuntimeClient();
-      const session = await runtime.createSession(nextRepoPath);
+      const createOptions = this.pendingModel || this.pendingThinkingLevel
+        ? { model: this.pendingModel, thinkingLevel: this.pendingThinkingLevel }
+        : undefined;
+      const session = await runtime.createSession(nextRepoPath, createOptions);
+      this.pendingModel = undefined;
+      this.pendingThinkingLevel = undefined;
       await this.attachSession(session, nextRepoPath);
 
       const listedSessions = await getRuntimeClient().listSessions({ repoPath: nextRepoPath, markRecent: true });
@@ -606,7 +614,7 @@ class DesktopState {
   slashCommandsLoaded = false;
 
   async ensureAvailableModels(refresh = false) {
-    if (!this.activeSessionId || !this.supportsModelPicker) {
+    if (this.activeSessionId && !this.supportsModelPicker) {
       this.availableModels = [];
       this.modelsLoaded = false;
       return;
@@ -620,9 +628,14 @@ class DesktopState {
     this.modelsError = undefined;
 
     try {
-      this.availableModels = (await getRuntimeClient().listProviderModels(this.activeSessionId)).map((model) => ({
+      const fallbackProvider = this.activeSessionId ? this.sessionReadModel.providerId : "pi";
+      const models = this.activeSessionId
+        ? await getRuntimeClient().listProviderModels(this.activeSessionId)
+        : await getRuntimeClient().discoverProviderModels("pi", this.landingRepoPath);
+
+      this.availableModels = models.map((model) => ({
         ...model,
-        provider: model.provider ?? this.sessionReadModel.providerId,
+        provider: model.provider ?? fallbackProvider,
         modelId: model.modelId ?? model.id,
       }));
       this.modelsLoaded = true;
@@ -635,16 +648,11 @@ class DesktopState {
 
   modelsLoaded = false;
 
-  async setModel(provider: string | undefined, modelId: string) {
+  async setProviderModel(model: ProviderModel) {
     if (!this.activeSessionId) {
+      this.pendingModel = model;
       return;
     }
-
-    const model = this.availableModels.find((entry) => entry.id === modelId || entry.modelId === modelId) ?? {
-      id: modelId,
-      modelId,
-      provider,
-    };
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
@@ -652,8 +660,19 @@ class DesktopState {
     });
   }
 
+  async setModel(provider: string | undefined, modelId: string) {
+    const model = findProviderModel(this.availableModels, provider, modelId) ?? {
+      id: modelId,
+      modelId,
+      provider,
+    };
+
+    await this.setProviderModel(model);
+  }
+
   async setThinkingLevel(level: string) {
     if (!this.activeSessionId) {
+      this.pendingThinkingLevel = level;
       return;
     }
 

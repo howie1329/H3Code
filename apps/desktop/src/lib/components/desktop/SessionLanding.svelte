@@ -11,6 +11,7 @@
     PromptInputToolbar,
     PromptInputTools,
   } from "$lib/components/ai-elements/prompt-input/index.js";
+  import LandingModelSelector from "$lib/components/desktop/LandingModelSelector.svelte";
   import LandingRepoSelector from "$lib/components/desktop/LandingRepoSelector.svelte";
   import { desktopState } from "$lib/desktop-state.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
@@ -69,6 +70,14 @@
     }
 
     void focusComposerWhenReady();
+  });
+
+  $effect(() => {
+    if (isLoadingPrefs) {
+      return;
+    }
+
+    void desktopState.ensureAvailableModels();
   });
 
   async function handleAddRepository() {
@@ -150,6 +159,7 @@
           <PromptInputToolbar>
             <PromptInputTools>
               <LandingRepoSelector disabled={isSubmitting || isLoadingPrefs || !hasRepos} />
+              <LandingModelSelector disabled={isSubmitting || isLoadingPrefs} />
             </PromptInputTools>
 
             <PromptInputSubmit

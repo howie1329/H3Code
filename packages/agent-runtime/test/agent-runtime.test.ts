@@ -18,6 +18,7 @@ function fakeProvider(events: RuntimeEventSink): ProviderAdapter {
     async sendTurn(binding) { await events({ type: "turn.started", sessionId: binding.sessionId, providerId: binding.providerId, turnId: "t1", occurredAt: 2 }); },
     async abortTurn() {},
     async listCommands() { return [{ name: "test", source: "prompt" }]; },
+    async discoverModels() { return [{ id: "discovered", provider: "fake", modelId: "discovered" }]; },
     async listModels() { return [{ id: "model", provider: "fake", modelId: "model" }]; },
     async setModel() {},
     async setThinkingLevel() {},
@@ -108,6 +109,39 @@ test("routes provider controls and patches the session read model", async () => 
   assert.equal(runtime.getSnapshot("s1")?.queueSettings?.steeringMode, "all");
   assert.equal(runtime.getSnapshot("s1")?.autoCompactionEnabled, true);
   assert.deepEqual(emitted, ["session.patch", "session.patch", "session.patch", "session.patch"]);
+});
+
+test("discovers provider models without a session binding", async () => {
+  let startCalls = 0;
+  const provider: ProviderAdapter = {
+    ...fakeProvider(() => {}),
+    async startSession(request, sink) {
+      startCalls += 1;
+      return fakeProvider(() => {}).startSession(request, sink);
+    },
+    async discoverModels() {
+      return [{ id: "model", provider: "fake", modelId: "model" }];
+    },
+  };
+  const runtime = new AgentRuntime({ providers: [provider] });
+
+  const models = await runtime.dispatchCommand({ type: "provider.models.discover", providerId: "fake" });
+
+  assert.deepEqual(models, { models: [{ id: "model", provider: "fake", modelId: "model" }] });
+  assert.equal(startCalls, 0);
+});
+
+test("rejects provider model discovery when unsupported", async () => {
+  const provider: ProviderAdapter = {
+    ...fakeProvider(() => {}),
+    discoverModels: undefined,
+  };
+  const runtime = new AgentRuntime({ providers: [provider] });
+
+  await assert.rejects(
+    () => runtime.dispatchCommand({ type: "provider.models.discover", providerId: "fake" }),
+    /Unsupported command/,
+  );
 });
 
 test("switches to a registered session by SessionId", async () => {

@@ -2,6 +2,7 @@ import type { SessionReadModel, UiMessage, UiSessionEvent } from "@h3code/agent-
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { findProviderModel } from "./provider-model.js";
 import { applySessionEvent, createEmptySessionReadModel } from "./session-state.js";
 
 const baseSession: SessionReadModel = {
@@ -88,4 +89,21 @@ test("applySessionEvent handles interaction lifecycle", () => {
   });
 
   assert.equal(resolved.pendingInteractions.length, 0);
+});
+
+test("findProviderModel prefers provider match when model ids are duplicated", () => {
+  const models = [
+    { id: "gpt-5.5", modelId: "gpt-5.5", provider: "github-copilot", name: "GPT-5.5" },
+    { id: "gpt-5.5", modelId: "gpt-5.5", provider: "openai-codex", name: "GPT-5.5" },
+  ];
+
+  assert.equal(findProviderModel(models, "openai-codex", "gpt-5.5")?.provider, "openai-codex");
+});
+
+test("findProviderModel falls back to id match for providerless selections", () => {
+  const models = [
+    { id: "gpt-5.5", modelId: "gpt-5.5", provider: "github-copilot", name: "GPT-5.5" },
+  ];
+
+  assert.equal(findProviderModel(models, undefined, "gpt-5.5")?.provider, "github-copilot");
 });

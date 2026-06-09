@@ -1,5 +1,6 @@
 import type {
   AbortTurnCommand,
+  DiscoverProviderModelsCommand,
   ListProviderCommandsCommand,
   ListProviderModelsCommand,
   ResolveApprovalCommand,
@@ -59,6 +60,7 @@ export type ProviderAdapter = {
   sendTurn(binding: RuntimeBinding, command: SendTurnCommand): Promise<TurnStartedResult | void>;
   abortTurn(binding: RuntimeBinding, command: AbortTurnCommand): Promise<void>;
   listCommands?(binding: RuntimeBinding, command: ListProviderCommandsCommand): Promise<ProviderCommand[]>;
+  discoverModels?(command: DiscoverProviderModelsCommand): Promise<ProviderModel[]>;
   listModels?(binding: RuntimeBinding, command: ListProviderModelsCommand): Promise<ProviderModel[]>;
   setModel?(binding: RuntimeBinding, command: SetProviderModelCommand): Promise<void>;
   setThinkingLevel?(binding: RuntimeBinding, command: SetProviderThinkingCommand): Promise<void>;

@@ -156,6 +156,62 @@ test("maps provider controls to the PI provider", async () => {
   assert.equal(fake.autoCompactionEnabled, true);
 });
 
+test("discovers PI models without starting a provider session", async () => {
+  let getAvailableCalls = 0;
+  let refreshCalls = 0;
+  const adapter = new PiProviderAdapter({
+    modelRegistry: {
+      async getAvailable() {
+        getAvailableCalls += 1;
+        return [{ id: "model", provider: "openai", name: "Model", reasoning: true }];
+      },
+      async refresh() {
+        refreshCalls += 1;
+      },
+    } as never,
+  });
+
+  const models = await adapter.discoverModels?.({ type: "provider.models.discover", providerId: "pi" });
+
+  assert.deepEqual(models, [{ id: "model", provider: "openai", name: "Model", modelId: "model", reasoning: true }]);
+  assert.equal(getAvailableCalls, 1);
+  assert.equal(refreshCalls, 1);
+});
+
+test("applies a requested startup model before returning the session binding", async () => {
+  const fake = new FakePiProvider();
+  const adapter = new PiProviderAdapter({ providerFactory: () => fake as never });
+
+  await adapter.startSession(
+    {
+      sessionId: "s1",
+      providerId: "pi",
+      repoPath: "/repo",
+      options: { model: { id: "model", provider: "openai", modelId: "model" } },
+    },
+    () => undefined,
+  );
+
+  assert.deepEqual(fake.model, { id: "model", provider: "openai", modelId: "model" });
+});
+
+test("applies requested startup thinking level before returning the session binding", async () => {
+  const fake = new FakePiProvider();
+  const adapter = new PiProviderAdapter({ providerFactory: () => fake as never });
+
+  await adapter.startSession(
+    {
+      sessionId: "s1",
+      providerId: "pi",
+      repoPath: "/repo",
+      options: { thinkingLevel: "high" },
+    },
+    () => undefined,
+  );
+
+  assert.equal(fake.thinkingLevel, "high");
+});
+
 test("buffers startup PI events until runtime session is started", async () => {
   const fake = new FakePiProvider();
   const runtime = new AgentRuntime({

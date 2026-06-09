@@ -1,10 +1,12 @@
 import { PiSdkProvider } from "./pi-sdk/pi-provider.js";
 import type {
   AbortTurnCommand,
+  DiscoverProviderModelsCommand,
   ListProviderCommandsCommand,
   ListProviderModelsCommand,
   ProviderAdapter,
   ProviderDescriptor,
+  ProviderModel,
   ProviderRuntime,
   ResolveApprovalCommand,
   ResolveUserInputCommand,
@@ -21,6 +23,7 @@ import type {
 } from "@h3code/agent-protocol";
 import type { PiProviderOptions, PiProviderSnapshot, PiProviderUiResponse } from "./pi-sdk/types.js";
 import { createPiRuntimeEventMapperState, mapPiEventToRuntimeEvents } from "./event-mapper.js";
+import { discoverPiModels } from "./pi-sdk/pi-models.js";
 
 export type PiProviderFactory = (options: PiProviderOptions) => PiSdkProvider;
 
@@ -98,6 +101,14 @@ export class PiProviderAdapter implements ProviderAdapter {
     return this.#requireContext(binding).provider.listCommands();
   }
 
+  async discoverModels(_command: DiscoverProviderModelsCommand) {
+    return discoverPiModels({
+      agentDir: this.#providerOptions.agentDir,
+      authStorage: this.#providerOptions.authStorage,
+      modelRegistry: this.#providerOptions.modelRegistry,
+    });
+  }
+
   async listModels(binding: RuntimeBinding, _command: ListProviderModelsCommand) {
     return this.#requireContext(binding).provider.listModels();
   }
@@ -156,6 +167,19 @@ export class PiProviderAdapter implements ProviderAdapter {
     let snapshot;
     try {
       snapshot = await provider.start();
+      const requestedModel = getRequestedModel(request.options);
+
+      if (requestedModel) {
+        await provider.setModel(requestedModel);
+        snapshot = provider.snapshot();
+      }
+
+      const requestedThinkingLevel = getRequestedThinkingLevel(request.options);
+
+      if (requestedThinkingLevel) {
+        provider.setThinkingLevel(requestedThinkingLevel);
+        snapshot = provider.snapshot();
+      }
     } catch (error) {
       unsubscribe();
       await provider.dispose();
@@ -243,4 +267,38 @@ export class PiProviderAdapter implements ProviderAdapter {
       await context.events(runtimeEvent);
     }
   }
+}
+
+function getRequestedModel(options: unknown): ProviderModel | undefined {
+  if (!options || typeof options !== "object" || !("model" in options)) {
+    return undefined;
+  }
+
+  const model = (options as { model?: unknown }).model;
+
+  if (!model || typeof model !== "object") {
+    return undefined;
+  }
+
+  const id = (model as { id?: unknown }).id;
+  const modelId = (model as { modelId?: unknown }).modelId;
+
+  if (typeof id !== "string" || id.length === 0) {
+    return undefined;
+  }
+
+  return {
+    ...(model as ProviderModel),
+    id,
+    modelId: typeof modelId === "string" && modelId.length > 0 ? modelId : id,
+  };
+}
+
+function getRequestedThinkingLevel(options: unknown): string | undefined {
+  if (!options || typeof options !== "object" || !("thinkingLevel" in options)) {
+    return undefined;
+  }
+
+  const level = (options as { thinkingLevel?: unknown }).thinkingLevel;
+  return typeof level === "string" && level.length > 0 ? level : undefined;
 }

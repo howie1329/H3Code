@@ -9,6 +9,7 @@ export type AgentCommand =
   | SendTurnCommand
   | AbortTurnCommand
   | ListProviderCommandsCommand
+  | DiscoverProviderModelsCommand
   | ListProviderModelsCommand
   | SetProviderModelCommand
   | SetProviderThinkingCommand
@@ -81,6 +82,13 @@ export type ListProviderCommandsCommand = {
 export type ListProviderModelsCommand = {
   type: "provider.models.list";
   sessionId: SessionId;
+};
+
+export type DiscoverProviderModelsCommand = {
+  type: "provider.models.discover";
+  providerId: ProviderId;
+  repoPath?: RepoPath;
+  options?: unknown;
 };
 
 export type SetProviderModelCommand = {

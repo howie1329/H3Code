@@ -204,7 +204,7 @@ export class PiSdkProvider {
     return listPiCommands(this.session, this.#services?.resourceLoader);
   }
 
-  listModels() {
+  async listModels() {
     const modelRegistry = this.#services?.modelRegistry;
 
     if (!modelRegistry) {
