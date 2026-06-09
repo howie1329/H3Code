@@ -65,7 +65,7 @@ Both legs speak **`agent-protocol`** at the UI boundary. Both can share **one Ta
 ### Three decoupled layers (learned from Cursor cloud)
 
 1. **Agent loop** — provider (A) or harness (B).
-2. **Machine state** — local repo + process, or Daytona sandbox (hibernate/resume).
+2. **Machine state** — local repo + process, or **one Daytona sandbox per cloud session** (hibernate/resume when idle). Parallel sessions on the same repo use separate sandboxes and work branches; GitHub handles PR merge conflicts.
 3. **Conversation state** — Convex for cloud; optional Convex + SQLite for desktop fast paint.
 
 **Continue vs reload:** Convex (and desktop cache) answer **fast UI reload**. **Continuing the agent** requires provider reconnect with stored `providerId` + `providerSessionRef`, or replay into provider on cold start—not automatic from Convex alone.

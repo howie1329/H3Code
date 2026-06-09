@@ -122,7 +122,11 @@ function SessionWorkspaceContent({ sessionId }: SessionWorkspaceProps) {
   }
 
   const title = sessionData.session.title ?? sessionId
-  const status = mapSessionStatus(sessionData.session.status)
+  const convexStatus = sessionData.session.status
+  const status = mapSessionStatus(convexStatus)
+  const isProvisioning = convexStatus === 'provisioning'
+  const provisionError = sessionData.session.provisionError
+  const sandboxId = sessionData.session.sandboxId
 
   return (
     <main
@@ -138,8 +142,17 @@ function SessionWorkspaceContent({ sessionId }: SessionWorkspaceProps) {
             isStreaming={detail.isStreaming}
             isCompacting={detail.isCompacting}
           />
+          {convexStatus === 'error' && provisionError ? (
+            <div
+              className="border-t border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive"
+              role="alert"
+            >
+              {provisionError}
+            </div>
+          ) : null}
           <SessionComposer
             sessionTitle={title}
+            disabled={isProvisioning}
             isStreaming={detail.isStreaming}
             onSubmit={async (text) => {
               await sendMessage({
@@ -159,6 +172,7 @@ function SessionWorkspaceContent({ sessionId }: SessionWorkspaceProps) {
             status={status}
             repositoryFullName={repoFullName}
             repositoryName={repositoryName}
+            sandboxId={sandboxId}
             detail={detail}
           />
         ) : null}

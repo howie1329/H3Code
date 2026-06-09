@@ -10,6 +10,9 @@
 
 import type * as github from "../github.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_clerkGithub from "../lib/clerkGithub.js";
+import type * as sandbox from "../sandbox.js";
+import type * as sandboxProvision from "../sandboxProvision.js";
 import type * as sessions from "../sessions.js";
 import type * as users from "../users.js";
 import type * as workspaceRepositories from "../workspaceRepositories.js";
@@ -23,6 +26,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   github: typeof github;
   "lib/auth": typeof lib_auth;
+  "lib/clerkGithub": typeof lib_clerkGithub;
+  sandbox: typeof sandbox;
+  sandboxProvision: typeof sandboxProvision;
   sessions: typeof sessions;
   users: typeof users;
   workspaceRepositories: typeof workspaceRepositories;
