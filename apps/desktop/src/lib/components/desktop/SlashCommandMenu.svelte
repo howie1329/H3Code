@@ -1,7 +1,5 @@
 <script lang="ts">
-  import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "$lib/desktop-types.js";
-  import type { SessionSummary } from "$lib/session-types.js";
-  import type { ThinkingLevel } from "$lib/provider-model.js";
+  import type { ProviderCommand } from "$lib/desktop-types.js";
   import ComposerSelectMenu from "$lib/components/desktop/ComposerSelectMenu.svelte";
   import { COMPOSER_MENU_GROUP_LABEL_CLASS, composerMenuRowClass } from "$lib/components/desktop/composer-menu.js";
   import { getCommandLocation } from "$lib/slash-commands";
@@ -45,7 +43,7 @@
 
 <ComposerSelectMenu
   open={true}
-  title="Pi commands"
+  title={commands.length > 0 && commands.every((command) => command.source === "skill") ? "Pi skills" : "Pi commands"}
   description="Select a command to insert it into the prompt."
   align="full"
   ariaLabel="Pi slash commands"

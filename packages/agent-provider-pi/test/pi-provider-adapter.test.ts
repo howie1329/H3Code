@@ -3,6 +3,69 @@ import test from "node:test";
 import { AgentRuntime } from "@h3code/agent-runtime";
 import { PiProviderAdapter } from "../src/pi-provider-adapter.js";
 
+const fullModel = {
+  id: "model",
+  provider: "openai",
+  name: "Model",
+  modelId: "model",
+  baseUrl: "https://api.openai.com/v1",
+  reasoning: true,
+};
+
+function createRuntimeHarness(models: unknown[] = [fullModel]) {
+  let selectedModel: unknown;
+  const listeners = new Set<(event: unknown) => void>();
+  const session = {
+    sessionFile: "/tmp/pi-session.jsonl",
+    sessionId: "pi-session",
+    messages: [],
+    isStreaming: false,
+    subscribe(listener: (event: unknown) => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    async bindExtensions() {},
+    async prompt() {},
+    async steer() {},
+    async followUp() {},
+    async abort() {},
+    async setModel(model: unknown) {
+      selectedModel = model;
+    },
+  };
+  const modelRegistry = {
+    find(provider: string, modelId: string) {
+      return models.find((model) => {
+        const record = model as { provider?: string; id?: string };
+        return record.provider === provider && record.id === modelId;
+      });
+    },
+    getAvailable() {
+      return models;
+    },
+  };
+  const runtime = {
+    cwd: "/repo",
+    session,
+    services: { modelRegistry },
+    diagnostics: [],
+    async newSession() {
+      return { cancelled: false };
+    },
+    async switchSession() {
+      return { cancelled: false };
+    },
+    async dispose() {},
+  };
+
+  return {
+    runtime,
+    get selectedModel() {
+      return selectedModel;
+    },
+  };
+}
+
 class FakePiProvider {
   disposed = false;
   prompts: unknown[] = [];
@@ -62,6 +125,18 @@ class FakePiProvider {
 
   listModels() {
     return [{ id: "model", provider: "openai", modelId: "model" }];
+  }
+
+  async setProviderModel(model: { id: string; provider?: string; modelId?: string }) {
+    const provider = model.provider;
+    const modelId = model.modelId ?? model.id;
+
+    if (provider === fullModel.provider && modelId === fullModel.id) {
+      await this.setModel(fullModel);
+      return;
+    }
+
+    throw new Error(`PI model not found: ${provider ?? "unknown"}/${modelId ?? "unknown"}`);
   }
 
   async setModel(model: unknown) {
@@ -149,11 +224,25 @@ test("maps provider controls to the PI provider", async () => {
   await adapter.setQueueSettings?.(runtime.binding, { type: "provider.queue.set", sessionId: "s1", steeringMode: "all", followUpMode: "one-at-a-time" });
   await adapter.setAutoCompaction?.(runtime.binding, { type: "provider.compaction.set", sessionId: "s1", enabled: true });
 
-  assert.deepEqual(fake.model, { id: "model", provider: "openai", modelId: "model" });
+  assert.deepEqual(fake.model, fullModel);
   assert.equal(fake.thinkingLevel, "high");
   assert.equal(fake.steeringMode, "all");
   assert.equal(fake.followUpMode, "one-at-a-time");
   assert.equal(fake.autoCompactionEnabled, true);
+});
+
+test("resolves active model selections through the PI model registry", async () => {
+  const harness = createRuntimeHarness();
+  const adapter = new PiProviderAdapter({ runtimeFactory: async () => harness.runtime as never });
+  const runtime = await adapter.startSession({ sessionId: "s1", providerId: "pi", repoPath: "/repo" }, () => undefined);
+
+  await adapter.setModel?.(runtime.binding, {
+    type: "provider.model.set",
+    sessionId: "s1",
+    model: { id: "model", provider: "openai", modelId: "model" },
+  });
+
+  assert.deepEqual(harness.selectedModel, fullModel);
 });
 
 test("discovers PI models without starting a provider session", async () => {
@@ -163,7 +252,7 @@ test("discovers PI models without starting a provider session", async () => {
     modelRegistry: {
       async getAvailable() {
         getAvailableCalls += 1;
-        return [{ id: "model", provider: "openai", name: "Model", reasoning: true }];
+        return [fullModel];
       },
       async refresh() {
         refreshCalls += 1;
@@ -192,7 +281,64 @@ test("applies a requested startup model before returning the session binding", a
     () => undefined,
   );
 
-  assert.deepEqual(fake.model, { id: "model", provider: "openai", modelId: "model" });
+  assert.deepEqual(fake.model, fullModel);
+});
+
+test("resolves requested startup models through the PI model registry", async () => {
+  const harness = createRuntimeHarness();
+  const adapter = new PiProviderAdapter({ runtimeFactory: async () => harness.runtime as never });
+
+  await adapter.startSession(
+    {
+      sessionId: "s1",
+      providerId: "pi",
+      repoPath: "/repo",
+      options: { model: { id: "model", provider: "openai", modelId: "model" } },
+    },
+    () => undefined,
+  );
+
+  assert.deepEqual(harness.selectedModel, fullModel);
+});
+
+test("rejects unknown requested startup models before returning the session binding", async () => {
+  const fake = new FakePiProvider();
+  const adapter = new PiProviderAdapter({ providerFactory: () => fake as never });
+
+  await assert.rejects(
+    () =>
+      adapter.startSession(
+        {
+          sessionId: "s1",
+          providerId: "pi",
+          repoPath: "/repo",
+          options: { model: { id: "missing", provider: "openai", modelId: "missing" } },
+        },
+        () => undefined,
+      ),
+    /PI model not found: openai\/missing/,
+  );
+
+  assert.equal(fake.disposed, true);
+});
+
+test("rejects unknown startup models from the PI model registry path", async () => {
+  const harness = createRuntimeHarness();
+  const adapter = new PiProviderAdapter({ runtimeFactory: async () => harness.runtime as never });
+
+  await assert.rejects(
+    () =>
+      adapter.startSession(
+        {
+          sessionId: "s1",
+          providerId: "pi",
+          repoPath: "/repo",
+          options: { model: { id: "missing", provider: "openai", modelId: "missing" } },
+        },
+        () => undefined,
+      ),
+    /PI model not found: openai\/missing/,
+  );
 });
 
 test("applies requested startup thinking level before returning the session binding", async () => {

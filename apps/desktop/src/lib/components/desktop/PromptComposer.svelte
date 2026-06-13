@@ -1,6 +1,5 @@
 <script lang="ts">
-  import type { ProviderCommand, ProviderModel, ProviderQueueMode } from "$lib/desktop-types.js";
-  import type { SessionSummary } from "$lib/session-types.js";
+  import type { ProviderCommand, ProviderModel } from "$lib/desktop-types.js";
   import type { ThinkingLevel } from "$lib/provider-model.js";
   import { tick } from "svelte";
   import {
@@ -33,7 +32,14 @@
     normalizeThinkingLevel,
     THINKING_LEVELS,
   } from "$lib/provider-model.js";
-  import { filterSlashCommands, getActiveSlashToken, replaceSlashToken, type SlashToken } from "$lib/slash-commands";
+  import {
+    filterSlashCommands,
+    findCompletedSkillToken,
+    getActiveSlashToken,
+    removeSlashToken,
+    replaceSlashToken,
+    type SlashToken,
+  } from "$lib/slash-commands";
   import {
     PromptInput,
     PromptInputBody,
@@ -57,8 +63,10 @@
   let activeMenu = $state<ComposerMenu>("none");
   let slashHighlightedIndex = $state(0);
   let settingsHighlightedIndex = $state(0);
+  let selectedSkillCommands = $state<ProviderCommand[]>([]);
 
   const filteredCommands = $derived(slashToken ? filterSlashCommands(desktopState.slashCommands, slashToken.query) : []);
+  const skillCommands = $derived(desktopState.slashCommands.filter((command) => command.source === "skill"));
   const tokenKey = $derived(slashToken ? `${slashToken.start}:${slashToken.end}:${slashToken.query}` : undefined);
   const isSlashMenuOpen = $derived(activeMenu === "slash" && Boolean(slashToken && tokenKey !== dismissedTokenKey));
   const isRunning = $derived(desktopState.isAgentRunning);
@@ -158,6 +166,12 @@
   });
 
   $effect(() => {
+    if (!desktopState.activeSessionId) {
+      selectedSkillCommands = [];
+    }
+  });
+
+  $effect(() => {
     function handleFocusComposer() {
       textareaRef?.focus();
     }
@@ -233,6 +247,7 @@
 
   function handlePromptInput() {
     dismissedTokenKey = undefined;
+    convertCompletedSkillToken();
     syncSlashToken();
   }
 
@@ -329,7 +344,11 @@
       return;
     }
 
-    const nextPrompt = replaceSlashToken(desktopState.promptValue, slashToken, command);
+    const nextPrompt =
+      command.source === "skill"
+        ? selectSkillCommand(command, slashToken)
+        : replaceSlashToken(desktopState.promptValue, slashToken, command);
+
     desktopState.promptValue = nextPrompt.value;
     slashToken = null;
     dismissedTokenKey = undefined;
@@ -338,6 +357,49 @@
     await tick();
     textareaRef?.focus();
     textareaRef?.setSelectionRange(nextPrompt.cursor, nextPrompt.cursor);
+  }
+
+  function selectSkillCommand(command: ProviderCommand, token: SlashToken) {
+    if (!selectedSkillCommands.some((skill) => skill.name === command.name)) {
+      selectedSkillCommands = [...selectedSkillCommands, command];
+    }
+
+    return removeSlashToken(desktopState.promptValue, token);
+  }
+
+  function convertCompletedSkillToken() {
+    const completed = findCompletedSkillToken(desktopState.promptValue, skillCommands);
+
+    if (!completed) {
+      return;
+    }
+
+    const nextPrompt = selectSkillCommand(completed.command, completed.token);
+    desktopState.promptValue = nextPrompt.value;
+
+    queueMicrotask(() => {
+      textareaRef?.setSelectionRange(nextPrompt.cursor, nextPrompt.cursor);
+    });
+  }
+
+  function removeSelectedSkill(command: ProviderCommand) {
+    selectedSkillCommands = selectedSkillCommands.filter((skill) => skill.name !== command.name);
+    void tick().then(() => textareaRef?.focus());
+  }
+
+  function skillCommandText() {
+    return selectedSkillCommands.map((command) => `/${command.name}`).join("\n");
+  }
+
+  function buildPromptText(text: string | undefined) {
+    const body = text?.trim() ?? "";
+    const skills = skillCommandText();
+
+    if (!skills) {
+      return body;
+    }
+
+    return body ? `${skills}\n\n${body}` : skills;
   }
 
   async function retryCommands() {
@@ -485,15 +547,37 @@
     />
 
     <PromptInput
-      onSubmit={(message, event) => {
+      onSubmit={async (message, event) => {
         slashToken = null;
         dismissedTokenKey = undefined;
         closeMenus();
-        desktopState.handlePromptSubmit(message, event);
+        await desktopState.handlePromptSubmit({ ...message, text: buildPromptText(message.text) }, event);
+        selectedSkillCommands = [];
       }}
       class="w-full"
     >
       <PromptInputBody>
+        {#if selectedSkillCommands.length > 0}
+          <div class="flex flex-wrap gap-1.5 border-b border-border/40 px-2.5 py-1.5" aria-label="Selected skills">
+            {#each selectedSkillCommands as skill (skill.name)}
+              <span
+                class="inline-flex max-w-full items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] leading-tight text-foreground"
+                title={`/${skill.name}`}
+              >
+                <span class="truncate">/{skill.name}</span>
+                <button
+                  type="button"
+                  class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 [&_svg]:size-2.5"
+                  aria-label={`Remove /${skill.name}`}
+                  title={`Remove /${skill.name}`}
+                  onclick={() => removeSelectedSkill(skill)}
+                >
+                  <HugeiconsIcon icon={Cancel01Icon} aria-hidden="true" />
+                </button>
+              </span>
+            {/each}
+          </div>
+        {/if}
         <label for="prompt" class="sr-only">Prompt</label>
         <PromptInputTextarea
           id="prompt"

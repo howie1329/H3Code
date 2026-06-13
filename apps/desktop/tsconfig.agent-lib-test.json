@@ -13,6 +13,8 @@
   },
   "include": [
     "src/app.d.ts",
+    "src/lib/slash-commands.ts",
+    "src/lib/slash-commands.test.ts",
     "src/lib/session-stats.ts",
     "src/lib/session-stats.test.ts",
     "src/lib/provider-model.ts",

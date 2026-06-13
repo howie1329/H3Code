@@ -18,6 +18,7 @@ import type {
   PiSessionLike,
   PiPromptInput,
 } from "./types.js";
+import type { ProviderModel } from "@h3code/agent-protocol";
 
 const defaultSession = { mode: "create" as const, sessionPath: undefined };
 
@@ -188,6 +189,24 @@ export class PiSdkProvider {
     }
 
     await setModel.call(this.session, model);
+  }
+
+  async setProviderModel(model: ProviderModel) {
+    const modelRegistry = this.#services?.modelRegistry;
+    const provider = model.provider;
+    const modelId = model.modelId ?? model.id;
+
+    if (!modelRegistry || !provider || !modelId) {
+      throw new Error(`PI model not found: ${provider ?? "unknown"}/${modelId ?? "unknown"}`);
+    }
+
+    const resolvedModel = modelRegistry.find(provider, modelId);
+
+    if (!resolvedModel) {
+      throw new Error(`PI model not found: ${provider}/${modelId}`);
+    }
+
+    await this.setModel(resolvedModel);
   }
 
   setThinkingLevel(level: string) {

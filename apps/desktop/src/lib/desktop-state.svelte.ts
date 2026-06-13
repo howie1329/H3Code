@@ -326,6 +326,7 @@ class DesktopState {
     this.supportsQueueSettings = true;
     this.supportsCompactionSettings = true;
     this.canChangeSessionSettings = true;
+    this.resetSlashCommands();
     this.syncPendingInteraction();
     this.applyDiffSummary(session.diffSummary);
 
@@ -348,6 +349,7 @@ class DesktopState {
     this.isSwitchingSession = false;
     this.sessionReadModel = createEmptySessionReadModel();
     this.connectionStatus = { state: "disconnected" };
+    this.resetSlashCommands();
     this.resetSessionDiff();
     this.promptValue = "";
     this.providerUiRequest = undefined;
@@ -568,6 +570,13 @@ class DesktopState {
     this.sessionDiffLoading = false;
     this.sessionDiffError = undefined;
     this.sessionDiffPanelOpen = false;
+  }
+
+  resetSlashCommands() {
+    this.slashCommands = [];
+    this.slashCommandsLoaded = false;
+    this.slashCommandsLoading = false;
+    this.slashCommandsError = undefined;
   }
 
   applyDiffSummary(diffSummary: SessionDiffState | undefined) {

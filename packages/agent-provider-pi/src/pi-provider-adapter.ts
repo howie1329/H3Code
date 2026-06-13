@@ -114,7 +114,7 @@ export class PiProviderAdapter implements ProviderAdapter {
   }
 
   async setModel(binding: RuntimeBinding, command: SetProviderModelCommand): Promise<void> {
-    await this.#requireContext(binding).provider.setModel(command.model);
+    await this.#requireContext(binding).provider.setProviderModel(command.model);
   }
 
   async setThinkingLevel(binding: RuntimeBinding, command: SetProviderThinkingCommand): Promise<void> {
@@ -170,7 +170,7 @@ export class PiProviderAdapter implements ProviderAdapter {
       const requestedModel = getRequestedModel(request.options);
 
       if (requestedModel) {
-        await provider.setModel(requestedModel);
+        await provider.setProviderModel(requestedModel);
         snapshot = provider.snapshot();
       }
 
