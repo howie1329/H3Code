@@ -1,7 +1,7 @@
 # H3Code — Stack Guidance
 
 <!-- agentkit:start stack -->
-Monorepo managed with npm workspaces and Turborepo. Primary product is the Electron desktop app; cloud and web apps are secondary surfaces sharing `@h3code/agent-protocol`.
+Monorepo managed with npm workspaces and Turborepo. Primary product is the Electron desktop app; cloud and web apps share the same **AI SDK Harness + `UIMessage`** agent boundary (see `Docs/h3code-ai-sdk-harness-architecture.md`). Legacy `@h3code/agent-protocol` / `agent-runtime*` packages remain during desktop migration only.
 
 ## Workspace Layout
 
@@ -11,25 +11,32 @@ Monorepo managed with npm workspaces and Turborepo. Primary product is the Elect
 | `apps/web` | SvelteKit, Vite, Tailwind 4, shadcn-svelte | Marketing site |
 | `apps/cloud` | TanStack React Start, React 19, Convex, Clerk, Tailwind 4, Vitest | Cloud workbench (GitHub sync live; agent sessions planned) |
 | `apps/desktop-zero` | Zig | Experimental native shell |
-| `packages/agent-protocol` | TypeScript | Protocol, runtime events, read models, provider contracts |
-| `packages/agent-runtime` | TypeScript | Runtime bindings, event ingestion, read-model projection |
-| `packages/agent-runtime-ws` | Node, `ws`, TypeScript | Runtime WebSocket transport |
-| `packages/agent-runtime-persistence` | TypeScript, SQLite | Runtime read-model and binding persistence |
-| `packages/agent-runtime-server` | Node, `ws`, TypeScript | Local runtime server composition |
-| `packages/agent-metadata` | TypeScript, SQLite | Local metadata and preferences |
-| `packages/agent-provider-pi` | TypeScript | In-process PI SDK provider adapter |
+| `packages/agent-provider-pi` | TypeScript | **Target:** thin `HarnessAgent` + Pi + sandbox wiring |
+| `packages/agent-metadata` | TypeScript, SQLite | Local repos, prefs, session index, optional `UIMessage` snapshot cache |
+| `packages/sandbox-daytona` | TypeScript | **Planned:** `HarnessV1SandboxProvider` for cloud Daytona |
+| `packages/agent-protocol` | TypeScript | **Legacy** — retire after harness migration |
+| `packages/agent-runtime` | TypeScript | **Legacy** — retire after harness migration |
+| `packages/agent-runtime-ws` | Node, `ws` | **Legacy** — retire after harness migration |
+| `packages/agent-runtime-persistence` | TypeScript, SQLite | **Legacy** — retire after harness migration |
+| `packages/agent-runtime-server` | Node, `ws` | **Legacy** — retire after harness migration |
 
 ## Architecture Boundaries
 
-Desktop data flow:
+**Target** desktop data flow:
 
 ```txt
-Svelte renderer → RuntimeClient (WebSocket) → @h3code/agent-runtime-server → AgentRuntime → PiProviderAdapter
+Renderer (useChat) → stream route / IPC → HarnessAgent (@ai-sdk/harness-pi) → just-bash sandbox (local repo)
+  ↔ @h3code/agent-metadata (SQLite product data only)
 ```
 
-- **Providers** own sessions, message history, tools, models, queueing, compaction, and retry.
-- **H3Code** owns desktop UI, local server orchestration, repo/workspace context, metadata indexing, and preferences.
-- Keep renderer types provider-neutral above the H3Code WebSocket protocol; render server-projected `SessionReadModel` state instead of provider-native shapes.
+**Current** desktop (until migration):
+
+```txt
+Svelte renderer → WebSocket → agent-runtime-server → PiProviderAdapter
+```
+
+- **Harness** owns sessions, tools, compaction, and live stream shape (`UIMessage`).
+- **H3Code** owns workbench UI, Electron host, `repoPath`, and `agent-metadata`—not a custom runtime projector.
 
 Cloud app (`apps/cloud`):
 
@@ -37,7 +44,7 @@ Cloud app (`apps/cloud`):
 - Backend in `apps/cloud/convex/` (`auth.config.ts`, `schema.ts`, `github.ts`, `workspaceRepositories.ts`, `sessions.ts`, `sandbox.ts`, `sandboxProvision.ts`, `users.ts`).
 - Auth: `@clerk/tanstack-react-start` + `ConvexProviderWithClerk`; JWT validated via `CLERK_JWT_ISSUER_DOMAIN` in Convex env.
 - GitHub (MVP): Clerk OAuth token retrieved server-side in `src/integrations/github/server.ts`; connection metadata in `githubConnections`; workspace repos in `workspaceRepositories`; GitHub catalog fetched on demand for the add-repository dialog.
-- Convex tables today: `users`, `githubConnections`, `workspaceRepositories`, `sessions`, `messages`. Daytona: **one sandbox per session** (`sandboxProvision` on create); parallel sessions on the same repo use separate sandboxes and (planned) per-session work branches. Deferred: `runs`, `control`, `diffs`, `usageEvents` — see `docs/h3code-convex-schema.md`.
+- Convex tables today: `users`, `githubConnections`, `workspaceRepositories`, `sessions`, `messages`. Daytona: **one sandbox per session** (`sandboxProvision` on create). **Target:** `messages` store `UIMessage`-compatible JSON + harness `resumeFrom` on session rows. Deferred tables: see `Docs/h3code-convex-schema.md`.
 - Env template: `apps/cloud/.env.example` (`VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, `VITE_CONVEX_URL`).
 
 ## Source Conventions

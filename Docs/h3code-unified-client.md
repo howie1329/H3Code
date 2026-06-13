@@ -2,7 +2,7 @@
 
 > Status: Draft. Implementation guide for one TanStack Start app served from **Vercel (cloud)** and **Electron (desktop)**.
 >
-> Parent: [h3code-platform-vision.md](./h3code-platform-vision.md). Cloud scope: [h3code-cloud-saas-prd.md](./h3code-cloud-saas-prd.md). Data model: [h3code-convex-schema.md](./h3code-convex-schema.md).
+> Parent: [h3code-platform-vision.md](./h3code-platform-vision.md). **Agent stack:** [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md). Cloud scope: [h3code-cloud-saas-prd.md](./h3code-cloud-saas-prd.md). Data model: [h3code-convex-schema.md](./h3code-convex-schema.md).
 
 ## Goal
 
@@ -11,7 +11,9 @@ Build **one** web UI that:
 - On **Vercel** behaves as the cloud product (login, GitHub repos, remote sessions).
 - Inside **Electron** behaves as the desktop product (local folder, local agent)—without maintaining two separate component trees.
 
-Same app shell (sidebar, transcript, composer, diffs). Different **runtime adapters** for onboarding, workspace selection, and `sendMessage` / subscriptions.
+Same app shell (sidebar, transcript, composer, diffs). Different **runtime adapters** for onboarding, workspace selection, and chat transport (`useChat` + harness stream).
+
+Transcript components consume **`UIMessage[]`** from the `ai` package (`message.parts`)—not H3Code `SessionReadModel` or custom runtime events. See [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md).
 
 ## Runtime Model
 
@@ -21,8 +23,8 @@ type Runtime = "desktop" | "cloud";
 
 | `runtime` | Host | Workspace | Agent backend | Auth |
 |-----------|------|-----------|---------------|------|
-| `cloud` | Browser / PWA on Vercel | GitHub repo + branch | Convex → Daytona sandbox | Clerk |
-| `desktop` | Electron `BrowserWindow` | Local `repoPath` (native picker) | Local Agent Server (WS or IPC) + PI | Optional Clerk later; none for MVP desktop |
+| `cloud` | Browser / PWA on Vercel | GitHub repo + branch | Convex → Daytona → `HarnessAgent` stream | Clerk |
+| `desktop` | Electron `BrowserWindow` | Local `repoPath` (native picker) | Electron agent host → `HarnessAgent` + just-bash (IPC or HTTP stream) | Optional Clerk later |
 
 **Do not** scatter `if (isCloud)` across components. Resolve runtime once at the root and inject via context.
 
@@ -73,8 +75,8 @@ Electron is a **host**, not a separate UI codebase.
 
 ```txt
 apps/desktop/electron/
-  main.ts       — window, preload, start/stop Agent Server, IPC handlers
-  preload.ts    — __H3_RUNTIME__, pickFolder, getAgentServerUrl, revealInFinder
+  main.ts       — window, preload, agent host (HarnessAgent), IPC or local stream URL
+  preload.ts    — __H3_RUNTIME__, pickFolder, getAgentStreamUrl
 
 apps/desktop/ (or embedded dist from apps/cloud build)
   loads TanStack SPA — dev: VITE_DEV_SERVER_URL; prod: static dist/
@@ -83,8 +85,9 @@ apps/desktop/ (or embedded dist from apps/cloud build)
 ### Electron responsibilities (unchanged from today)
 
 - Native **folder picker** → `repoPath`.
-- Start/stop **local Agent Server** (`@h3code/agent-runtime-server` + `PiProviderAdapter`).
-- Optional: expose `agent.*` IPC that mirrors mutations (send, abort, subscribe events).
+- Start **agent host** (`HarnessAgent` + Pi + just-bash on `repoPath`) in main or utility process.
+- Expose stream endpoint or IPC for `useChat` / `DefaultChatTransport`.
+- Optional: mirror `UIMessage` chunks to Convex for desktop cache (`execution: "local"`).
 - Window chrome, deep links, auto-update (later).
 
 ### SPA responsibilities
@@ -96,21 +99,18 @@ apps/desktop/ (or embedded dist from apps/cloud build)
 
 ```txt
 packages/
-  app-shell/           # AppLayout, Sidebar, Transcript, Composer, DiffPanel
-                       # Props/callbacks only — no Convex or WS imports
+  app-shell/           # AppLayout, Sidebar, Transcript (UIMessage.parts), Composer, DiffPanel
 
-  runtime-cloud/       # useCloudSession(), useCloudMessages(), useRepos(), Clerk guards
-  runtime-desktop/     # useLocalRepo(), useDesktopAgent(), folder picker bridge
+  runtime-cloud/       # useCloudSession(), useChat + Convex, Clerk guards
+  runtime-desktop/     # useLocalRepo(), useChat transport to Electron agent host
 
 apps/
   cloud/               # TanStack Start: routes, providers, VITE_RUNTIME=cloud
-                       # Depends: app-shell, runtime-cloud, agent-protocol, convex
 
   desktop/             # Electron wrapper; VITE_RUNTIME=desktop build of same SPA
-                       # Depends: app-shell, runtime-desktop, agent-protocol
 ```
 
-**Rule:** `app-shell` imports only `agent-protocol` types and generic hooks interfaces—not Convex or `ws`.
+**Rule:** `app-shell` imports `UIMessage` from `ai` and app hook interfaces—not Convex, harness, or legacy `agent-protocol`.
 
 ## Routing & Guards
 
@@ -159,9 +159,8 @@ Shared components consume stable hooks; implementations swap by runtime.
 
 ```tsx
 // packages/app-shell — Transcript.tsx
-function Transcript({ sessionId }: { sessionId: string }) {
-  const { messages, status } = useSessionMessages(sessionId);
-  // render from H3Code message shapes only
+function Transcript({ messages }: { messages: UIMessage[] }) {
+  // render message.parts (text, tool-*, dynamic-tool)
 }
 ```
 
@@ -195,11 +194,11 @@ See [cloud PRD](./h3code-cloud-saas-prd.md) and [Convex schema](./h3code-convex-
 
 ## Desktop Path (Recap)
 
-1. Electron: user picks folder → `repoPath` in memory / light storage.
-2. Connect to local Agent Server; PI `connect({ repoPath })`.
-3. Stream: WS (today) or IPC events → map with existing adapter patterns → UI.
-4. Optional: mirror chunks to Convex (`execution: "local"`) for instant reload on next launch.
-5. On send: ensure provider reconnected using stored `providerSessionRef` on session row.
+1. Electron: user picks folder → `repoPath`.
+2. Agent host: `HarnessAgent` + `@ai-sdk/harness-pi` + `createJustBashSandbox` over `repoPath`.
+3. Renderer: `useChat` → stream route or IPC → `toUIMessageStream`.
+4. Optional: mirror `UIMessage` chunks to Convex or `agent-metadata` for fast reload.
+5. On send: resume harness session with stored `resumeFrom` for that `sessionId`.
 
 ## Build & Deploy
 

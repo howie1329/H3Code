@@ -2,23 +2,20 @@
 
 > Status: Draft. **Not** cloud MVP scope. Describes how the **local** workbench can evolve toward a Cursor-like integrated agent—orthogonal to [cloud PRD](./h3code-cloud-saas-prd.md).
 >
-> Parent: [h3code-platform-vision.md](./h3code-platform-vision.md). Unified UI: [h3code-unified-client.md](./h3code-unified-client.md).
+> Parent: [h3code-platform-vision.md](./h3code-platform-vision.md). **Agent target:** [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md). Unified UI: [h3code-unified-client.md](./h3code-unified-client.md).
 
-## Current Desktop Architecture
+## Target Desktop Architecture
 
 ```txt
 Electron main
-  ├─ BrowserWindow → SvelteKit renderer (today) / TanStack SPA (future)
-  ├─ IPC: folder picker, reveal in Finder, agent-runtime-server URL
-  └─ startH3CodeAgentServer() → localhost HTTP + WebSocket
+  ├─ BrowserWindow → TanStack SPA (useChat)
+  ├─ IPC: folder picker, stream URL
+  └─ HarnessAgent host (Pi + just-bash on repoPath)
 
-Renderer
-  → agent-client (WebSocket)
-  → @h3code/agent-runtime-server
-    → PiProviderAdapter → PI SDK (in-process)
+@h3code/agent-metadata — SQLite product data only
 ```
 
-**Harness today:** PI SDK, not H3Code. **`agent-provider-pi`** maps PI events → `agent-protocol` `SessionDomainEvent`s. **`agent-metadata`** SQLite caches display messages and prefs.
+**Legacy (current Svelte build):** WebSocket → `agent-runtime-server` → `PiProviderAdapter`. Retire after harness migration.
 
 ## Cursor Local (Reference)
 

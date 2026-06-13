@@ -1,6 +1,8 @@
 # H3Code Runtime Read Model Architecture
 
-> Status: Draft. This document describes the target architecture as if H3Code is being designed from first principles.
+> **Superseded** by [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md). Kept for migration context only—do not implement new features against this model.
+>
+> Status: Draft (historical). This document described the custom runtime / read-model stack.
 >
 > Related: [h3code-agent-server-product.md](./h3code-agent-server-product.md), [h3code-unified-client.md](./h3code-unified-client.md), [h3code-cloud-saas-prd.md](./h3code-cloud-saas-prd.md).
 

@@ -1,7 +1,7 @@
 # H3Code — Agent Guidance
 
 <!-- agentkit:start agents -->
-H3Code is a coding-agent platform with two active surfaces: a **desktop workbench** (Electron + SvelteKit + local runtime server over WebSocket) and a **cloud workbench** (`apps/cloud`: TanStack React Start + Clerk + Convex). PI Agent is the current provider on desktop through `@h3code/agent-provider-pi`; `@h3code/agent-protocol` defines the provider-neutral protocol shared across surfaces.
+H3Code is a coding-agent **workbench** with two surfaces: **desktop** (Electron + SvelteKit, migrating to AI SDK Harness) and **cloud** (`apps/cloud`: TanStack React Start + Clerk + Convex). **Target agent stack:** AI SDK `HarnessAgent` + `@ai-sdk/harness-pi`; UI boundary is `UIMessage` from the `ai` package—not `@h3code/agent-protocol` / `SessionReadModel`. Read `Docs/h3code-ai-sdk-harness-architecture.md` before agent or package work. Legacy `agent-runtime*` packages exist only until desktop migrates.
 
 Read `STACK.md` before stack-specific changes. Read companion docs only when the task touches that area.
 
@@ -14,25 +14,27 @@ apps/
   web/            # SvelteKit marketing site
   cloud/          # TanStack React Start + Clerk + Convex cloud workbench
 packages/
-  agent-protocol/            # Provider-neutral H3Code protocol and contracts
-  agent-runtime/             # Runtime bindings, event ingestion, read-model projection
-  agent-runtime-ws/          # WebSocket transport
-  agent-runtime-persistence/ # Runtime read-model persistence
-  agent-runtime-server/      # Local runtime server composition
-  agent-provider-pi/         # In-process PI SDK provider adapter
-  agent-metadata/            # Local metadata, preferences, SQLite index
+  agent-provider-pi/         # Target: HarnessAgent + Pi + sandbox factories
+  agent-metadata/            # Local SQLite: repos, prefs, session index, optional UIMessage cache
+  sandbox-daytona/           # Planned: Daytona HarnessV1SandboxProvider (cloud)
+  agent-protocol/            # Legacy — do not extend
+  agent-runtime/             # Legacy — do not extend
+  agent-runtime-ws/            # Legacy — do not extend
+  agent-runtime-persistence/   # Legacy — do not extend
+  agent-runtime-server/      # Legacy — do not extend
 docs/             # Product specs, architecture, implementation notes
 DESIGN.md         # UI/design tokens and component guidance (Linear baseline)
 ```
 
 Key product docs:
 
-- `docs/h3code-agent-server-product.md` — local runtime server product direction
-- `docs/h3code-desktop-mvp.md` — current desktop MVP boundary
-- `docs/h3code-cloud-saas-prd.md` — cloud SaaS scope and MVP boundary
-- `docs/h3code-convex-schema.md` — Convex data model for cloud sessions
-- `docs/h3code-unified-client.md` — shared client/runtime model (desktop vs cloud)
-- `docs/h3code-platform-vision.md` — platform-wide direction
+- `Docs/h3code-ai-sdk-harness-architecture.md` — target agent stack (Harness + UIMessage)
+- `Docs/h3code-platform-vision.md` — platform-wide direction
+- `Docs/h3code-unified-client.md` — shared client (desktop vs cloud)
+- `Docs/h3code-cloud-saas-prd.md` — cloud SaaS scope
+- `Docs/h3code-convex-schema.md` — Convex data model
+- `Docs/h3code-desktop-mvp.md` — desktop MVP boundary
+- `Docs/h3code-agent-server-product.md` — legacy runtime server (superseded)
 - `README.md` — repository overview and local development
 
 ## Commands
@@ -69,8 +71,8 @@ Desktop app also has targeted Node test scripts (`test:runtime-client`, `test:ag
 
 - Prefer existing repository patterns over generic generated patterns.
 - Keep changes scoped and reviewable; match the style of surrounding code.
-- **Desktop:** H3Code owns the local experience; providers own sessions, transcripts, and runtime behavior. Do not persist provider-owned transcripts in the desktop app.
-- **Cloud:** Convex owns durable session/transcript persistence for the cloud product (see `docs/h3code-cloud-saas-prd.md`). Clerk OAuth tokens and GitHub API access stay server-side only.
+- **Desktop:** H3Code owns the workbench and `agent-metadata`; harness sessions own live agent state. Optional SQLite `UIMessage` snapshots for fast reload only—not a canonical transcript store.
+- **Cloud:** Convex owns durable session rows and `UIMessage` transcript persistence (see `Docs/h3code-cloud-saas-prd.md`). Harness `resumeFrom` blobs live server-side. Clerk OAuth tokens and GitHub API access stay server-side only.
 - Do not change foundational architecture, schema, dependencies, or theme primitives without explicit approval.
 - Read relevant docs in `docs/` before large feature or boundary changes.
 - For **desktop/web UI**, follow `DESIGN.md` and shadcn-svelte / Bits UI in `apps/desktop/src/lib/components/` or `apps/web/src/lib/components/`.
