@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("h3code", {
   platform: process.platform,
   getAppVersion: () => ipcRenderer.invoke("app:get-version"),
   getAgentServerUrl: () => ipcRenderer.invoke("agent-server:get-url"),
+  getAgentStreamUrl: () => ipcRenderer.invoke("agent:get-stream-url"),
   selectRepo: () => ipcRenderer.invoke("repo:select"),
   revealPath: (targetPath: string) => ipcRenderer.invoke("shell:reveal-path", targetPath),
   revealPreferencesDatabase: () => ipcRenderer.invoke("preferences:reveal-database"),

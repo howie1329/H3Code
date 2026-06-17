@@ -7,6 +7,11 @@ import {
   startAgentServerProcess,
   stopAgentServerProcess,
 } from "./agent-server-lifecycle.js";
+import {
+  getHarnessChatUrl,
+  startHarnessHost,
+  stopHarnessHost,
+} from "./harness/harness-lifecycle.js";
 import { registerPreferencesIpc } from "./preferences-ipc.js";
 import { closePreferencesDatabase, revealPreferencesDatabase } from "./preferences.js";
 
@@ -86,6 +91,8 @@ ipcMain.handle("shell:reveal-path", (_event, targetPath: string) => {
 
 ipcMain.handle("agent-server:get-url", () => getAgentServerUrl());
 
+ipcMain.handle("agent:get-stream-url", () => getHarnessChatUrl());
+
 ipcMain.handle("app:get-version", () => app.getVersion());
 
 ipcMain.handle("preferences:reveal-database", () => {
@@ -94,9 +101,16 @@ ipcMain.handle("preferences:reveal-database", () => {
   return databasePath;
 });
 
+const useLegacyAgent = process.env.H3_USE_LEGACY_AGENT !== "0";
+
 app.whenReady().then(async () => {
   registerPreferencesIpc();
-  await startAgentServerProcess();
+
+  if (useLegacyAgent) {
+    await startAgentServerProcess();
+  }
+
+  await startHarnessHost();
 
   nativeTheme.on("updated", () => {
     mainWindow?.setBackgroundColor(getWindowBackgroundColor());
@@ -112,7 +126,10 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
-  void stopAgentServerProcess();
+  void stopHarnessHost();
+  if (useLegacyAgent) {
+    void stopAgentServerProcess();
+  }
   closePreferencesDatabase();
 });
 

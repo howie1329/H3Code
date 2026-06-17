@@ -23,6 +23,10 @@
             const result = await invoke("h3code.getAgentServerUrl");
             return result?.url;
           },
+          getAgentStreamUrl: async () => {
+            const result = await invoke("h3code.getAgentStreamUrl");
+            return result?.url;
+          },
           getAppVersion: () => invoke("h3code.getAppVersion"),
           selectRepo: async () => {
             const paths = await invoke("zero-native.dialog.openFile", {

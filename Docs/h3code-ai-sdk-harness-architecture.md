@@ -243,6 +243,42 @@ npm run spike:harness:smoke --workspace @h3code/agent-provider-pi
 
 Verified on branch: smoke creates and destroys a harness session against the H3Code repo root.
 
+## Phase 1 — Desktop harness host (Electron main)
+
+Branch: `experiment/desktop-harness-pi-v7`. Renderer still uses legacy WebSocket until Phase 2.
+
+### What shipped
+
+- Electron main hosts `HarnessSessionManager` + local HTTP server on `127.0.0.1:{port}`.
+- Routes:
+  - `GET /health` — `{ ok: true }`
+  - `POST /api/chat` — `useChat`-compatible body (`id`, `repoPath`, `messages`); SSE via `pipeUIMessageStreamToResponse`
+  - `POST /api/chat/abort` — abort in-flight stream for `sessionId`
+- IPC: `getAgentStreamUrl()` → `http://127.0.0.1:{port}/api/chat` (preload + `window.h3code`).
+- Legacy WS runtime remains default; disable with `H3_USE_LEGACY_AGENT=0`.
+- Factory uses `ReadWriteFs` so Pi `write`/`edit` persist to the real repo.
+- Production auth: `resolveDesktopHarnessConfig()` in `@h3code/agent-provider-pi/harness` (gateway or direct keys).
+
+### Key paths
+
+| Path | Role |
+| --- | --- |
+| `apps/desktop/electron/harness/harness-lifecycle.ts` | Start/stop host |
+| `apps/desktop/electron/harness/harness-session-manager.ts` | Live sessions per `sessionId` |
+| `apps/desktop/electron/harness/harness-http-server.ts` | HTTP router + CORS |
+| `apps/desktop/electron/harness/harness-chat-handler.ts` | Chat + abort handlers |
+| `packages/agent-provider-pi/src/harness/` | `createDesktopPiAgent`, `resolveDesktopHarnessConfig` |
+
+### Validation
+
+```bash
+npm run spike:harness:smoke --workspace @h3code/agent-provider-pi
+npm run build:electron --workspace @h3code/desktop
+npm run test:harness-chat-smoke --workspace @h3code/desktop   # needs API key for full stream
+```
+
+Set `AI_GATEWAY_API_KEY` or `OPENAI_API_KEY` for streaming smoke. Health-only smoke runs without credentials.
+
 ## Related docs (updated for this model)
 
 - [h3code-platform-vision.md](./h3code-platform-vision.md) — product map

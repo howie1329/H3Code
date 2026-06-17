@@ -1,7 +1,8 @@
 import { HarnessAgent } from "@ai-sdk/harness/agent";
 import { createPi, type PiAuthOptions } from "@ai-sdk/harness-pi";
 import { createJustBashSandbox } from "@ai-sdk/sandbox-just-bash";
-import { OverlayFs, Sandbox } from "just-bash";
+import { ReadWriteFs, Sandbox } from "just-bash";
+import path from "node:path";
 
 export type CreateDesktopPiAgentOptions = {
   repoPath: string;
@@ -14,10 +15,11 @@ export type CreateDesktopPiAgentOptions = {
 export async function createDesktopPiAgent(
   options: CreateDesktopPiAgentOptions,
 ): Promise<HarnessAgent> {
-  const overlay = new OverlayFs({ root: options.repoPath });
-  const sandboxMountPoint = overlay.getMountPoint();
+  const repoPath = path.resolve(options.repoPath);
+  const workspaceFs = new ReadWriteFs({ root: repoPath });
+  const sandboxMountPoint = "/";
   const justBashInstance = await Sandbox.create({
-    fs: overlay,
+    fs: workspaceFs,
     cwd: sandboxMountPoint,
   });
 
@@ -38,7 +40,7 @@ export async function createDesktopPiAgent(
       }
 
       // Harness creates an empty `${mount}/pi-<sessionId>` workspace. Seed it
-      // from the overlay root where the real repo files are readable.
+      // from the repo root so Pi tools see package.json and siblings.
       const skipDir = sessionWorkDir.slice(sessionWorkDir.lastIndexOf("/") + 1);
       await session.run({
         command: [
