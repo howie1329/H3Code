@@ -150,6 +150,99 @@ Phase 2: swap harness factory—`createCodex()`, `createClaudeCode()`—not new 
 - Bridge harnesses (Codex, Claude Code) need network sandboxes with ports; validate Daytona `getPreviewLink` before committing on cloud.
 - Some PI controls (slash commands, queue UI) may need app-level affordances not expressed as `UIMessage` parts—keep those as session metadata, not a full runtime layer.
 
+## Phase 0 findings
+
+Branch: `experiment/desktop-harness-pi-v7`. Spike lives in `packages/agent-provider-pi` (`npm run spike:harness --workspace @h3code/agent-provider-pi`).
+
+### Pinned canary versions (2026-06)
+
+| Package | Version |
+| --- | --- |
+| `ai` | `7.0.0-canary.176` |
+| `@ai-sdk/harness` | `1.0.0-canary.13` |
+| `@ai-sdk/harness-pi` | `1.0.0-canary.9` |
+| `@ai-sdk/sandbox-just-bash` | `1.0.0-canary.13` |
+| `just-bash` | `2.14.5` |
+
+Note: the monorepo root still hoists `ai@6` for desktop/cloud apps; `@h3code/agent-provider-pi` pins `ai@7` for harness work. Expect duplicate `ai` installs until other workspaces migrate.
+
+### Desktop sandbox wiring
+
+`createJustBashSandbox` accepts either create-params or a pre-built `just-bash` `Sandbox`. For local `repoPath`, mount an overlay FS:
+
+```ts
+import { createJustBashSandbox } from '@ai-sdk/sandbox-just-bash';
+import { OverlayFs, Sandbox } from 'just-bash';
+
+const overlay = new OverlayFs({ root: repoPath });
+const sandbox = createJustBashSandbox({
+  sandbox: await Sandbox.create({ fs: overlay, cwd: overlay.getMountPoint() }),
+});
+```
+
+Implemented in [`packages/agent-provider-pi/src/harness/create-desktop-pi-agent.ts`](../packages/agent-provider-pi/src/harness/create-desktop-pi-agent.ts).
+
+### OverlayFs write behavior
+
+`OverlayFs` is copy-on-write: **reads come from the real directory; writes stay in the in-memory overlay** and do not modify files on disk. The spike probes for unexpected files on disk before/after turns. For a desktop coding agent that must persist edits to the user's repo, evaluate `ReadWriteFs` or a direct host-tool path in Phase 1 — do not assume Pi `write`/`edit` tools mutate `repoPath` on disk through just-bash overlay alone.
+
+### just-bash limitations (Phase 0)
+
+- **`ls` tool broken:** harness-pi implements `ls` via shell `ls -1Ap`. just-bash's `ls` does not support `-p`, so listing fails with `invalid option -- 'p'`. Prefer `read`, `grep`, `glob`/`find`, or `bash` with compatible flags in prompts and UI until upstream fixes or we add a workaround.
+- **No cross-session sandbox resume:** `just-bash-sandbox` has no `resumeSession`. `createSession({ resumeFrom })` throws `Sandbox provider 'just-bash-sandbox' does not support resume`. Desktop Phase 1 should keep a **live `HarnessAgentSession` in Electron main** between chat turns; persist `session.stop()` blobs for a future provider or when resume lands in just-bash.
+- **Spike default:** turn 2 runs on the **same session** (in-memory continuity). Cross-session resume is opt-in via `H3_SPIKE_TEST_RESUME=1` and is expected to fail on just-bash.
+- **Workspace seeding:** harness creates `${overlayMount}/pi-<sessionId>`. `createDesktopPiAgent` copies repo files from the overlay root into that folder via `onSandboxSession` so `read`/`grep` see `package.json`.
+- **AI Gateway free tier:** may return 429 after several tool calls. The spike treats gateway rate limits after successful tool activity as a partial pass.
+
+### Auth
+
+Phase 0 spike prefers **Vercel AI Gateway** for Pi model calls (one key, multi-provider model ids).
+
+**AI Gateway (recommended):**
+
+```bash
+export AI_GATEWAY_API_KEY=...
+# optional: export H3_SPIKE_MODEL=openai/gpt-4o
+npm run spike:harness --workspace @h3code/agent-provider-pi
+```
+
+Defaults to `openai/gpt-4o-mini` with `thinkingLevel: off`. Curated gateway ids in spike config: `openai/gpt-4o-mini`, `openai/gpt-4o`, `anthropic/claude-sonnet-4.6`. Override with `H3_SPIKE_MODEL` and `H3_SPIKE_THINKING_LEVEL`. Force auth mode with `H3_SPIKE_AUTH=gateway|direct`.
+
+`VERCEL_OIDC_TOKEN` also works as a gateway credential when running in Vercel-linked environments.
+
+**Direct provider (fallback):**
+
+```bash
+export OPENAI_API_KEY=sk-...
+export H3_SPIKE_AUTH=direct
+npm run spike:harness --workspace @h3code/agent-provider-pi
+```
+
+Direct OpenAI uses `gpt-4o-mini`; direct Anthropic uses `anthropic/claude-sonnet-4.6`.
+
+### TypeScript gotcha
+
+`createDesktopPiAgent` needs an explicit `Promise<HarnessAgent>` return type — otherwise `tsc` fails with TS2742 (non-portable inferred type referencing nested `@ai-sdk/provider-utils`).
+
+### Live E2E status
+
+Spike compiles and starts; full stream + resume validation requires `AI_GATEWAY_API_KEY` (recommended) or direct `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`:
+
+```bash
+export AI_GATEWAY_API_KEY=...
+npm run spike:harness --workspace @h3code/agent-provider-pi
+```
+
+Optional: `H3_SPIKE_MODEL`, `H3_SPIKE_AUTH`, `H3_SPIKE_THINKING_LEVEL`, `H3_SPIKE_PROMPT`, `H3_SPIKE_RESUME_DIR` (default resume blob: `/tmp/h3-harness-resume.json`).
+
+**Smoke test (no API key):** validates `HarnessAgent` + `OverlayFs` + `createJustBashSandbox` session lifecycle only:
+
+```bash
+npm run spike:harness:smoke --workspace @h3code/agent-provider-pi
+```
+
+Verified on branch: smoke creates and destroys a harness session against the H3Code repo root.
+
 ## Related docs (updated for this model)
 
 - [h3code-platform-vision.md](./h3code-platform-vision.md) — product map

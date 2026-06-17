@@ -15,12 +15,19 @@
     "build": "npm run build --workspace @h3code/agent-protocol && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build --workspace @h3code/agent-runtime && tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js"
+    "test": "npm run build --workspace @h3code/agent-runtime && tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js",
+    "spike:harness": "tsc -p tsconfig.json && node scripts/run-harness-spike.mjs",
+    "spike:harness:smoke": "tsc -p tsconfig.json && H3_SPIKE_SMOKE_ONLY=1 node scripts/run-harness-spike.mjs"
   },
   "dependencies": {
+    "@ai-sdk/harness": "1.0.0-canary.13",
+    "@ai-sdk/harness-pi": "1.0.0-canary.9",
+    "@ai-sdk/sandbox-just-bash": "1.0.0-canary.13",
     "@earendil-works/pi-coding-agent": "^0.75.4",
     "@h3code/agent-metadata": "*",
-    "@h3code/agent-protocol": "*"
+    "@h3code/agent-protocol": "*",
+    "ai": "7.0.0-canary.176",
+    "just-bash": "^2.14.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
