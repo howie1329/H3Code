@@ -2,163 +2,129 @@
 
 > Status: Draft. Companion to [h3code-cloud-saas-prd.md](./h3code-cloud-saas-prd.md) (cloud MVP scope).
 >
-> Related: [h3code-unified-client.md](./h3code-unified-client.md), [h3code-desktop-evolution.md](./h3code-desktop-evolution.md), [h3code-convex-schema.md](./h3code-convex-schema.md)
+> **Architecture:** [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md) is the target agent stack. Related: [h3code-unified-client.md](./h3code-unified-client.md), [h3code-desktop-evolution.md](./h3code-desktop-evolution.md), [h3code-convex-schema.md](./h3code-convex-schema.md).
 
 ## Summary
 
-H3Code is evolving from a **local-only Electron workbench** into a **two-legged product**: a desktop agent on the developer’s machine, plus a **cloud agent platform** reachable from the web (and eventually from the same UI inside Electron). The product class is the same as **Cursor**: local agent in an app shell, cloud agents in isolated sandboxes, multiple clients on one backend.
+H3Code is a **coding-agent workbench** (desktop + cloud): shell, workspace, git/PR workflow, and persistence—not a custom agent runtime.
 
-This document is the **product map**. Cloud MVP requirements live in the cloud PRD; implementation detail for the shared client and Convex live in sibling docs.
+Agent execution is delegated to **AI SDK Harness** (`HarnessAgent` + Pi / Codex / Claude Code adapters). The UI speaks **`UIMessage`** from the `ai` package end to end. H3Code does not maintain a parallel protocol, event bus, or read-model projector.
 
-## What H3Code Is Today
+## What H3Code is today (transition)
 
 ```txt
 apps/desktop (Electron + SvelteKit)
-  → WebSocket → @h3code/agent-runtime-server (localhost)
-    → PiProviderAdapter (@h3code/agent-provider-pi, PI SDK in-process)
+  → WebSocket → agent-runtime-server → PiProviderAdapter (legacy)
 
-packages/agent-protocol     — H3Code protocol + ProviderAdapter contract
-packages/agent-metadata — SQLite prefs, session index, message display cache
-apps/web                — marketing only
+packages/agent-protocol, agent-runtime*, agent-provider-pi, agent-metadata
+apps/cloud — Clerk, Convex, Daytona provision; agent harness not wired yet
 ```
 
-**Boundary today:** Providers own sessions, tools, and runtime behavior. H3Code owns the shell, local orchestration, and a **projection** of provider events into H3Code-shaped UI state—not canonical transcripts at the product level (desktop caches for display).
+Legacy stack remains until desktop migrates to harness + `UIMessage`. **New work** follows [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md).
 
-## What H3Code Is Becoming
+## What H3Code is becoming
 
 ```txt
 H3Code (product)
-├── Local workbench     — agent on disk: folder picker, local provider, optional Convex cache
-└── Cloud platform      — agent in sandbox: Clerk, GitHub repos, Daytona, Convex, PR workflow
+├── Workbench UI        — TanStack + useChat, transcript from UIMessage.parts
+├── Workspace layer     — local folder (desktop) | GitHub + Daytona (cloud)
+├── Agent host          — HarnessAgent + sandbox provider (thin; mostly AI SDK)
+└── Product persistence — agent-metadata (local) | Convex (cloud sessions + messages)
 ```
 
-Both legs speak **`agent-protocol`** at the UI boundary. Both can share **one TanStack Start client** with `runtime: desktop | cloud` (see [unified client doc](./h3code-unified-client.md)).
+```txt
+packages/
+  agent-provider-pi/   # HarnessAgent factories (Pi + sandbox wiring)
+  agent-metadata/      # Local SQLite metadata + optional UI snapshot cache
+  sandbox-daytona/     # (planned) cloud HarnessV1SandboxProvider
+```
 
-## Cursor Parity (Conceptual, Not a Clone)
+## Cursor parity (conceptual)
 
 | Surface | Cursor | H3Code (direction) |
 |--------|--------|---------------------|
-| Local agent | Harness + tools inside VS Code fork | Wrapped provider (PI MVP) via local Agent Server; optional future own harness |
-| Cloud agent | VM per agent, clone repo, PR | Daytona sandbox + Convex + Clerk git |
-| Clients | IDE, web, mobile PWA, Slack, GitHub, API | PWA on Vercel (MVP); Electron hosting same SPA (desktop runtime); API later |
-| Streaming to UI | Append-only store + clients | Convex reactive queries + coalesced writes from sandbox |
-| Harness ownership | Cursor-owned (Composer, Temporal loop) | **Provider-owned loop** (PI, etc.); H3Code owns shell + protocol + adapters |
+| Local agent | IDE-integrated harness | HarnessAgent(Pi) + just-bash on `repoPath` in Electron host |
+| Cloud agent | VM per session | HarnessAgent in Daytona sandbox + Convex |
+| Clients | IDE, web, mobile | PWA + Electron hosting same TanStack SPA |
+| Streaming | Append-only UI store | Convex queries + `UIMessage` stream |
+| Agent ownership | Cursor harness | **AI SDK harness adapters**; H3Code owns shell + workspace |
 
-**Differentiation:** Provider-neutral workbench—wrap mature agents (PI, later Claude Code / Codex) instead of betting everything on one in-house harness and model.
+**Differentiation:** Multi-harness workbench (Pi, Codex, Claude Code) via AI SDK adapters—not maintaining our own provider protocol.
 
-## Architectural Patterns
+## Architectural model
 
-### Pattern A — Wrap providers (MVP)
+### Agent layer — AI SDK Harness (target)
 
-- Agent loop runs **inside** the provider runtime (PI SDK locally; PI in Daytona for cloud).
-- H3Code **adapter** maps native stream → `agent-protocol` events → UI / Convex.
-- Convex stores **H3Code-shaped** messages for display and reload—not provider-native blobs.
+- `HarnessAgent` + `@ai-sdk/harness-pi` (MVP), later `@ai-sdk/harness-codex`, `@ai-sdk/harness-claude-code`.
+- Streams map to `UIMessage` via `toUIMessageStream`; no H3Code converter.
+- Session resume via harness `resumeFrom` blobs, keyed by H3Code `sessionId`.
 
-### Pattern B — Own harness (future)
+### Machine layer — unchanged
 
-- H3Code runs the loop (e.g. AI SDK in sandbox or durable orchestrator).
-- Providers become **model backends**; tools are H3-owned (`h3-tools`).
-- Closer to Cursor cloud; larger investment (eval, tool design, Temporal-class orchestration if runs are days-long).
+- **Desktop:** local repo on disk (via just-bash overlay).
+- **Cloud:** one Daytona sandbox per session; hibernate when idle; parallel sessions → separate sandboxes + work branches.
 
-**Decision:** Ship Pattern A for cloud and desktop; revisit Pattern B when wrapping limits quality or control.
+### Conversation layer — simplified
 
-### Three decoupled layers (learned from Cursor cloud)
+- **Cloud:** Convex stores `UIMessage`-compatible message rows + harness resume metadata.
+- **Desktop:** harness owns live state; optional SQLite snapshot in `agent-metadata` for fast reload only.
 
-1. **Agent loop** — provider (A) or harness (B).
-2. **Machine state** — local repo + process, or **one Daytona sandbox per cloud session** (hibernate/resume when idle). Parallel sessions on the same repo use separate sandboxes and work branches; GitHub handles PR merge conflicts.
-3. **Conversation state** — Convex for cloud; optional Convex + SQLite for desktop fast paint.
-
-**Continue vs reload:** Convex (and desktop cache) answer **fast UI reload**. **Continuing the agent** requires provider reconnect with stored `providerId` + `providerSessionRef`, or replay into provider on cold start—not automatic from Convex alone.
-
-## Phased Roadmap
+## Phased roadmap
 
 ### Phase 0 — Today
 
-- Electron desktop, local Agent Server, PI only.
-- SvelteKit UI; SQLite metadata cache.
+- Legacy desktop: WebSocket + `agent-runtime-server` + PI adapter.
+- Cloud: auth, repos, session create, Daytona provision.
 
-### Phase 1 — Cloud MVP
+### Phase 1 — Harness on cloud
 
-- New app: `apps/cloud` (TanStack Start on Vercel).
-- Convex + Clerk + Daytona; PI-only in sandbox; branch + PR.
-- PWA; usage billing (Stripe).
+- Wire `HarnessAgent` in sandbox worker; `useChat` on session page; Convex ingests `UIMessage` stream.
 - See [cloud PRD](./h3code-cloud-saas-prd.md).
 
-### Phase 2 — Unified client
+### Phase 2 — Unified client + desktop harness
 
-- TanStack UI extracted to shared packages; `runtime: cloud` on Vercel.
-- Electron loads **same SPA** with `runtime: desktop` (folder picker, local Agent Server).
-- Redesigned transcript / tool-call UI (React ecosystem).
-- See [unified client doc](./h3code-unified-client.md).
+- TanStack SPA for cloud and Electron; `runtime: desktop | cloud`.
+- Desktop: Electron agent host replaces WebSocket server; `agent-metadata` only for local product data.
 
-### Phase 3 — Provider expansion
+### Phase 3 — Multi-harness
 
-- Claude Code + Codex adapters (API-key auth) behind `agent-protocol`.
-- GitHub App optional upgrade from Clerk OAuth if webhooks / bot identity needed.
+- Codex + Claude Code via AI SDK harness adapters (not new H3Code provider packages).
 
 ### Phase 4 — Desktop cloud mode
 
-- Desktop app as **client** for cloud sessions (Cursor “Cloud” in dropdown)—same Convex backend, no second UI codebase.
+- Same Convex backend from Electron without a second UI codebase.
 
 ### Phase 5 — Optional depth
 
-- Own harness (Pattern B), Temporal or Convex Workflows for durable loops.
-- Teams/orgs, more git hosts, Monaco editor, native mobile if PWA limits bite.
-- Desktop evolution: in-process host, native tools—[desktop evolution doc](./h3code-desktop-evolution.md).
+- Teams, GitHub App, Monaco, durable workflows if harness sessions outgrow request/response.
 
-## Repository Layout (Target)
-
-```txt
-apps/
-  web/           # marketing (unchanged)
-  desktop/       # Electron shell → loads unified SPA (Phase 2+); until then current Svelte app
-  cloud/         # TanStack Start, Vercel, runtime=cloud
-packages/
-  agent-protocol/    # protocol (shared)
-  agent-runtime-server/  # local host (desktop); cloud uses Convex instead of WS to browser
-  agent-provider-pi/   # PI adapter (local + in-sandbox)
-  agent-metadata/# desktop prefs/cache (may shrink if Convex owns display cache)
-  # Phase 2+
-  app-shell/     # layout, transcript, composer (presentational)
-  runtime-cloud/ # Clerk, repos, Convex mutations
-  runtime-desktop/ # folder picker bridge, local agent IPC/WS
-```
-
-## Cross-Cutting Decisions
+## Cross-cutting decisions
 
 | Topic | Decision |
 |-------|----------|
-| Cloud app vs extend `apps/web` | **New `apps/cloud`**, not marketing site |
-| Frontend (cloud + unified) | **TanStack Start (React)** — new UI; not reusing Svelte AI Elements |
-| Backend (cloud) | **Convex** — DB, realtime, actions, cron |
-| Sandboxes | **Daytona** primary; Vercel Sandbox fallback behind orchestrator interface |
-| Auth (cloud) | **Clerk** (email/password + GitHub OAuth `repo` scope) |
-| Git (cloud MVP) | Clerk token for clone/push; **GitHub App deferred** |
-| Composio | **Not** for repo clone; wrong tool for `git clone` |
-| AI SDK | **Auxiliary only** (PR copy, summaries in Convex actions)—not agent loop or UI stream transport |
-| Multi-provider MVP | **PI only**; Claude Code + Codex Phase 3 |
-| Cross-device resume | **Cloud:** in-platform resume (laptop ↔ phone). **Cloud → desktop local:** optional / deferred for MVP |
-| Desktop shell | **Electron** for now; Tauri / zero-native (`apps/desktop-zero`) optional later |
+| Agent runtime | **AI SDK Harness** (`HarnessAgent`) — see [harness architecture](./h3code-ai-sdk-harness-architecture.md) |
+| UI message shape | **`UIMessage`** from `ai` — not `SessionReadModel` |
+| Legacy `agent-protocol` / `agent-runtime*` | **Retire** after migration; do not extend |
+| Cloud backend | **Convex** |
+| Sandboxes | **Daytona** primary; `@ai-sdk/sandbox-vercel` fallback |
+| Auth (cloud) | **Clerk** + GitHub OAuth `repo` scope |
+| Frontend | **TanStack Start** for cloud + unified desktop SPA |
+| Local metadata | **`@h3code/agent-metadata`** (SQLite) |
+| Desktop shell | **Electron** |
 
-## Success Criteria (Platform)
+## Success criteria
 
-- A developer can run an agent on a **local folder** (desktop) or a **GitHub repo in the cloud** (PWA) with the same interaction model: stream, steer, abort, diff, PR (cloud).
-- UI speaks only **H3Code protocol** shapes; swapping PI for another provider does not rewrite the shell.
-- One Convex project can serve cloud sessions and optional desktop display cache without conflating `execution: local | cloud` session types.
+- Same interaction model on desktop folder and cloud repo: stream, steer, abort, diff, PR (cloud).
+- UI renders **`UIMessage.parts`** only; swapping Pi → Codex is a harness config change, not a protocol rewrite.
+- Package surface shrinks to **agent-provider-pi + agent-metadata** (+ optional sandbox-daytona).
 
-## Open Questions
-
-- Confirm Clerk GitHub OAuth token retrieval with `repo` scope on chosen plan.
-- Managed inference markup vs provider ToS (BYO keys fallback).
-- Sandbox retention TTL vs cost vs resume fidelity.
-- When to commit to Pattern B harness vs staying provider-wrap forever.
-
-## Decision Log
+## Decision log
 
 | Decision | Rationale | Date |
 |----------|-----------|------|
-| Platform = local + cloud, not cloud-only | Matches Cursor and user workflow; desktop remains first-class | 2026-06 |
-| TanStack Start for new UI | Redesign tool-call/transcript; React AI ecosystem; Convex/Clerk maturity | 2026-06 |
-| Clerk for git MVP, not GitHub App | Faster integration; acts as user on git | 2026-06 |
-| PI-only cloud MVP | Prove sandbox + Convex loop before N adapters | 2026-06 |
-| Unified SPA with `runtime` | One UI; Electron + Vercel hosts | 2026-06 |
+| Platform = local + cloud | Matches developer workflow | 2026-06 |
+| TanStack + AI SDK UI types | One transcript model; React AI ecosystem | 2026-06 |
+| **AI SDK Harness for agent loop** | Replaces custom runtime/read-model; Vercel maintains adapters | 2026-06 |
+| Retire H3Code protocol projection | `UIMessageStream` is sufficient UI boundary | 2026-06 |
+| PI harness MVP | Aligns with existing PI usage; host-runtime fits desktop | 2026-06 |
+| Clerk + Daytona for cloud | Unchanged product choices | 2026-06 |

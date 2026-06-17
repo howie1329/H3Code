@@ -1,8 +1,8 @@
 # H3Code Runtime Server Product Brief
 
-## Summary
-
-H3Code has moved from a PI-specific desktop shell toward a local agent workbench. The desktop UI talks to a local runtime server over WebSocket. The runtime server composes workspace concerns, persistence, transport, and provider adapters through the H3Code `ProviderAdapter` interface.
+> **Superseded** by [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md). The WebSocket + `ProviderAdapter` + `SessionReadModel` direction is retired.
+>
+> Status: Historical. Local agent workbench brief prior to AI SDK Harness adoption. The desktop UI talks to a local runtime server over WebSocket. The runtime server composes workspace concerns, persistence, transport, and provider adapters through the H3Code `ProviderAdapter` interface.
 
 PI Agent remains the first provider and the current working runtime. Codex App Server is the next planned provider. Cursor can follow after the abstraction proves itself with PI and Codex.
 
