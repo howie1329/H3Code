@@ -19,10 +19,6 @@
 
         window.h3code = {
           platform,
-          getAgentServerUrl: async () => {
-            const result = await invoke("h3code.getAgentServerUrl");
-            return result?.url;
-          },
           getAgentStreamUrl: async () => {
             const result = await invoke("h3code.getAgentStreamUrl");
             return result?.url;

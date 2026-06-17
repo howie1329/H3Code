@@ -44,7 +44,7 @@
     !desktopState.canChangeSessionSettings || !desktopState.supportsCompactionSettings,
   );
   const activeModelLabel = $derived.by(() => {
-    const model = normalizeModel(desktopState.sessionReadModel.model);
+    const model = normalizeModel(desktopState.currentProviderModel);
     return model ? `${model.provider}/${getModelId(model)}` : "—";
   });
 
@@ -191,7 +191,7 @@
             <SegmentedControl
               ariaLabel="Steering delivery mode"
               options={deliveryOptions}
-              value={desktopState.sessionReadModel.queueSettings?.steeringMode}
+              value={"one-at-a-time"}
               disabled={queueControlsDisabled}
               onChange={(value) => desktopState.setSteeringMode(value as ProviderQueueMode)}
             />
@@ -206,7 +206,7 @@
             <SegmentedControl
               ariaLabel="Follow-up delivery mode"
               options={deliveryOptions}
-              value={desktopState.sessionReadModel.queueSettings?.followUpMode}
+              value={"one-at-a-time"}
               disabled={queueControlsDisabled}
               onChange={(value) => desktopState.setFollowUpMode(value as ProviderQueueMode)}
             />
@@ -221,7 +221,7 @@
           {#snippet control()}
             <Switch
               id="auto-compaction"
-              checked={desktopState.sessionReadModel.autoCompactionEnabled === true}
+              checked={false}
               disabled={compactionControlsDisabled}
               onCheckedChange={(checked) => desktopState.setAutoCompaction(checked)}
             />
@@ -241,10 +241,10 @@
               <dt class="text-muted-foreground">Repository</dt>
               <dd class="min-w-0 truncate font-medium">{desktopState.repoName}</dd>
             </div>
-            {#if desktopState.sessionReadModel.model?.name}
+            {#if desktopState.currentProviderModel?.name}
               <div class="flex flex-wrap items-center justify-between gap-4">
                 <dt class="text-muted-foreground">Model</dt>
-                <dd class="font-medium capitalize">{desktopState.sessionReadModel.model.name}</dd>
+                <dd class="font-medium capitalize">{desktopState.currentProviderModel.name}</dd>
               </div>
             {/if}
           </dl>

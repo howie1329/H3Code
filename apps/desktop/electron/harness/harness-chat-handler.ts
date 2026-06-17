@@ -2,13 +2,17 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { pipeUIMessageStreamToResponse, toUIMessageStream, type UIMessage } from "ai";
 
+import { persistHarnessSessionTranscript } from "./harness-session-persistence.js";
 import type { HarnessSessionManager } from "./harness-session-manager.js";
+import { normalizeThinkingLevel } from "./harness-session-manager.js";
 
 export type ChatRequestBody = {
   id?: string;
   sessionId?: string;
   repoPath?: string;
   messages?: UIMessage[];
+  model?: string;
+  thinkingLevel?: string;
 };
 
 export type AbortRequestBody = {
@@ -58,6 +62,8 @@ export async function handleHarnessChatRequest(
   const sessionId = resolveSessionId(body);
   const repoPath = body.repoPath?.trim();
   const messages = body.messages;
+  const model = body.model?.trim() || undefined;
+  const thinkingLevel = normalizeThinkingLevel(body.thinkingLevel);
 
   if (!sessionId) {
     writeJson(res, 400, { error: "Missing session id." });
@@ -89,6 +95,8 @@ export async function handleHarnessChatRequest(
       sessionId,
       repoPath,
       messages,
+      model,
+      thinkingLevel,
       abortSignal: abortController.signal,
     });
 
@@ -108,6 +116,17 @@ export async function handleHarnessChatRequest(
     const uiStream = toUIMessageStream({
       stream: result.stream,
       originalMessages: messages,
+      onFinish: ({ messages: finishedMessages, isAborted }) => {
+        if (isAborted) {
+          return;
+        }
+
+        try {
+          persistHarnessSessionTranscript(sessionId, finishedMessages);
+        } catch (error) {
+          console.warn(`[harness] failed to persist transcript for ${sessionId}`, error);
+        }
+      },
     });
 
     pipeUIMessageStreamToResponse({

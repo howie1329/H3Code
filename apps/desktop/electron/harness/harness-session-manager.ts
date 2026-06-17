@@ -4,8 +4,13 @@ import {
   createDesktopPiAgent,
   resolveDesktopHarnessConfig,
   type DesktopAuthConfig,
+  type DesktopHarnessConfig,
 } from "@h3code/agent-provider-pi/harness";
-import { registerH3CodeSession } from "@h3code/agent-metadata";
+import {
+  getHarnessResumeBlob,
+  registerH3CodeSession,
+  saveHarnessResumeBlob,
+} from "@h3code/agent-metadata";
 import type { UIMessage } from "ai";
 
 type ActiveStream = {
@@ -16,11 +21,18 @@ export type HarnessStreamChatInput = {
   sessionId: string;
   repoPath: string;
   messages: UIMessage[];
+  model?: string;
+  thinkingLevel?: DesktopHarnessConfig["thinkingLevel"];
   abortSignal?: AbortSignal;
 };
 
 export type HarnessSessionManagerOptions = {
   authConfig?: DesktopAuthConfig;
+};
+
+type ResolvedAgentConfig = {
+  model: string;
+  thinkingLevel: DesktopHarnessConfig["thinkingLevel"];
 };
 
 function extractLastUserPrompt(messages: UIMessage[]): string {
@@ -44,6 +56,46 @@ function extractLastUserPrompt(messages: UIMessage[]): string {
   throw new Error("No user message found in chat request.");
 }
 
+function agentCacheKey(repoPath: string, config: ResolvedAgentConfig): string {
+  return `${repoPath}\0${config.model}\0${config.thinkingLevel}`;
+}
+
+function resolveAgentConfig(
+  authConfig: DesktopAuthConfig | undefined,
+  overrides?: Pick<HarnessStreamChatInput, "model" | "thinkingLevel">,
+): ResolvedAgentConfig {
+  const harnessConfig = resolveDesktopHarnessConfig({
+    ...authConfig,
+    model: overrides?.model,
+    thinkingLevel: overrides?.thinkingLevel,
+  });
+
+  return {
+    model: harnessConfig.model,
+    thinkingLevel: harnessConfig.thinkingLevel,
+  };
+}
+
+const THINKING_LEVELS = new Set<DesktopHarnessConfig["thinkingLevel"]>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
+
+export function normalizeThinkingLevel(
+  value: string | undefined,
+): DesktopHarnessConfig["thinkingLevel"] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase() as DesktopHarnessConfig["thinkingLevel"];
+  return THINKING_LEVELS.has(normalized) ? normalized : undefined;
+}
+
 export class HarnessSessionManager {
   readonly #authConfig?: DesktopAuthConfig;
   readonly #agents = new Map<string, HarnessAgent>();
@@ -55,33 +107,57 @@ export class HarnessSessionManager {
     this.#authConfig = options.authConfig;
   }
 
-  async ensureAgent(repoPath: string): Promise<HarnessAgent> {
-    const resolvedRepoPath = repoPath;
-    const existing = this.#agents.get(resolvedRepoPath);
+  async ensureAgent(repoPath: string, overrides?: Pick<HarnessStreamChatInput, "model" | "thinkingLevel">): Promise<HarnessAgent> {
+    const config = resolveAgentConfig(this.#authConfig, overrides);
+    const cacheKey = agentCacheKey(repoPath, config);
+    const existing = this.#agents.get(cacheKey);
     if (existing) {
       return existing;
     }
 
-    const harnessConfig = resolveDesktopHarnessConfig(this.#authConfig);
+    const harnessConfig = resolveDesktopHarnessConfig({
+      ...this.#authConfig,
+      model: config.model,
+      thinkingLevel: config.thinkingLevel,
+    });
+
     const agent = await createDesktopPiAgent({
-      repoPath: resolvedRepoPath,
+      repoPath,
       auth: harnessConfig.auth,
       model: harnessConfig.model,
       thinkingLevel: harnessConfig.thinkingLevel,
     });
 
-    this.#agents.set(resolvedRepoPath, agent);
+    this.#agents.set(cacheKey, agent);
     return agent;
   }
 
-  async getOrCreateSession(sessionId: string, repoPath: string): Promise<HarnessAgentSession> {
+  async getOrCreateSession(
+    sessionId: string,
+    repoPath: string,
+    overrides?: Pick<HarnessStreamChatInput, "model" | "thinkingLevel">,
+  ): Promise<HarnessAgentSession> {
     const existing = this.#sessions.get(sessionId);
     if (existing) {
       return existing;
     }
 
-    const agent = await this.ensureAgent(repoPath);
-    const session = await agent.createSession({ sessionId });
+    const agent = await this.ensureAgent(repoPath, overrides);
+    const resumeFrom = getHarnessResumeBlob(sessionId);
+
+    let session: HarnessAgentSession;
+
+    if (resumeFrom !== undefined) {
+      try {
+        session = await agent.createSession({ sessionId, resumeFrom: resumeFrom as never });
+      } catch (error) {
+        console.warn(`[harness] resume failed for ${sessionId}, starting fresh`, error);
+        session = await agent.createSession({ sessionId });
+      }
+    } else {
+      session = await agent.createSession({ sessionId });
+    }
+
     this.#sessions.set(sessionId, session);
     this.#sessionRepos.set(sessionId, repoPath);
 
@@ -102,8 +178,9 @@ export class HarnessSessionManager {
     result: Awaited<ReturnType<HarnessAgent["stream"]>>;
     finalize: () => void;
   }> {
-    const session = await this.getOrCreateSession(input.sessionId, input.repoPath);
-    const agent = await this.ensureAgent(input.repoPath);
+    const overrides = { model: input.model, thinkingLevel: input.thinkingLevel };
+    const session = await this.getOrCreateSession(input.sessionId, input.repoPath, overrides);
+    const agent = await this.ensureAgent(input.repoPath, overrides);
     const prompt = extractLastUserPrompt(input.messages);
 
     const abortController = new AbortController();
@@ -157,6 +234,7 @@ export class HarnessSessionManager {
 
     try {
       const resumeState = await session.stop();
+      saveHarnessResumeBlob(sessionId, resumeState);
       console.info(
         `[harness] stopped session ${sessionId}; resume blob bytes=${JSON.stringify(resumeState).length}`,
       );

@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { HugeiconsIcon } from "@hugeicons/svelte";
-
-  import { getActivityIcon } from "$lib/components/desktop/activity-icons.js";
   import { desktopState } from "$lib/desktop-state.svelte";
   import { getModelLabel, mergeModelWithCatalog, normalizeModel } from "$lib/provider-model.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
@@ -9,12 +6,12 @@
   import { Separator } from "$lib/components/ui/separator/index.js";
 
   const sessionStatus = $derived(
-    desktopState.isAgentRunning ? "Running" : desktopState.sessionReadModel.status === "error" ? "Error" : "Idle",
+    desktopState.isAgentRunning ? "Running" : desktopState.harnessStatus === "error" ? "Error" : "Idle",
   );
   const sessionId = $derived(desktopState.activeSessionId);
   const currentModel = $derived(
-    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
-      normalizeModel(desktopState.sessionReadModel.model),
+    mergeModelWithCatalog(desktopState.currentProviderModel, desktopState.availableModels) ??
+      normalizeModel(desktopState.currentProviderModel),
   );
 
   function shortId(value: string | undefined) {
@@ -33,13 +30,18 @@
   }
 
   const userMessages = $derived(
-    desktopState.sessionReadModel.messages.filter((message) => message.role === "user").length,
+    desktopState.harnessMessages.filter((message) => message.role === "user").length,
   );
   const assistantMessages = $derived(
-    desktopState.sessionReadModel.messages.filter((message) => message.role === "assistant").length,
+    desktopState.harnessMessages.filter((message) => message.role === "assistant").length,
   );
   const toolActivities = $derived(
-    desktopState.sessionReadModel.activities.filter((activity) => activity.kind === "tool").length,
+    desktopState.harnessMessages.reduce((count, message) => {
+      const toolParts = message.parts.filter(
+        (part) => part.type === "dynamic-tool" || part.type.startsWith("tool-"),
+      );
+      return count + toolParts.length;
+    }, 0),
   );
 </script>
 
@@ -92,7 +94,7 @@
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">Messages</span>
-          <span class="font-medium">{formatCount(desktopState.sessionReadModel.messages.length)}</span>
+          <span class="font-medium">{formatCount(desktopState.harnessMessages.length)}</span>
         </div>
         <div class="flex items-center justify-between gap-3">
           <span class="text-muted-foreground">User / assistant</span>
@@ -127,23 +129,7 @@
 
     <section class="flex flex-col gap-2">
       <h3 class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recent activity</h3>
-      {#if desktopState.sessionReadModel.activities.length > 0}
-        <ul class="flex flex-col gap-1.5">
-          {#each desktopState.sessionReadModel.activities.slice(-8).reverse() as activity (activity.id)}
-            <li class="flex items-start gap-2 text-xs">
-              <HugeiconsIcon icon={getActivityIcon(activity.kind)} class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-              <span class="min-w-0">
-                <span class="block truncate font-medium">{activity.title ?? activity.kind}</span>
-                {#if activity.content}
-                  <span class="block truncate text-muted-foreground">{activity.content}</span>
-                {/if}
-              </span>
-            </li>
-          {/each}
-        </ul>
-      {:else}
-        <p class="text-[11px] text-muted-foreground">No activity yet.</p>
-      {/if}
+      <p class="text-[11px] text-muted-foreground">No activity yet.</p>
     </section>
   </div>
 </aside>

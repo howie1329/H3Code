@@ -245,7 +245,7 @@ Verified on branch: smoke creates and destroys a harness session against the H3C
 
 ## Phase 1 — Desktop harness host (Electron main)
 
-Branch: `experiment/desktop-harness-pi-v7`. Renderer still uses legacy WebSocket until Phase 2.
+Branch: `experiment/desktop-harness-pi-v7`. Renderer migrated to harness HTTP in Phase 2 (see below).
 
 ### What shipped
 
@@ -255,7 +255,7 @@ Branch: `experiment/desktop-harness-pi-v7`. Renderer still uses legacy WebSocket
   - `POST /api/chat` — `useChat`-compatible body (`id`, `repoPath`, `messages`); SSE via `pipeUIMessageStreamToResponse`
   - `POST /api/chat/abort` — abort in-flight stream for `sessionId`
 - IPC: `getAgentStreamUrl()` → `http://127.0.0.1:{port}/api/chat` (preload + `window.h3code`).
-- Legacy WS runtime remains default; disable with `H3_USE_LEGACY_AGENT=0`.
+- Legacy WS runtime is opt-in with `H3_USE_LEGACY_AGENT=1` (harness host is default).
 - Factory uses `ReadWriteFs` so Pi `write`/`edit` persist to the real repo.
 - Production auth: `resolveDesktopHarnessConfig()` in `@h3code/agent-provider-pi/harness` (gateway or direct keys).
 
@@ -278,6 +278,83 @@ npm run test:harness-chat-smoke --workspace @h3code/desktop   # needs API key fo
 ```
 
 Set `AI_GATEWAY_API_KEY` or `OPENAI_API_KEY` for streaming smoke. Health-only smoke runs without credentials.
+
+## Phase 2 — Renderer on harness HTTP (`useChat` + `UIMessage`)
+
+Branch: `experiment/desktop-harness-pi-v7`. Renderer uses `@ai-sdk/svelte` `Chat` + `DefaultChatTransport` against the Phase 1 HTTP host. Legacy WebSocket is off the hot path (opt-in via `H3_USE_LEGACY_AGENT=1`).
+
+### What shipped
+
+- `createHarnessChat()` — `Chat` wired to `getAgentStreamUrl()` with `repoPath` + `sessionId` in the POST body.
+- `desktop-state.svelte.ts` — connect, send, abort, session list, and delete go through harness chat + `agent-metadata` index (no `RuntimeClient` on the hot path).
+- `ui-message-transcript.ts` — maps `UIMessage.parts` into the existing transcript block renderer.
+- Session list from `listIndexedSessionsForRepo()`; delete via `removeIndexedSession` IPC.
+- Landing model picker uses a static gateway model catalog until per-request model wiring lands.
+- Legacy-only features stubbed: slash commands, queue/compaction settings, session diff snapshot, provider UI approvals.
+
+### Key paths
+
+| Path | Role |
+| --- | --- |
+| `apps/desktop/src/lib/harness-chat.ts` | `Chat` factory + abort helper |
+| `apps/desktop/src/lib/harness-sessions.ts` | Indexed session list helpers |
+| `apps/desktop/src/lib/ui-message-transcript.ts` | `UIMessage` → transcript VM |
+| `apps/desktop/src/lib/desktop-state.svelte.ts` | Harness connect/send/abort state |
+| `apps/desktop/src/lib/components/desktop/WorkspaceTranscript.svelte` | Renders harness transcript |
+
+### Deferred to Phase 3
+
+- Reload prior `UIMessage` history when switching sessions — **done in Phase 3**.
+- Pass landing `pendingModel` / `thinkingLevel` through the chat POST body — **done in Phase 3**.
+
+### Still deferred
+
+- Pi subscription auth (`~/.pi/agent/auth.json`) and provider picker.
+
+### Validation
+
+```bash
+npm run check --workspace @h3code/desktop
+npm run build:electron --workspace @h3code/desktop
+```
+
+Manual: start desktop, pick a repo, send a prompt — transcript should stream over `POST /api/chat`.
+
+## Phase 3 — Session durability and legacy teardown
+
+Branch: `experiment/desktop-harness-pi-v7`. Desktop sessions survive switch and app restart for transcript display; harness resume blobs are stored for future sandbox resume.
+
+### What shipped
+
+- `@h3code/agent-metadata` tables `session_ui_messages` and `harness_resume_blobs` (FK cascade on session delete).
+- IPC: `getSessionUiMessages` / `saveSessionUiMessages` for renderer hydration and mirror saves.
+- Harness host persists transcript + `repo_sessions` metadata after each completed stream (`onFinish` on `toUIMessageStream`).
+- `HarnessSessionManager` loads resume blobs on cold `createSession`, saves on `closeSession` / app quit; agent cache keyed by `(repoPath, model, thinkingLevel)`.
+- Chat POST body accepts `model` and `thinkingLevel`; renderer hydrates `Chat` with cached `messages` on connect/switch.
+- Legacy WebSocket agent server removed from desktop (`agent-server-lifecycle`, `runtime-client`, `H3_USE_LEGACY_AGENT`).
+
+### Key paths
+
+| Path | Role |
+| --- | --- |
+| `packages/agent-metadata/src/session-cache.ts` | SQLite cache + resume blob CRUD |
+| `apps/desktop/electron/harness/harness-session-persistence.ts` | Transcript + index metadata after turns |
+| `apps/desktop/electron/harness/harness-session-manager.ts` | Resume load/save, per-config agents |
+| `apps/desktop/src/lib/harness-chat.ts` | Cached messages + model/thinking in transport body |
+
+### Known limitation
+
+`just-bash-sandbox` may still reject `createSession({ resumeFrom })` after app restart. Transcript reload from SQLite works; agent continuation after cold start is best-effort until sandbox resume lands.
+
+### Validation
+
+```bash
+npm run test --workspace @h3code/agent-metadata
+npm run check --workspace @h3code/desktop
+npm run build:electron --workspace @h3code/desktop
+```
+
+Manual: two sessions, multi-turn each, switch between them and restart app — transcripts should reload from cache.
 
 ## Related docs (updated for this model)
 

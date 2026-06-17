@@ -46,14 +46,14 @@
   }: Props = $props();
 
   const currentModel = $derived(
-    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
-      normalizeModel(desktopState.sessionReadModel.model),
+    mergeModelWithCatalog(desktopState.currentProviderModel, desktopState.availableModels) ??
+      normalizeModel(desktopState.currentProviderModel),
   );
   const groupedModels = $derived(groupModelsByProvider(desktopState.availableModels));
   const flatModels = $derived(desktopState.availableModels);
   const catalog = $derived(desktopState.availableModels);
   const supportsThinking = $derived(modelSupportsThinking(currentModel, catalog));
-  const currentThinkingLevel = $derived("off" as const);
+  const currentThinkingLevel = $derived(normalizeThinkingLevel(desktopState.currentThinkingLevel));
   const thinkingOffset = $derived(flatModels.length);
 
   function modelFlatIndex(model: ProviderModel) {

@@ -12,6 +12,13 @@ import {
   type RecentRepoPreference,
 } from "./preferences-schema.js";
 import {
+  getHarnessResumeBlob as getHarnessResumeBlobRow,
+  getSessionUiMessages as getSessionUiMessagesRow,
+  saveHarnessResumeBlob as saveHarnessResumeBlobRow,
+  saveSessionUiMessages as saveSessionUiMessagesRow,
+  type SessionUiMessage,
+} from "./session-cache.js";
+import {
   getRegisteredSession as getRegisteredSessionRow,
   isRegisteredSession as isRegisteredSessionRow,
   registerH3CodeSession as registerH3CodeSessionRow,
@@ -29,7 +36,7 @@ export type DesktopSettings = {
   autoConnectOnLaunch: boolean;
 };
 
-export type { IndexedSessionPreference, RecentRepoPreference, RegisterH3CodeSessionInput, RegisteredSessionMetadataPatch };
+export type { IndexedSessionPreference, RecentRepoPreference, RegisterH3CodeSessionInput, RegisteredSessionMetadataPatch, SessionUiMessage };
 
 export type SessionWorktreePreference = {
   sessionId: string;
@@ -132,6 +139,22 @@ export function touchRegisteredSession(h3codeSessionId: string) {
 
 export function updateRegisteredSessionMetadata(h3codeSessionId: string, patch: RegisteredSessionMetadataPatch) {
   updateRegisteredSessionMetadataRow(getDatabase(), h3codeSessionId, patch);
+}
+
+export function getSessionUiMessages(h3codeSessionId: string) {
+  return getSessionUiMessagesRow(getDatabase(), h3codeSessionId);
+}
+
+export function saveSessionUiMessages(h3codeSessionId: string, messages: SessionUiMessage[]) {
+  saveSessionUiMessagesRow(getDatabase(), h3codeSessionId, messages);
+}
+
+export function getHarnessResumeBlob(h3codeSessionId: string) {
+  return getHarnessResumeBlobRow(getDatabase(), h3codeSessionId);
+}
+
+export function saveHarnessResumeBlob(h3codeSessionId: string, blob: unknown) {
+  saveHarnessResumeBlobRow(getDatabase(), h3codeSessionId, blob);
 }
 
 export function removeRegisteredSession(h3codeSessionId: string) {

@@ -5,33 +5,34 @@ import { extractSessionMetadata } from "$lib/components/desktop/transcript-norma
 import type { ConnectionStatus } from "$lib/connection-status.js";
 import { getDesktopShellApi } from "$lib/desktop-shell-api.js";
 import {
-  pendingInteractionToUiRequest,
-  type ActiveProviderUiRequest,
-  type ProviderUiResponse,
-} from "$lib/interaction-ui.js";
+  abortHarnessSession,
+  createHarnessChat,
+  resolveHarnessStreamUrl,
+} from "$lib/harness-chat.js";
+import { createLiveSessionSummary, listIndexedSessionsForRepo } from "$lib/harness-sessions.js";
+import type { ActiveProviderUiRequest, ProviderUiResponse } from "$lib/interaction-ui.js";
+import {
+  buildTranscriptViewModelFromUiMessages,
+} from "$lib/ui-message-transcript.js";
 import {
   clearAllIndexedData,
   getPreferences,
+  getSessionUiMessages,
   removeIndexedRepo,
+  removeIndexedSession,
   updateDesktopSettings,
   type DesktopPreferences,
   type DesktopSettings,
   type IndexedSessionPreference,
 } from "$lib/metadata-client.js";
-import { getRuntimeClient } from "$lib/runtime-client.js";
 import { getSessionDisplayTitle } from "$lib/session-display-title.js";
-import { applySessionEvent, createEmptySessionReadModel } from "$lib/session-state.js";
 import { indexedSessionToSummary } from "$lib/session-summary.js";
-import {
-  composerPhase,
-  isAgentRunning,
-  statusStripLines,
-  streamingMessage,
-  transcriptMessages,
-} from "$lib/transcript-adapter.js";
 import { findProviderModel } from "$lib/provider-model.js";
 import type { ProviderCommand, ProviderModel, ProviderQueueMode, SessionDiffState, SessionNotification } from "$lib/desktop-types.js";
-import type { SessionReadModel, SessionSummary, UiSessionEvent } from "@h3code/agent-protocol";
+import { DESKTOP_GATEWAY_MODELS } from "@h3code/agent-provider-pi/harness";
+import type { Chat } from "@ai-sdk/svelte";
+import type { SessionSummary } from "@h3code/agent-protocol";
+import type { UIMessage } from "ai";
 
 export type WorkspaceInspector = "diff" | "context";
 
@@ -60,12 +61,23 @@ const defaultDesktopSettings: DesktopSettings = {
   autoConnectOnLaunch: false,
 };
 
-export const LANDING_ADD_REPO_VALUE = "__add_repository__";
+const GATEWAY_MODEL_OPTIONS: ProviderModel[] = DESKTOP_GATEWAY_MODELS.map((id) => {
+  const slashIndex = id.indexOf("/");
+  const provider = slashIndex === -1 ? "openai" : id.slice(0, slashIndex);
+  const shortName = slashIndex === -1 ? id : id.slice(slashIndex + 1);
+
+  return {
+    id,
+    modelId: id,
+    provider,
+    name: shortName,
+  };
+});
 
 class DesktopState {
   platform = typeof window === "undefined" ? "desktop" : (window.h3code?.platform ?? "desktop");
   supportsSlashCommands = false;
-  supportsModelPicker = false;
+  supportsModelPicker = true;
   supportsQueueSettings = false;
   supportsCompactionSettings = false;
   promptValue = $state("");
@@ -77,7 +89,7 @@ class DesktopState {
   repos = $state<SidebarRepo[]>([]);
   sessions = $state<SessionSummary[]>([]);
   selectedSessionId = $state<string | undefined>();
-  sessionReadModel = $state<SessionReadModel>(createEmptySessionReadModel());
+  harnessChat = $state<Chat<UIMessage> | undefined>();
   sessionDiff = $state<SessionDiffState>({ files: [], changedFiles: 0, patch: "" });
   sessionDiffLoading = $state(false);
   sessionDiffError = $state<string | undefined>();
@@ -100,43 +112,48 @@ class DesktopState {
   providerUiRequest = $state<ActiveProviderUiRequest | undefined>();
   desktopSettings = $state<DesktopSettings>(defaultDesktopSettings);
 
-  sessionUnsubscribe: (() => void) | undefined;
-
   selectedSession = $derived(this.sessions.find((session) => session.id === this.selectedSessionId));
   canUseSession = $derived(this.connectionStatus.state === "connected" && Boolean(this.activeSessionId));
   isSessionReconciled = $derived(Boolean(this.activeSessionId) && !this.isSwitchingSession);
+  harnessMessages = $derived(this.harnessChat?.messages ?? []);
+  harnessStatus = $derived(this.harnessChat?.status ?? "ready");
   canSubmit = $derived(
     this.canUseSession &&
       this.isSessionReconciled &&
       !this.isBusy &&
       !this.isSendingPrompt &&
+      this.harnessStatus === "ready" &&
       this.promptValue.trim().length > 0,
   );
   hasActiveWorkspaceSession = $derived(Boolean(this.activeSessionId));
   canSubmitLanding = $derived(
     Boolean(this.landingRepoPath && this.landingPromptValue.trim()) &&
       !this.isBusy &&
-      !this.isSendingPrompt,
+      !this.isSendingPrompt &&
+      this.harnessStatus === "ready",
   );
   landingRepoName = $derived(
     this.landingRepoPath
       ? (this.repos.find((repo) => repo.path === this.landingRepoPath)?.name ?? basename(this.landingRepoPath))
       : undefined,
   );
-  isAgentRunning = $derived(isAgentRunning(this.sessionReadModel));
+  isAgentRunning = $derived(this.harnessStatus === "streaming" || this.harnessStatus === "submitted");
   canChangeSessionSettings = false;
-  transcriptSourceMessages = $derived(transcriptMessages(this.sessionReadModel));
-  composerPhaseLine = $derived(composerPhase(this.sessionReadModel));
-  statusStripLines = $derived(statusStripLines(this.sessionReadModel));
+  transcriptViewModel = $derived(buildTranscriptViewModelFromUiMessages(this.harnessMessages));
+  composerPhaseLine = $derived(
+    this.isAgentRunning ? { text: "Thinking…", tone: "working" as const } : null,
+  );
+  statusStripLines = $derived<string[]>([]);
   sessionNotification = $derived<SessionNotification | null>(null);
-  sessionMetadata = $derived(extractSessionMetadata(this.transcriptSourceMessages));
+  sessionMetadata = $derived(extractSessionMetadata(this.harnessMessages));
   sessionTitle = $derived(
-    this.sessionReadModel.title ??
-      (this.selectedSession ? getSessionDisplayTitle(this.selectedSession) : "No session"),
+    this.selectedSession ? getSessionDisplayTitle(this.selectedSession) : "No session",
   );
   repoName = $derived(this.repoPath ? basename(this.repoPath) : "No repo selected");
+  currentProviderModel = $derived(this.pendingModel ?? this.availableModels[0]);
+  currentThinkingLevel = $derived(this.pendingThinkingLevel ?? "off");
   selectedRepo = $derived(this.repoPath ? this.repos.find((repo) => repo.path === this.repoPath) : undefined);
-  hasSessionDiff = $derived((this.sessionReadModel.diffSummary?.changedFiles ?? 0) > 0);
+  hasSessionDiff = $derived(false);
   activeInspector = $derived.by((): WorkspaceInspector | null => {
     if (this.sessionDiffPanelOpen && this.hasSessionDiff) {
       return "diff";
@@ -174,25 +191,7 @@ class DesktopState {
   }
 
   initializeListeners() {
-    const runtime = getRuntimeClient();
-
-    runtime.setListeners({
-      onConnectionStatus: (status) => {
-        if (!status.connected) {
-          this.connectionStatus = {
-            state: "disconnected",
-            message: status.message,
-          };
-        }
-      },
-      onError: (error) => {
-        this.errorMessage = error.message;
-      },
-    });
-
-    return () => {
-      runtime.setListeners({});
-    };
+    return () => {};
   }
 
   async initializePreferences() {
@@ -245,7 +244,8 @@ class DesktopState {
     });
 
     try {
-      const sessions = await getRuntimeClient().listSessions({ repoPath: nextRepoPath, markRecent });
+      const preferences = await getPreferences();
+      const sessions = listIndexedSessionsForRepo(preferences, nextRepoPath);
       this.repos = updateRepo(this.repos, nextRepoPath, {
         sessions,
         sessionsLoaded: true,
@@ -256,6 +256,8 @@ class DesktopState {
       if (nextRepoPath === this.repoPath) {
         this.sessions = sessions;
       }
+
+      void markRecent;
     } catch (error) {
       this.repos = updateRepo(this.repos, nextRepoPath, {
         sessionsLoading: false,
@@ -272,24 +274,22 @@ class DesktopState {
 
   async connectRepoInternal(
     nextRepoPath: string,
-    options: { navigateToWorkspace?: boolean } = {},
+    options: { navigateToWorkspace?: boolean; sessionId?: string } = {},
   ) {
-    const { navigateToWorkspace = true } = options;
+    const { navigateToWorkspace = true, sessionId = crypto.randomUUID() } = options;
     this.errorMessage = undefined;
     this.connectionStatus = { state: "starting", repoPath: nextRepoPath };
 
     try {
-      const runtime = getRuntimeClient();
-      const createOptions = this.pendingModel || this.pendingThinkingLevel
-        ? { model: this.pendingModel, thinkingLevel: this.pendingThinkingLevel }
-        : undefined;
-      const session = await runtime.createSession(nextRepoPath, createOptions);
+      const chat = await this.createHarnessChatForSession(sessionId, nextRepoPath);
       this.pendingModel = undefined;
       this.pendingThinkingLevel = undefined;
-      await this.attachSession(session, nextRepoPath);
+      await this.attachHarnessSession(sessionId, nextRepoPath, chat);
 
-      const listedSessions = await getRuntimeClient().listSessions({ repoPath: nextRepoPath, markRecent: true });
-      const sessions = this.mergeLiveSession(listedSessions, session, nextRepoPath);
+      const preferences = await getPreferences();
+      const listedSessions = listIndexedSessionsForRepo(preferences, nextRepoPath);
+      const liveSummary = createLiveSessionSummary({ sessionId, repoPath: nextRepoPath });
+      const sessions = this.mergeLiveSessionSummary(listedSessions, liveSummary);
 
       this.repos = upsertRepo(this.repos, nextRepoPath, {
         expanded: true,
@@ -309,45 +309,50 @@ class DesktopState {
     }
   }
 
-  async attachSession(session: SessionReadModel, nextRepoPath: string) {
-    this.sessionUnsubscribe?.();
-    this.activeSessionId = session.id;
-    this.repoPath = nextRepoPath;
-    this.worktreePath = nextRepoPath;
-    this.sessionReadModel = session;
-    this.selectedSessionId = session.id;
-    this.connectionStatus = {
-      state: "connected",
-      sessionId: session.id,
-      repoPath: nextRepoPath,
-    };
-    this.supportsSlashCommands = true;
-    this.supportsModelPicker = true;
-    this.supportsQueueSettings = true;
-    this.supportsCompactionSettings = true;
-    this.canChangeSessionSettings = true;
-    this.resetSlashCommands();
-    this.syncPendingInteraction();
-    this.applyDiffSummary(session.diffSummary);
+  async createHarnessChatForSession(sessionId: string, repoPath: string): Promise<Chat<UIMessage>> {
+    const api = await resolveHarnessStreamUrl();
+    const cached = await getSessionUiMessages(sessionId);
+    const model = this.pendingModel?.modelId ?? this.pendingModel?.id;
+    const thinkingLevel = this.pendingThinkingLevel;
 
-    this.sessions = this.mergeLiveSession(this.sessions, session, nextRepoPath);
-    this.repos = updateRepo(this.repos, nextRepoPath, { sessions: this.sessions });
-
-    this.sessionUnsubscribe = await getRuntimeClient().subscribeSession(session.id, (event) => {
-      this.handleUiSessionEvent(event);
+    return createHarnessChat({
+      sessionId,
+      repoPath,
+      api,
+      messages: (cached ?? []) as unknown as UIMessage[],
+      model,
+      thinkingLevel,
     });
   }
 
+  async attachHarnessSession(sessionId: string, nextRepoPath: string, chat: Chat<UIMessage>) {
+    this.harnessChat = chat;
+    this.activeSessionId = sessionId;
+    this.repoPath = nextRepoPath;
+    this.worktreePath = nextRepoPath;
+    this.selectedSessionId = sessionId;
+    this.connectionStatus = {
+      state: "connected",
+      sessionId,
+      repoPath: nextRepoPath,
+    };
+    this.resetSlashCommands();
+    this.resetSessionDiff();
+    this.providerUiRequest = undefined;
+
+    const liveSummary = createLiveSessionSummary({ sessionId, repoPath: nextRepoPath });
+    this.sessions = this.mergeLiveSessionSummary(this.sessions, liveSummary);
+    this.repos = updateRepo(this.repos, nextRepoPath, { sessions: this.sessions });
+  }
+
   clearWorkspaceSessionState() {
-    this.sessionUnsubscribe?.();
-    this.sessionUnsubscribe = undefined;
+    this.harnessChat = undefined;
     this.repoPath = undefined;
     this.activeSessionId = undefined;
     this.worktreePath = undefined;
     this.sessions = [];
     this.selectedSessionId = undefined;
     this.isSwitchingSession = false;
-    this.sessionReadModel = createEmptySessionReadModel();
     this.connectionStatus = { state: "disconnected" };
     this.resetSlashCommands();
     this.resetSessionDiff();
@@ -384,11 +389,14 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const session = await getRuntimeClient().switchSession(repoPath, sessionId);
+      const chat = await this.createHarnessChatForSession(sessionId, repoPath);
       this.resetSessionDiff();
-      await this.attachSession(session, repoPath);
-      const sessions = await getRuntimeClient().listSessions({ repoPath, markRecent: true });
-      this.sessions = this.mergeLiveSession(sessions, session, repoPath);
+      await this.attachHarnessSession(sessionId, repoPath, chat);
+
+      const preferences = await getPreferences();
+      const sessions = listIndexedSessionsForRepo(preferences, repoPath);
+      const liveSummary = createLiveSessionSummary({ sessionId, repoPath });
+      this.sessions = this.mergeLiveSessionSummary(sessions, liveSummary);
       this.repos = updateRepo(this.repos, repoPath, {
         expanded: true,
         sessions: this.sessions,
@@ -438,7 +446,7 @@ class DesktopState {
   }
 
   async sendPromptText(text: string) {
-    if (!text || !this.canUseSession || !this.activeSessionId) {
+    if (!text || !this.canUseSession || !this.activeSessionId || !this.harnessChat) {
       return;
     }
 
@@ -446,7 +454,7 @@ class DesktopState {
 
     try {
       this.errorMessage = undefined;
-      await getRuntimeClient().sendTurn(this.activeSessionId, text);
+      await this.harnessChat.sendMessage({ text });
       this.promptValue = "";
     } catch (error) {
       this.errorMessage = getErrorMessage(error);
@@ -478,7 +486,9 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      const sessions = await getRuntimeClient().deleteSession(repoPath, sessionId);
+      const preferences = await removeIndexedSession(sessionId);
+      this.applyPreferencesSnapshot(preferences);
+      const sessions = listIndexedSessionsForRepo(preferences, repoPath);
       this.sessions = sessions;
       this.repos = updateRepo(this.repos, repoPath, {
         sessions,
@@ -522,28 +532,13 @@ class DesktopState {
 
     await this.withBusy(async () => {
       this.errorMessage = undefined;
-      await getRuntimeClient().abortTurn(this.activeSessionId!);
+      this.harnessChat?.stop();
+      await abortHarnessSession(this.activeSessionId!);
     });
   }
 
   async refreshSessionDiff() {
-    if (!this.activeSessionId) {
-      this.resetSessionDiff();
-      return;
-    }
-
-    this.sessionDiffLoading = true;
-    this.sessionDiffError = undefined;
-
-    try {
-      const snapshot = await getRuntimeClient().requestSnapshot(this.activeSessionId);
-      this.sessionReadModel = snapshot;
-      this.applyDiffSummary(snapshot.diffSummary);
-    } catch (error) {
-      this.sessionDiffError = getErrorMessage(error);
-    } finally {
-      this.sessionDiffLoading = false;
-    }
+    this.resetSessionDiff();
   }
 
   setSessionDiffPanelOpen(open: boolean) {
@@ -596,39 +591,16 @@ class DesktopState {
     }
   }
 
-  async ensureSlashCommands(refresh = false) {
-    if (!this.activeSessionId || !this.supportsSlashCommands) {
-      this.slashCommands = [];
-      this.slashCommandsLoaded = false;
-      return;
-    }
-
-    if (this.slashCommandsLoaded && !refresh) {
-      return;
-    }
-
-    this.slashCommandsLoading = true;
+  async ensureSlashCommands(_refresh = false) {
+    this.slashCommands = [];
+    this.slashCommandsLoaded = false;
+    this.slashCommandsLoading = false;
     this.slashCommandsError = undefined;
-
-    try {
-      this.slashCommands = await getRuntimeClient().listProviderCommands(this.activeSessionId);
-      this.slashCommandsLoaded = true;
-    } catch (error) {
-      this.slashCommandsError = getErrorMessage(error);
-    } finally {
-      this.slashCommandsLoading = false;
-    }
   }
 
   slashCommandsLoaded = false;
 
   async ensureAvailableModels(refresh = false) {
-    if (this.activeSessionId && !this.supportsModelPicker) {
-      this.availableModels = [];
-      this.modelsLoaded = false;
-      return;
-    }
-
     if (this.modelsLoaded && !refresh) {
       return;
     }
@@ -637,16 +609,7 @@ class DesktopState {
     this.modelsError = undefined;
 
     try {
-      const fallbackProvider = this.activeSessionId ? this.sessionReadModel.providerId : "pi";
-      const models = this.activeSessionId
-        ? await getRuntimeClient().listProviderModels(this.activeSessionId)
-        : await getRuntimeClient().discoverProviderModels("pi", this.landingRepoPath);
-
-      this.availableModels = models.map((model) => ({
-        ...model,
-        provider: model.provider ?? fallbackProvider,
-        modelId: model.modelId ?? model.id,
-      }));
+      this.availableModels = GATEWAY_MODEL_OPTIONS;
       this.modelsLoaded = true;
     } catch (error) {
       this.modelsError = getErrorMessage(error);
@@ -658,15 +621,7 @@ class DesktopState {
   modelsLoaded = false;
 
   async setProviderModel(model: ProviderModel) {
-    if (!this.activeSessionId) {
-      this.pendingModel = model;
-      return;
-    }
-
-    await this.withBusy(async () => {
-      this.errorMessage = undefined;
-      this.sessionReadModel = await getRuntimeClient().setModel(this.activeSessionId!, model);
-    });
+    this.pendingModel = model;
   }
 
   async setModel(provider: string | undefined, modelId: string) {
@@ -680,53 +635,14 @@ class DesktopState {
   }
 
   async setThinkingLevel(level: string) {
-    if (!this.activeSessionId) {
-      this.pendingThinkingLevel = level;
-      return;
-    }
-
-    await this.withBusy(async () => {
-      this.errorMessage = undefined;
-      this.sessionReadModel = await getRuntimeClient().setThinkingLevel(this.activeSessionId!, level);
-    });
+    this.pendingThinkingLevel = level;
   }
 
-  async setSteeringMode(mode: string) {
-    if (!this.activeSessionId) {
-      return;
-    }
+  async setSteeringMode(_mode: string) {}
 
-    await this.withBusy(async () => {
-      this.errorMessage = undefined;
-      this.sessionReadModel = await getRuntimeClient().setQueueSettings(this.activeSessionId!, {
-        steeringMode: mode as ProviderQueueMode,
-      });
-    });
-  }
+  async setFollowUpMode(_mode: string) {}
 
-  async setFollowUpMode(mode: string) {
-    if (!this.activeSessionId) {
-      return;
-    }
-
-    await this.withBusy(async () => {
-      this.errorMessage = undefined;
-      this.sessionReadModel = await getRuntimeClient().setQueueSettings(this.activeSessionId!, {
-        followUpMode: mode as ProviderQueueMode,
-      });
-    });
-  }
-
-  async setAutoCompaction(enabled: boolean) {
-    if (!this.activeSessionId) {
-      return;
-    }
-
-    await this.withBusy(async () => {
-      this.errorMessage = undefined;
-      this.sessionReadModel = await getRuntimeClient().setAutoCompaction(this.activeSessionId!, enabled);
-    });
-  }
+  async setAutoCompaction(_enabled: boolean) {}
 
   setSidebarOpen(open: boolean) {
     if (this.desktopSettings.sidebarOpen === open) {
@@ -834,16 +750,14 @@ class DesktopState {
     }
   }
 
-  mergeLiveSession(sessions: SessionSummary[], session: SessionReadModel, repoPath: string): SessionSummary[] {
-    const existingIndex = sessions.findIndex((entry) => entry.id === session.id);
+  mergeLiveSessionSummary(sessions: SessionSummary[], live: SessionSummary): SessionSummary[] {
+    const existingIndex = sessions.findIndex((entry) => entry.id === live.id);
 
     if (existingIndex !== -1) {
-      return sessions.map((entry, index) =>
-        index === existingIndex ? { ...entry, status: session.status } : entry,
-      );
+      return sessions.map((entry, index) => (index === existingIndex ? { ...entry, ...live } : entry));
     }
 
-    return [liveSessionToSummary(session, repoPath), ...sessions];
+    return [live, ...sessions];
   }
 
   getSessionRowStatus(session: SessionSummary): SessionRowStatus {
@@ -868,66 +782,13 @@ class DesktopState {
     return session.worktreePath ? createSessionRowStatus("mapped") : createSessionRowStatus("done");
   }
 
-  handleUiSessionEvent(event: UiSessionEvent) {
-    this.sessionReadModel = applySessionEvent(this.sessionReadModel, event);
-    this.syncPendingInteraction();
-
-    if (event.type === "session.patch" || event.type === "session.snapshot") {
-      this.applyDiffSummary(this.sessionReadModel.diffSummary);
-    }
-  }
-
   dismissSessionNotification(_notificationId: string) {}
 
   clearProviderUiRequest() {
     this.providerUiRequest = undefined;
   }
 
-  async respondToProviderUi(response: ProviderUiResponse) {
-    if (!this.activeSessionId) {
-      return;
-    }
-
-    const interaction = this.sessionReadModel.pendingInteractions.find((item) => item.id === response.requestId);
-
-    if (!interaction) {
-      return;
-    }
-
-    if (interaction.kind === "approval") {
-      await getRuntimeClient().resolveApproval(
-        this.activeSessionId,
-        response.requestId,
-        response.kind === "confirm" ? response.accepted : false,
-        response,
-      );
-    } else {
-      await getRuntimeClient().resolveUserInput(this.activeSessionId, response.requestId, response);
-    }
-
-    this.clearProviderUiRequest();
-  }
-
-  syncPendingInteraction() {
-    const pending = this.sessionReadModel.pendingInteractions[0];
-
-    if (!pending) {
-      this.providerUiRequest = undefined;
-      return;
-    }
-
-    const uiRequest = pendingInteractionToUiRequest(pending);
-
-    if (!uiRequest) {
-      this.providerUiRequest = undefined;
-      return;
-    }
-
-    this.providerUiRequest = {
-      ...uiRequest,
-      sessionId: this.activeSessionId,
-    };
-  }
+  async respondToProviderUi(_response: ProviderUiResponse) {}
 
   async withBusy(action: () => Promise<void>) {
     this.isBusy = true;
@@ -991,25 +852,6 @@ function updateRepo(currentRepos: SidebarRepo[], nextRepoPath: string, updates: 
   }
 
   return currentRepos.map((repo) => (repo.path === nextRepoPath ? { ...repo, ...updates } : repo));
-}
-
-function liveSessionToSummary(session: SessionReadModel, repoPath: string): SessionSummary {
-  const timestamp = session.updatedAt || Date.now();
-  const firstUserMessage = session.messages.find((message) => message.role === "user");
-
-  return {
-    id: session.id,
-    providerId: session.providerId ?? "pi",
-    providerSessionRef: session.providerSessionRef,
-    status: session.status === "running" ? "running" : session.status === "error" ? "error" : "idle",
-    title: session.title,
-    preview: typeof firstUserMessage?.content === "string" ? firstUserMessage.content : undefined,
-    repoPath,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    worktreePath: repoPath,
-    messageCount: session.messages.length,
-  };
 }
 
 function groupIndexedSessionsByRepo(indexedSessions: IndexedSessionPreference[]) {

@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { getConfiguredDataDir } from "./config.js";
 import { migrateRecentReposSchema } from "./preferences-schema.js";
+import { migrateSessionCacheSchema } from "./session-cache.js";
 import { migrateRegisteredSessionsSchema } from "./session-registry.js";
 
 let database: DatabaseSync | undefined;
@@ -36,6 +37,7 @@ export function getDatabase() {
 
   migrateRecentReposSchema(database);
   migrateRegisteredSessionsSchema(database);
+  migrateSessionCacheSchema(database);
 
   return database;
 }

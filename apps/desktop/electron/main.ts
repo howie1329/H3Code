@@ -3,11 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  getAgentServerUrl,
-  startAgentServerProcess,
-  stopAgentServerProcess,
-} from "./agent-server-lifecycle.js";
-import {
   getHarnessChatUrl,
   startHarnessHost,
   stopHarnessHost,
@@ -89,8 +84,6 @@ ipcMain.handle("shell:reveal-path", (_event, targetPath: string) => {
   return targetPath;
 });
 
-ipcMain.handle("agent-server:get-url", () => getAgentServerUrl());
-
 ipcMain.handle("agent:get-stream-url", () => getHarnessChatUrl());
 
 ipcMain.handle("app:get-version", () => app.getVersion());
@@ -101,15 +94,8 @@ ipcMain.handle("preferences:reveal-database", () => {
   return databasePath;
 });
 
-const useLegacyAgent = process.env.H3_USE_LEGACY_AGENT !== "0";
-
 app.whenReady().then(async () => {
   registerPreferencesIpc();
-
-  if (useLegacyAgent) {
-    await startAgentServerProcess();
-  }
-
   await startHarnessHost();
 
   nativeTheme.on("updated", () => {
@@ -127,9 +113,6 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   void stopHarnessHost();
-  if (useLegacyAgent) {
-    void stopAgentServerProcess();
-  }
   closePreferencesDatabase();
 });
 

@@ -17,12 +17,12 @@
   let { open, disabled = false, anchor = $bindable(null), onToggle }: Props = $props();
 
   const model = $derived(
-    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
-      normalizeModel(desktopState.sessionReadModel.model),
+    mergeModelWithCatalog(desktopState.currentProviderModel, desktopState.availableModels) ??
+      normalizeModel(desktopState.currentProviderModel),
   );
   const modelLabel = $derived(desktopState.modelsLoading ? "Loading…" : getModelLabel(model));
   const supportsThinking = $derived(modelSupportsThinking(model, desktopState.availableModels));
-  const thinkingShort = $derived(desktopState.sessionReadModel.thinkingLevel ?? "Off");
+  const thinkingShort = $derived(desktopState.currentThinkingLevel ?? "Off");
   const summaryTitle = $derived(modelLabel);
 </script>
 

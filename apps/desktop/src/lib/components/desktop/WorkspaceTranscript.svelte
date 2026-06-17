@@ -10,11 +10,7 @@
   import { fly } from "svelte/transition";
 
   import { desktopState } from "$lib/desktop-state.svelte";
-  import {
-    committedTranscriptMessages,
-    liveTranscriptMessages,
-    streamingMessage as getStreamingMessage,
-  } from "$lib/transcript-adapter.js";
+  import { extractStreamingThinkingFromUiMessages } from "$lib/ui-message-transcript.js";
   import {
     Message,
     MessageContent,
@@ -23,7 +19,6 @@
   import TranscriptPhaseTail from "$lib/components/desktop/TranscriptPhaseTail.svelte";
   import TranscriptWorkBlock from "$lib/components/desktop/TranscriptWorkBlock.svelte";
   import {
-    buildTranscriptViewModel,
     extractStreamingThinkingText,
     groupBlocksForRender,
   } from "$lib/components/desktop/transcript-normalize.js";
@@ -51,12 +46,7 @@
 
   const composerScrollInsetPx = $derived(composerInsetPx + 8);
 
-  const committedTranscriptView = $derived(buildTranscriptViewModel(committedTranscriptMessages(desktopState.sessionReadModel)));
-  const liveTranscriptView = $derived(buildTranscriptViewModel(liveTranscriptMessages(desktopState.sessionReadModel)));
-  const transcriptMessages = $derived([
-    ...committedTranscriptView.messages,
-    ...liveTranscriptView.messages,
-  ]);
+  const transcriptMessages = $derived(desktopState.transcriptViewModel.messages);
   const isThinking = $derived(desktopState.composerPhaseLine?.text === "Thinking…");
   const phaseTail = $derived.by(() => {
     const phase = desktopState.composerPhaseLine;
@@ -68,7 +58,7 @@
     return phase;
   });
   const streamingThinkingText = $derived(
-    extractStreamingThinkingText(getStreamingMessage(desktopState.sessionReadModel))
+    extractStreamingThinkingText(extractStreamingThinkingFromUiMessages(desktopState.harnessMessages))
   );
   const transcriptItems = $derived([
     ...transcriptMessages.map((message) => ({ kind: "message" as const, key: message.id, message })),
@@ -420,7 +410,7 @@
                   </Button>
                 {/snippet}
               </WorkspaceColumnEmpty>
-            {:else if desktopState.sessionReadModel.messages.length === 0}
+            {:else if desktopState.harnessMessages.length === 0}
               <WorkspaceColumnEmpty
                 title="Transcript is empty"
                 description="Send a prompt from the composer below."

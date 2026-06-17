@@ -91,8 +91,8 @@
   const selectorsDisabled = $derived(!desktopState.canChangeSessionSettings || !desktopState.canUseSession);
   const settingsDisabled = $derived(selectorsDisabled);
   const currentModel = $derived(
-    mergeModelWithCatalog(desktopState.sessionReadModel.model, desktopState.availableModels) ??
-      normalizeModel(desktopState.sessionReadModel.model),
+    mergeModelWithCatalog(desktopState.currentProviderModel, desktopState.availableModels) ??
+      normalizeModel(desktopState.currentProviderModel),
   );
   const flatModels = $derived(desktopState.availableModels);
   const supportsThinking = $derived(modelSupportsThinking(currentModel, flatModels));
