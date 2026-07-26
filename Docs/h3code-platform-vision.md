@@ -1,6 +1,6 @@
 # H3Code Platform Vision
 
-> Status: Draft. Companion to [h3code-cloud-saas-prd.md](./h3code-cloud-saas-prd.md) (cloud MVP scope).
+> Status: Target platform model. Product priority and phase gates live in [PRODUCT.md](../PRODUCT.md) and [h3code-roadmap.md](./h3code-roadmap.md).
 >
 > **Architecture:** [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md) is the target agent stack. Related: [h3code-unified-client.md](./h3code-unified-client.md), [h3code-desktop-evolution.md](./h3code-desktop-evolution.md), [h3code-convex-schema.md](./h3code-convex-schema.md).
 
@@ -8,7 +8,7 @@
 
 H3Code is a **coding-agent workbench** (desktop + cloud): shell, workspace, git/PR workflow, and persistence—not a custom agent runtime.
 
-Agent execution is delegated to **AI SDK Harness** (`HarnessAgent` + Pi / Codex / Claude Code adapters). The UI speaks **`UIMessage`** from the `ai` package end to end. H3Code does not maintain a parallel protocol, event bus, or read-model projector.
+Agent execution is delegated to thin runtime adapters. AI SDK Harness is the preferred path where it provides the required runtime, while native SDK/app-server integrations remain valid when they preserve provider authentication and capabilities. The UI speaks **`UIMessage`** from the `ai` package end to end. H3Code does not maintain a parallel protocol, event bus, or read-model projector.
 
 ## What H3Code is today (transition)
 
@@ -53,10 +53,10 @@ packages/
 
 ## Architectural model
 
-### Agent layer — AI SDK Harness (target)
+### Agent layer — small execution adapters (target)
 
-- `HarnessAgent` + `@ai-sdk/harness-pi` (MVP), later `@ai-sdk/harness-codex`, `@ai-sdk/harness-claude-code`.
-- Streams map to `UIMessage` via `toUIMessageStream`; no H3Code converter.
+- `HarnessAgent` + `@ai-sdk/harness-pi` where appropriate, plus native Codex app-server and PI SDK adapters where provider behavior or authentication requires them.
+- Streams map to `UIMessage` via AI SDK-compatible transport; no H3Code converter or parallel protocol.
 - Session resume via harness `resumeFrom` blobs, keyed by H3Code `sessionId`.
 
 ### Machine layer — unchanged
@@ -102,7 +102,7 @@ packages/
 
 | Topic | Decision |
 |-------|----------|
-| Agent runtime | **AI SDK Harness** (`HarnessAgent`) — see [harness architecture](./h3code-ai-sdk-harness-architecture.md) |
+| Agent runtime | **Thin execution adapters**; prefer AI SDK Harness, retain native SDK/app-server paths when needed |
 | UI message shape | **`UIMessage`** from `ai` — not `SessionReadModel` |
 | Legacy `agent-protocol` / `agent-runtime*` | **Retire** after migration; do not extend |
 | Cloud backend | **Convex** |
@@ -115,7 +115,7 @@ packages/
 ## Success criteria
 
 - Same interaction model on desktop folder and cloud repo: stream, steer, abort, diff, PR (cloud).
-- UI renders **`UIMessage.parts`** only; swapping Pi → Codex is a harness config change, not a protocol rewrite.
+- UI renders **`UIMessage.parts`** only; swapping Pi → Codex changes an execution adapter, not the workbench or a custom protocol.
 - Package surface shrinks to **agent-provider-pi + agent-metadata** (+ optional sandbox-daytona).
 
 ## Decision log

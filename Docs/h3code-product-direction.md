@@ -1,6 +1,6 @@
 # H3Code Product Direction
 
-> Status: Product direction and phased plan
+> Status: Strategic product direction and phased plan. The concise product brief is [PRODUCT.md](../PRODUCT.md); the executable sequence is [h3code-roadmap.md](./h3code-roadmap.md).
 >
 > Date: July 14, 2026
 >
@@ -430,4 +430,4 @@ This direction supersedes or narrows several earlier assumptions:
 - [Unified Client](./h3code-unified-client.md): preserve the shared workbench while allowing different native execution adapters behind desktop and cloud transports.
 - [Desktop MVP](./h3code-desktop-mvp.md): preserve Pi behavior during migration, then add Codex and move both runtimes onto the shared UI boundary.
 
-These documents should be reconciled only after the Phase 0 execution choices are validated. Until then, this document governs product priority and scope; the linked documents continue to describe existing implementation details and earlier architecture assumptions.
+The product brief and roadmap now govern product priority and sequencing. The linked documents remain detailed architecture or implementation references; their status notes identify which assumptions are current, transitional, or superseded.

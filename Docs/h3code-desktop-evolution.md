@@ -1,6 +1,6 @@
 # H3Code Desktop Evolution
 
-> Status: Draft. **Not** cloud MVP scope. Describes how the **local** workbench can evolve toward a Cursor-like integrated agent—orthogonal to [cloud PRD](./h3code-cloud-saas-prd.md).
+> Status: Draft target. **Not** cloud MVP scope. Describes how the **local** workbench can evolve toward a Cursor-like integrated agent—orthogonal to [cloud PRD](./h3code-cloud-saas-prd.md). The execution host may use AI SDK Harness or a native provider SDK/app-server adapter behind the shared UI boundary.
 >
 > Parent: [h3code-platform-vision.md](./h3code-platform-vision.md). **Agent target:** [h3code-ai-sdk-harness-architecture.md](./h3code-ai-sdk-harness-architecture.md). Unified UI: [h3code-unified-client.md](./h3code-unified-client.md).
 

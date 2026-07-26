@@ -1,5 +1,7 @@
 # H3Code Desktop MVP
 
+> Status: Current implementation reference for the local PI MVP. The product target adds Codex and a shared `UIMessage` boundary; see [PRODUCT.md](../PRODUCT.md) and [h3code-roadmap.md](./h3code-roadmap.md).
+
 ## Summary
 
 H3Code Desktop is a local Electron and SvelteKit UI shell for PI Agent in RPC mode.

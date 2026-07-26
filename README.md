@@ -1,18 +1,23 @@
 # H3Code
 
-H3Code is a local desktop workbench for coding agents. Today it is an Electron and SvelteKit desktop UI that talks to a local runtime server over WebSocket. PI Agent is the current working provider; the runtime server gives the UI one H3Code-owned protocol that can grow to support multiple providers.
+H3Code is a coding-agent workbench for developers who want one focused place to work with local repositories first and cloud workspaces later. H3Code owns the workbench: repository context, sessions, transcript presentation, terminals, previews, diffs, Git workflows, and product state. The selected agent runtime owns its own execution behavior and canonical session state.
 
-PI remains the current working provider and the source of truth for sessions, messages, tool execution, model behavior, queueing, compaction, and retry. H3Code owns the local experience around that runtime: repo selection, process lifecycle, connection diagnostics, UI state, rendering, metadata indexing, and preferences.
+The project is in an active productization transition:
 
-The web and marketing app are preserved in `apps/web`.
+- The desktop app is usable today with PI through the legacy local WebSocket runtime.
+- The cloud app has working authentication, GitHub repository selection, Convex-backed sessions/messages, and asynchronous Daytona sandbox provisioning.
+- The next execution boundary is a shared AI SDK-compatible UI stream (`UIMessage` + `useChat`) with thin runtime adapters. The legacy `agent-protocol` / `agent-runtime*` packages are migration-only and should not receive new product features.
 
-Start with:
+## Product surfaces
 
-- [docs/h3code-agent-server-product.md](docs/h3code-agent-server-product.md) — product direction for the local runtime server architecture.
-- [docs/agent-server-architecture.html.html](docs/agent-server-architecture.html.html) — visual/reference architecture proposal.
-- [docs/h3code-desktop-mvp.md](docs/h3code-desktop-mvp.md) — current PI desktop MVP boundary.
+| Surface | Current state | Direction |
+| --- | --- | --- |
+| Desktop | Electron + SvelteKit workbench; local folder selection; PI sessions; streaming transcript; tool activity; steer/follow-up; abort; metadata and preferences | Shared workbench with Codex app-server and PI SDK execution paths, then terminal/preview/diff/Git depth |
+| Cloud | TanStack Start + React; Clerk auth; GitHub connection and curated repos; Convex sessions/messages; Daytona provisioning | Codex-first remote workspace with durable sessions, terminal/preview, diff, commit, push, and PR workflow |
+| Web | SvelteKit marketing site in `apps/web` | Marketing and product education surface |
+| Desktop Zero | Experimental Zig/native shell in `apps/desktop-zero` | Explore lighter desktop shells after the flagship desktop workflow is stable |
 
-## Current State vs Direction
+## Architecture at a glance
 
 Current desktop path:
 
@@ -21,103 +26,59 @@ Svelte renderer
   -> RuntimeClient (WebSocket)
     -> @h3code/agent-runtime-server (localhost)
       -> AgentRuntime
-        -> PiProviderAdapter (@h3code/agent-provider-pi)
+        -> PI provider adapter
 ```
 
-Provider direction:
+Target product boundary:
 
 ```txt
-Svelte renderer
-  -> local runtime server WebSocket
-    -> ProviderAdapter interface
-      -> PiProviderAdapter / CodexProviderAdapter / CursorProviderAdapter
-        -> actual provider runtime
+Workbench UI (UIMessage + useChat)
+  <-> transport / IPC
+    <-> thin H3Code execution adapter
+      -> Codex app-server | PI SDK | future supported runtime
+        -> local repo or cloud sandbox
 ```
 
-The runtime packages now exist:
+H3Code should not become a second agent loop or canonical transcript store. Local SQLite and Convex may cache product metadata and display messages for reload, while the selected runtime remains authoritative for live continuation.
 
-- `@h3code/agent-protocol` defines provider-neutral protocol, commands, runtime events, read models, workspace summaries, and provider contracts.
-- `@h3code/agent-runtime` owns provider registration, runtime bindings, event ingestion, and read-model projection.
-- `@h3code/agent-runtime-ws` provides the WebSocket transport.
-- `@h3code/agent-runtime-persistence` stores projected runtime state and bindings for cold start.
-- `@h3code/agent-runtime-server` composes the local server, runtime, persistence, metadata registry, WebSocket transport, and PI adapter.
-- `@h3code/agent-provider-pi` implements the current PI provider adapter with the in-process PI SDK.
-- `@h3code/agent-metadata` stores recent repos, indexed session metadata, desktop settings, and related local metadata.
-
-Electron main now supervises the local server and native shell affordances. The legacy PI IPC path has been removed.
-
-## Product Boundary
-
-Providers own:
-
-- Sessions and canonical message history.
-- Agent runtime behavior, tools, models, queueing, compaction, and retry.
-- Provider-native IDs, files, authentication, and execution details.
-
-H3Code owns:
-
-- Desktop and future local-client UI.
-- Local Agent Server orchestration.
-- Provider selection and capability-gated UI.
-- Repo/workspace context, git diff, worktree inventory, and metadata indexing.
-- Minimal local preferences.
-
-H3Code should not persist transcripts or become the source of truth for provider-owned sessions.
-
-## Current Desktop Status
-
-The desktop app currently implements the core PI provider loop through the runtime server:
-
-- Select a local repo with the native directory picker.
-- Start the local runtime server and connect the renderer over WebSocket.
-- Create an in-process PI SDK provider session for the selected repo.
-- List PI sessions for repos.
-- Switch sessions and create new PI-owned sessions.
-- Load H3Code session read models, messages, and session stats.
-- Send prompts, steer, and follow-up messages through the H3Code WebSocket protocol.
-- Abort active runs.
-- Render transcript messages, streaming assistant output, tool blocks, runtime diagnostics, extension UI, and recent tool activity.
-
-Still planned:
-
-- Harden the local WebSocket boundary with startup auth and fuller payload validation.
-- Keep renderer code on server-projected `SessionReadModel` shapes.
-- Add Codex Server and Cursor providers behind the same H3Code protocol.
-
-## Repository Shape
+## Repository map
 
 ```txt
 apps/
-  desktop/       # Electron + SvelteKit desktop app
-  web/           # SvelteKit marketing site
+  desktop/        # Primary Electron + SvelteKit desktop workbench
+  cloud/          # TanStack React Start + Clerk + Convex cloud workbench
+  web/            # SvelteKit marketing site
+  desktop-zero/   # Experimental Zig shell
 packages/
-  agent-protocol/            # H3Code protocol, runtime events, read models, provider contracts
-  agent-runtime/             # Runtime bindings, event ingestion, read-model projection
-  agent-runtime-ws/          # WebSocket transport
-  agent-runtime-persistence/ # SQLite runtime read-model persistence
-  agent-runtime-server/      # Local server composition for desktop
-  agent-provider-pi/         # In-process PI SDK provider adapter
-  agent-metadata/            # Local metadata and desktop preferences
+  agent-provider-pi/         # PI execution wiring; migration target is thin adapter code
+  agent-metadata/            # Local SQLite repos, preferences, session index, optional cache
+  agent-protocol/            # Legacy protocol; freeze during migration
+  agent-runtime/             # Legacy runtime/projector; freeze during migration
+  agent-runtime-ws/          # Legacy WebSocket transport; freeze during migration
+  agent-runtime-persistence/ # Legacy runtime persistence; freeze during migration
+  agent-runtime-server/      # Legacy desktop composition; freeze during migration
+PRODUCT.md                   # Product brief and product boundaries
 docs/
-  h3code-agent-server-product.md
-  agent-server-architecture.html.html
-  h3code-desktop-mvp.md
-  SvelteKitAiElements.md
-  SvelteKitShadcn.md
+  h3code-roadmap.md          # Sequenced roadmap and exit criteria
+  h3code-product-direction.md # Strategic direction and business-model decisions
 ```
 
-## Stack
+## Read next
 
-- Electron
-- SvelteKit
-- TypeScript
-- Tailwind CSS
-- shadcn-svelte / Bits UI
-- Node.js + `ws` for the local runtime server
-- In-process PI SDK provider for the current provider path
-- SQLite metadata index and desktop settings (`@h3code/agent-metadata`)
+- [Product brief](PRODUCT.md) — who H3Code is for, what it owns, and what success means.
+- [Roadmap](docs/h3code-roadmap.md) — current phase, next milestones, and decision gates.
+- [Product direction](docs/h3code-product-direction.md) — subscription-first desktop and Codex-first cloud strategy.
+- [Platform vision](docs/h3code-platform-vision.md) — desktop/cloud product model and shared client direction.
+- [AI SDK and execution architecture](docs/h3code-ai-sdk-harness-architecture.md) — target UI boundary and migration constraints.
+- [Desktop MVP](docs/h3code-desktop-mvp.md) — detailed local desktop behavior and acceptance criteria.
+- [Cloud PRD](docs/h3code-cloud-saas-prd.md) — cloud workspace scope and implementation notes.
 
-## Local Development
+Older runtime architecture documents remain useful for understanding the current implementation, but they are not the target for new work:
+
+- [Legacy runtime/read-model architecture](docs/h3code-runtime-read-model-architecture.md)
+- [Legacy agent-server product](docs/h3code-agent-server-product.md)
+
+## Local development
 
 Install dependencies:
 
@@ -125,25 +86,15 @@ Install dependencies:
 npm install
 ```
 
-Run all workspace dev tasks:
-
-```bash
-npm run dev
-```
-
-Run the desktop app:
+Run the primary surfaces:
 
 ```bash
 npm run dev:desktop
-```
-
-Run the web app:
-
-```bash
+npm run dev:cloud
 npm run dev:web
 ```
 
-Run checks:
+Run repository-wide validation:
 
 ```bash
 npm run check
@@ -151,10 +102,15 @@ npm run lint
 npm run build
 ```
 
-Package-specific checks:
+Useful focused checks:
 
 ```bash
-npm run check --workspace @h3code/agent-protocol
-npm run test --workspace @h3code/agent-runtime
+npm run check:cloud
+npm run build:cloud
+npm run test:runtime-client --workspace @h3code/desktop
+npm run test:agent-lib --workspace @h3code/desktop
+npm run test:transcript-normalize --workspace @h3code/desktop
 npm run test --workspace @h3code/agent-runtime-server
 ```
+
+Cloud setup and environment requirements are documented in [apps/cloud/README.md](apps/cloud/README.md). Desktop behavior and runtime migration details are documented under `docs/`.

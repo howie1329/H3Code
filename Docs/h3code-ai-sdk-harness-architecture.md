@@ -1,14 +1,14 @@
 # H3Code — AI SDK Harness Architecture
 
-> Status: **Target architecture** (June 2026). Supersedes the custom runtime / read-model stack described in [h3code-runtime-read-model-architecture.md](./h3code-runtime-read-model-architecture.md) and [h3code-agent-server-product.md](./h3code-agent-server-product.md).
+> Status: **Target UI and transport boundary** (June 2026). The shared `UIMessage` boundary remains current; [h3code-product-direction.md](./h3code-product-direction.md) allows native SDK/app-server execution adapters where they are required for provider authentication or capability parity. This supersedes the custom runtime / read-model stack described in [h3code-runtime-read-model-architecture.md](./h3code-runtime-read-model-architecture.md) and [h3code-agent-server-product.md](./h3code-agent-server-product.md).
 >
 > Parent: [h3code-platform-vision.md](./h3code-platform-vision.md). Client: [h3code-unified-client.md](./h3code-unified-client.md). Cloud data: [h3code-convex-schema.md](./h3code-convex-schema.md).
 
 ## Summary
 
-H3Code is a **workbench shell** around **AI SDK Harness** runtimes—not a custom agent protocol and projection pipeline.
+H3Code is a **workbench shell** around thin execution adapters—not a custom agent protocol and projection pipeline. AI SDK Harness is the preferred adapter foundation where it fits; native SDK/app-server integrations are allowed behind the same UI boundary.
 
-- **Agent loop, tools, session state, stream shape** → AI SDK `HarnessAgent` + harness adapters (`@ai-sdk/harness-pi`, later codex / claude-code).
+- **Agent loop, tools, session state, stream shape** → provider runtime adapter, preferably AI SDK `HarnessAgent` + harness adapters, otherwise a native SDK/app-server bridge.
 - **UI transcript** → standard `UIMessage` / `UIMessageStream` from the `ai` package (`useChat`, `toUIMessageStream`).
 - **Sandbox** → `HarnessV1SandboxProvider` (desktop: `@ai-sdk/sandbox-just-bash` on local repo; cloud: Daytona wrapper or `@ai-sdk/sandbox-vercel`).
 - **H3Code-owned persistence** → product metadata only (local SQLite) and cloud session rows (Convex)—not a parallel event/read-model system.
@@ -54,7 +54,7 @@ Harness sessions own **live** conversation state. The UI sends the latest user t
 
 ```txt
 packages/
-  agent-provider-pi/     # Thin H3Code wiring: factory helpers for HarnessAgent + Pi + sandbox
+  agent-provider-pi/     # Thin PI execution wiring; may expose HarnessAgent or native SDK helpers
   agent-metadata/        # Local SQLite: repos, prefs, session index, optional UIMessage cache
   sandbox-daytona/       # (planned) HarnessV1SandboxProvider over @daytona/sdk for cloud
 ```

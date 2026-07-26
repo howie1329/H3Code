@@ -1,12 +1,12 @@
 # H3Code Convex Schema
 
-> Status: Draft. Data model for cloud sessions and optional desktop display cache.
+> Status: Draft target data model for cloud sessions and optional desktop display cache. The current implementation is earlier than this target.
 >
 > Cloud behavior: [h3code-cloud-saas-prd.md](./h3code-cloud-saas-prd.md). Client wiring: [h3code-unified-client.md](./h3code-unified-client.md).
 
 ## Principles
 
-1. **Store H3Code protocol shapes only**—messages, runs, capabilities as defined in `@h3code/agent-protocol`, not PI/Codex-native payloads.
+1. **Store AI SDK-compatible UI message data and product state**—not PI/Codex-native payloads and not a new H3Code transcript protocol. Legacy `@h3code/agent-protocol` shapes are migration context only.
 2. **Convex is the UI’s source of truth** for subscribed clients. The provider runtime (PI in sandbox or locally) owns **live** conversation context while connected.
 3. **Coalesce writes** (~150–250ms) from the adapter; do not persist per-token rows.
 4. **Large blobs** (full diffs, huge tool output) may exceed Convex’s per-document size limit (~1 MiB)—store artifact references or chunked rows (see `diffArtifacts` / `messageChunks`).

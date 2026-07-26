@@ -1,7 +1,7 @@
 # PRD: H3Code Cloud — SaaS Coding Agent Workbench
 
-> Status: Draft for review. Not yet filed as a GitHub issue.
-> Scope: Cloud MVP — hosted agent workbench (PWA). Broader product context lives in sibling docs (some decisions here may lag those docs; prefer platform vision for stack/client direction).
+> Status: Draft implementation PRD; scope narrowed by [h3code-product-direction.md](./h3code-product-direction.md) and [h3code-roadmap.md](./h3code-roadmap.md).
+> Scope: Cloud MVP — hosted agent workbench. The current implementation has the authenticated workspace shell and Daytona provisioning; live agent execution and delivery workflows remain planned.
 
 ### Related documentation
 
@@ -14,7 +14,7 @@
 
 ## Problem Statement
 
-Today H3Code only works as a local Electron desktop app. The agent runtime (`@h3code/agent-runtime-server`) runs on the user's own machine, executes the PI provider in-process, and can only operate on repositories that live on that machine's local disk. This means:
+Today H3Code has a usable local Electron desktop app and an early cloud workspace shell. Desktop execution is local; cloud currently provisions the workspace and sandbox but does not yet run the live agent loop. This means:
 
 - A developer can only do agent work at the one machine where H3Code is installed and where the repo is checked out.
 - There is no way to start, watch, or steer a coding session from a phone, a borrowed laptop, or a second computer.
@@ -47,8 +47,8 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 11. As a developer, I want a hibernated sandbox to resume with my work intact, so that I can continue where I left off.
 
 ### Provider & Models
-12. As a developer, I want to choose which agent provider powers a session (multi-provider), so that I can use the runtime I prefer.
-13. As a developer, I want to use managed inference by default, so that I don't have to supply API keys to get started.
+12. As a developer, I want the initial cloud session to use the supported Codex-first runtime, so that the first product path is reliable and clearly scoped.
+13. As a developer, I want subscription authentication when supported, with BYOK or AI Gateway as explicit alternatives, so that I understand who bills for the run.
 14. As a power user, I want to bring my own provider API keys, so that I can use my own quota and billing.
 15. As a developer, I want to switch models within a provider when capabilities allow, so that I can trade cost for quality.
 16. As a developer, I want the UI to gate controls (slash commands, model picker, queue, compaction) by provider capability, so that I only see what's supported.
@@ -90,8 +90,8 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 ## Implementation Decisions
 
 ### Codebase relationship
-- Build a **separate cloud backend** in a (possibly shared) monorepo. **Reuse `@h3code/agent-protocol`** (provider-neutral protocol: sessions, runs, messages, capabilities, provider contract). **Do not depend** on `@h3code/agent-runtime-server`, the Electron packages, or native shell affordances, which are localhost/in-process specific.
-- Web/mobile clients speak the existing H3Code WebSocket protocol so the contract stays consistent with the desktop app.
+- Build the cloud backend in the existing monorepo. Use the shared AI SDK-compatible `UIMessage` boundary and keep the legacy `@h3code/agent-protocol` / `agent-runtime*` packages migration-only.
+- Cloud transport may use Convex subscriptions plus an AI SDK-compatible stream; it should not extend the desktop WebSocket protocol.
 
 ### Execution model
 - Code lives and the agent executes in a **cloud sandbox/container**. Primary backend: **Daytona** (persistent, suspendable dev sandboxes that match the hybrid lifecycle). Fallback/alternative: **Vercel Sandbox** (ephemeral Firecracker microVMs) behind the same orchestrator interface.
@@ -104,11 +104,11 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 - Notifications are a convenience layer over live sessions.
 
 ### Providers
-- **Multi-provider**, switchable like the desktop app, behind the `agent-protocol` provider contract.
-- **Key model: both.** Managed inference by default (we hold keys, meter and resell tokens); BYO keys for power users (platform/compute billed only).
+- **Codex-first** for the initial cloud execution path, with PI and other runtimes considered after the shared workbench is proven.
+- **Key model: validate subscription auth first, with BYOK and AI Gateway as explicit fallback paths. Managed inference is not the default product thesis.**
 
 ### Clients
-- **SvelteKit PWA** for web and mobile (installable, offline-aware shell, web push). Reuses the existing design system, shadcn-svelte components, and transcript-rendering patterns. No native app-store apps in MVP.
+- **TanStack Start + React 19** for the current cloud app and the planned shared workbench direction. A responsive/installable PWA experience is a later delivery concern; no native app-store apps in MVP.
 
 ### Identity & tenancy
 - **Solo accounts only** for MVP.
@@ -129,9 +129,9 @@ The experience is interactive pairing, not fire-and-forget job dispatch. Notific
 
 Convex absorbs the realtime, persistence, scheduling, and orchestration-trigger responsibilities, so the module set is reshaped accordingly. **Architectural rule: Convex orchestrates and persists; it does not host the agent loop. The agent runs in the Daytona sandbox and streams results back into Convex.**
 
-1. **`agent-protocol` (reused):** provider-neutral protocol — sessions, runs, messages, capabilities, multi-provider contract. Interface essentially unchanged; shared types used by client, Convex functions, and the in-sandbox adapter.
+1. **Shared UI boundary:** AI SDK-compatible `UIMessage` parts and a small lifecycle surface for start/resume, send, stream, steer, abort, status, and stop. Legacy protocol types are not the target contract.
 2. **Sandbox Orchestrator (Convex actions + Daytona client):** `acquire(repo, session) → Sandbox`, `suspend`, `resume`, `destroy`. Convex actions drive lifecycle; hides Daytona API, warm-pool management, hibernation, and the lifecycle state machine. Backend swappable (Daytona / Vercel Sandbox fallback).
-3. **Provider Runtime Adapter (in-sandbox):** runs the multi-provider agent loop *inside* the sandbox, maps the provider's native stream to H3Code protocol messages, and **persists coalesced (~150–250ms debounced) chunks to Convex via HTTP**. Subscribes to a Convex "control" query to react to steer/abort. Hides PI/Codex/Cursor differences; reuses `agent-protocol` contracts.
+3. **Provider Runtime Adapter (in-sandbox):** runs the Codex-first agent loop *inside* the sandbox, emits AI SDK-compatible UI parts, and **persists coalesced (~150–250ms debounced) chunks to Convex via HTTP**. Subscribes to a Convex control path to react to steer/abort. Hides execution details without extending the legacy H3Code protocol.
 4. **Realtime Sync (Convex reactive queries):** replaces a hand-rolled WebSocket gateway. Multi-device session synchronization, fan-out, and reconnection are provided by Convex subscriptions over its managed WebSocket. The only custom surface is the schema and the query/mutation functions for messages, runs, and control signals.
 5. **Git/GitHub Service:** `cloneInto(sandbox)`, `diff`, `commit`, `openPR`. Uses the Clerk-provided GitHub OAuth token (MVP); hides branch naming and PR creation. Invoked from Convex actions / in-sandbox steps. Auth source is swappable to a GitHub App later.
 6. **Identity & Billing:** **Clerk** for accounts + GitHub OAuth; key vault (managed + BYO provider keys) stored server-side; usage metering (`meter(event)`) written to Convex; Stripe usage-based billing driven by Convex actions/cron.
@@ -139,8 +139,8 @@ Convex absorbs the realtime, persistence, scheduling, and orchestration-trigger 
 8. **Notification Service:** `notify(user, event)` over Web Push (VAPID) + in-app; subscriptions stored in Convex, dispatched from Convex functions on run-lifecycle events.
 
 ### Proposed stack
-- **Frontend/PWA:** SvelteKit 2 + Svelte 5, Tailwind v4, shadcn-svelte, existing design system; `convex-svelte` client; Vercel AI SDK + Streamdown + Shiki for transcript rendering. `@vite-pwa/sveltekit` for installability/offline shell. **Hosted on Vercel.**
-- **Backend:** **Convex** — document database, reactive queries (realtime sync), mutations/actions (orchestration triggers, GitHub, Stripe), HTTP actions (webhooks + sandbox chunk ingestion), scheduler/cron. Reuses `agent-protocol` types. No separate Node service, SQL database, ORM, or custom WebSocket server.
+- **Frontend:** TanStack Start, React 19, Tailwind v4, shadcn-compatible components, Clerk, Convex, and AI SDK-compatible transcript rendering. **Hosted on Vercel.**
+- **Backend:** **Convex** — document database, reactive queries (realtime sync), mutations/actions (orchestration triggers, GitHub, Stripe), HTTP actions (webhooks + sandbox chunk ingestion), scheduler/cron. Stores AI SDK-compatible UI message data and product state; legacy `agent-protocol` types are not the target UI contract. No separate Node service, SQL database, ORM, or custom WebSocket server.
 - **Sandboxes:** **Daytona** (primary) running the agent + in-sandbox Provider Runtime Adapter; **Vercel Sandbox** as a swappable fallback behind the orchestrator interface.
 - **Realtime:** Convex reactive subscriptions (no custom gateway).
 - **Auth:** **Clerk** with Convex integration — email/password login plus a **GitHub social connection** (`repo` scope) that provides the OAuth token used for clone/PR work. GitHub App deferred.
@@ -149,7 +149,7 @@ Convex absorbs the realtime, persistence, scheduling, and orchestration-trigger 
 
 ### Deployment topology
 ```txt
-SvelteKit PWA (Vercel)
+TanStack Start + React (Vercel)
   │  Convex client (reactive queries + mutations over Convex WSS)
   ▼
 Convex (DB, reactive sync, actions, HTTP actions, cron)
@@ -188,7 +188,7 @@ Modules **not** prioritized for tests in MVP (manual/integration verification in
 ## Further Notes
 
 ### Suggested MVP boundary
-Sign in via Clerk (email/password) → connect GitHub (Clerk OAuth, `repo` scope) → pick repo + branch → Convex action provisions a warm Daytona sandbox and clones the repo → interactive multi-provider session, with the in-sandbox agent streaming coalesced chunks into Convex and all devices syncing via reactive queries (stream, steer, abort, follow-up) with managed inference by default → review diffs (read-only) → agent commits to a branch and opens a PR → sessions/transcripts/diffs persisted in Convex for cross-device resume → idle hibernation → web-push on run completion → usage-based billing (compute-minutes + managed tokens).
+Sign in via Clerk → connect GitHub → pick repo + branch → provision a Daytona sandbox and clone the repo → run the Codex-first interactive session with UI parts streamed into the shared workbench → steer/abort/follow up → review diffs → commit to a branch and open a PR → persist messages and resume state in Convex → suspend and resume the sandbox. Billing and notifications follow only after the execution and security gates are validated.
 
 ### Future versions (post-MVP)
 - Full in-browser Monaco editor with manual editing and inline approvals.
