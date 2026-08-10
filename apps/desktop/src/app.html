@@ -8,36 +8,6 @@
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
-    <script>
-      (() => {
-        if (window.h3code || !window.zero?.invoke) {
-          return;
-        }
-
-        const invoke = (command, payload = {}) => window.zero.invoke(command, payload);
-        const platform = navigator.platform?.toLowerCase().includes("mac") ? "darwin" : "linux";
-
-        window.h3code = {
-          platform,
-          getAgentServerUrl: async () => {
-            const result = await invoke("h3code.getAgentServerUrl");
-            return result?.url;
-          },
-          getAppVersion: () => invoke("h3code.getAppVersion"),
-          selectRepo: async () => {
-            const paths = await invoke("zero-native.dialog.openFile", {
-              title: "Select repository",
-              allowDirectories: true,
-              allowMultiple: false
-            });
-
-            return Array.isArray(paths) && paths[0] ? { path: paths[0] } : null;
-          },
-          revealPath: (targetPath) => invoke("h3code.revealPath", { targetPath }),
-          revealPreferencesDatabase: () => invoke("h3code.revealPreferencesDatabase")
-        };
-      })();
-    </script>
     <div style="display: contents">%sveltekit.body%</div>
   </body>
 </html>

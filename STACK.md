@@ -1,83 +1,44 @@
 # H3Code — Stack Guidance
 
 <!-- agentkit:start stack -->
-Monorepo managed with npm workspaces and Turborepo. Primary product is the Electron desktop app; cloud and web apps share the same **AI SDK Harness + `UIMessage`** agent boundary (see `Docs/h3code-ai-sdk-harness-architecture.md`). Legacy `@h3code/agent-protocol` / `agent-runtime*` packages remain during desktop migration only.
+H3Code is an npm workspace with one application: `apps/desktop`.
 
-## Workspace Layout
+## Stack
 
-| Path | Stack | Role |
+| Layer | Technology | Role |
 | --- | --- | --- |
-| `apps/desktop` | Electron, SvelteKit 2, Svelte 5, Vite, Tailwind 4, shadcn-svelte | Primary desktop workbench |
-| `apps/web` | SvelteKit, Vite, Tailwind 4, shadcn-svelte | Marketing site |
-| `apps/cloud` | TanStack React Start, React 19, Convex, Clerk, Tailwind 4, Vitest | Cloud workbench (GitHub sync live; agent sessions planned) |
-| `apps/desktop-zero` | Zig | Experimental native shell |
-| `packages/agent-provider-pi` | TypeScript | **Target:** thin `HarnessAgent` + Pi + sandbox wiring |
-| `packages/agent-metadata` | TypeScript, SQLite | Local repos, prefs, session index, optional `UIMessage` snapshot cache |
-| `packages/sandbox-daytona` | TypeScript | **Planned:** `HarnessV1SandboxProvider` for cloud Daytona |
-| `packages/agent-protocol` | TypeScript | **Legacy** — retire after harness migration |
-| `packages/agent-runtime` | TypeScript | **Legacy** — retire after harness migration |
-| `packages/agent-runtime-ws` | Node, `ws` | **Legacy** — retire after harness migration |
-| `packages/agent-runtime-persistence` | TypeScript, SQLite | **Legacy** — retire after harness migration |
-| `packages/agent-runtime-server` | Node, `ws` | **Legacy** — retire after harness migration |
+| Desktop host | Electron 39, TypeScript | Window lifecycle, OS dialogs, future PI process supervision |
+| Renderer | SvelteKit 2, Svelte 5, Vite 7 | Product UI |
+| Styling | Tailwind CSS 4 | Semantic utility styling from CSS variables |
+| Components | shadcn-svelte, Mira style | Upstream-owned UI primitives copied into the repository |
+| Theme | `apps/desktop/src/app.css` | Light/dark OKLCH colors, radius, shadows, and Tailwind mappings |
+| Package manager | npm 11 workspaces | Root and desktop dependency management |
 
-## Architecture Boundaries
+## Runtime Boundary
 
-**Target** desktop data flow:
-
-```txt
-Renderer (useChat) → stream route / IPC → HarnessAgent (@ai-sdk/harness-pi) → just-bash sandbox (local repo)
-  ↔ @h3code/agent-metadata (SQLite product data only)
+```text
+Svelte renderer
+  -> typed preload API
+    -> Electron main
+      -> PI process or supported PI programmatic boundary (next slice)
 ```
 
-**Current** desktop (until migration):
+- Keep filesystem, child-process, and Electron APIs in `apps/desktop/electron/`.
+- Keep the preload API narrow and declare it in `apps/desktop/src/app.d.ts`.
+- Keep Svelte routes browser-safe.
+- PI integration should preserve PI's native sessions and authentication rather than wrapping them in a new runtime framework.
 
-```txt
-Svelte renderer → WebSocket → agent-runtime-server → PiProviderAdapter
-```
+## Source Layout
 
-- **Harness** owns sessions, tools, compaction, and live stream shape (`UIMessage`).
-- **H3Code** owns workbench UI, Electron host, `repoPath`, and `agent-metadata`—not a custom runtime projector.
-
-Cloud app (`apps/cloud`):
-
-- Frontend in `apps/cloud/src/` (TanStack Router/Start, React 19).
-- Backend in `apps/cloud/convex/` (`auth.config.ts`, `schema.ts`, `github.ts`, `workspaceRepositories.ts`, `sessions.ts`, `sandbox.ts`, `sandboxProvision.ts`, `users.ts`).
-- Auth: `@clerk/tanstack-react-start` + `ConvexProviderWithClerk`; JWT validated via `CLERK_JWT_ISSUER_DOMAIN` in Convex env.
-- GitHub (MVP): Clerk OAuth token retrieved server-side in `src/integrations/github/server.ts`; connection metadata in `githubConnections`; workspace repos in `workspaceRepositories`; GitHub catalog fetched on demand for the add-repository dialog.
-- Convex tables today: `users`, `githubConnections`, `workspaceRepositories`, `sessions`, `messages`. Daytona: **one sandbox per session** (`sandboxProvision` on create). **Target:** `messages` store `UIMessage`-compatible JSON + harness `resumeFrom` on session rows. Deferred tables: see `Docs/h3code-convex-schema.md`.
-- Env template: `apps/cloud/.env.example` (`VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_JWT_ISSUER_DOMAIN`, `VITE_CONVEX_URL`).
-
-## Source Conventions
-
-**Desktop (`apps/desktop`)**
-
-- Routes: `apps/desktop/src/routes/`
-- Shared UI: `apps/desktop/src/lib/components/ui/` (shadcn-svelte)
-- Desktop features: `apps/desktop/src/lib/components/desktop/`
-- AI elements: `apps/desktop/src/lib/components/ai-elements/`
-- Agent transport: `apps/desktop/src/lib/agent-client.ts`, `agent-transport.ts`
-- Electron main: `apps/desktop/electron/`
-
-**Web (`apps/web`)**
-
-- SvelteKit routes and components under `apps/web/src/`
-
-**Cloud (`apps/cloud`)**
-
-- Routes: `apps/cloud/src/routes/` (`/sign-in`, `/app`, `/app/settings`, `/app/sessions/$sessionId`)
-- Integrations: `apps/cloud/src/integrations/clerk/`, `convex/`, `github/`
-- Shared UI: `apps/cloud/src/components/ui/` (shadcn-compatible)
-- AI elements: `apps/cloud/src/components/ai-elements/`
-- App shell: `apps/cloud/src/components/app-shell/`, `workspace/`
-
-**Packages**
-
-- Build with `tsc`; exports from `src/`, compiled output in `dist/`
-- Runtime package tests compile to `dist-test/` and run with Node's test runner
+- `apps/desktop/electron/main.ts`: Electron startup and IPC handlers.
+- `apps/desktop/electron/preload.ts`: context-isolated renderer bridge.
+- `apps/desktop/src/routes/`: renderer pages and layouts.
+- `apps/desktop/src/lib/components/ui/`: shadcn-svelte generated source only.
+- `apps/desktop/src/lib/utils.ts`: shadcn class utilities and component helper types.
+- `apps/desktop/src/app.css`: canonical Tailwind/theme file.
+- `apps/desktop/components.json`: shadcn-svelte registry configuration.
 
 ## Validation
-
-Root (all workspaces):
 
 ```bash
 npm run check
@@ -85,31 +46,5 @@ npm run lint
 npm run build
 ```
 
-By surface:
-
-```bash
-npm run dev:desktop          # desktop development
-npm run dev:web              # marketing site
-npm run dev:cloud            # cloud + convex dev
-npm run check:cloud          # cloud formatting/check
-npm run test --workspace @h3code/cloud   # cloud vitest
-npm run test --workspace @h3code/agent-runtime-server
-```
-
-Desktop targeted tests (from `apps/desktop` workspace):
-
-```bash
-npm run test:agent-lib --workspace @h3code/desktop
-npm run test:transcript-normalize --workspace @h3code/desktop
-npm run test:runtime-client --workspace @h3code/desktop
-```
-
-Run checks for the narrowest workspace you touched before handoff.
-
-## Stack Notes
-
-- Package manager: npm (`packageManager: npm@11.11.0`).
-- UI styling: Tailwind CSS v4; desktop/web use shadcn-svelte and Bits UI.
-- Design tokens and component rules: see root `DESIGN.md`.
-- Config lists `preset: next`, but this repo has no Next.js app. Treat it as a multi-app fullstack monorepo (SvelteKit desktop/web, TanStack + Convex cloud).
+No test runner is configured in the clean baseline. Add focused tests with the first non-trivial PI lifecycle module rather than creating an empty test scaffold.
 <!-- agentkit:end stack -->

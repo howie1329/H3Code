@@ -1,42 +1,84 @@
-# Product
+# H3Code Product Brief
 
-## Register
+> Status: Active PI-first brief after the August 10, 2026 reset.
 
-product
+## Product in one sentence
 
-## Users
+H3Code is a focused desktop workbench that makes PI sessions against local repositories easier to start, understand, control, resume, and review.
 
-Solo developers running coding agents against local repositories. They work in long sessions at their own machine, often with an editor nearby, switching between repo context, agent transcript, tool output, and git state. They need fast orientation, not onboarding theater.
+## First user
 
-## Product Purpose
+The first user is a developer who already uses PI, works in local Git repositories, and wants a clearer long-session interface than a collection of terminal windows.
 
-H3Code is a local desktop workbench for coding agents. The desktop UI talks to a local Agent Server over WebSocket; providers (PI today, others planned) own sessions, messages, and runtime behavior. H3Code owns the local experience: repo selection, connection health, workspace chrome, transcript rendering, capability-gated controls, and lightweight metadata indexing.
+## Product boundary
 
-Success looks like a developer trusting the shell enough to leave it open all day: sessions and runs are legible, errors are actionable, keyboard paths cover frequent actions, and the UI stays out of the way of the agent work.
+PI owns:
 
-## Brand Personality
+- The agent loop, model/provider behavior, tools, and execution.
+- Authentication and provider credentials.
+- Queueing, compaction, retry, and interruption semantics.
+- Canonical sessions and transcripts.
 
-Fast · Dense · Technical
+H3Code owns:
 
-Voice is direct and utilitarian. Prefer labels that say what happens. Show connection state, run status, and tool activity plainly. Confidence comes from precision and speed, not from marketing language or decorative chrome.
+- Electron process supervision and a narrow typed IPC bridge.
+- Local repository selection and workspace presentation.
+- Session navigation and readable streaming presentation.
+- Controls that directly map to PI behavior, such as prompt, steer, follow-up, and abort.
+- Lightweight preferences and indexes only when a product slice requires them.
+- Diff and Git-oriented review around changes PI makes.
 
-## Anti-references
+H3Code will not introduce a universal agent protocol, copy PI's canonical transcript into a second source of truth, or abstract for hypothetical providers.
 
-- SaaS marketing patterns on product surfaces: hero metrics, gradient CTAs, identical feature card grids, section eyebrows on every block.
-- Generic AI-tool slop: purple gradients, sparkle motifs, hype copy, "supercharge your workflow" tone.
-- Neon, glassmorphism, and heavy atmospheric gradients on the workbench.
-- Consumer chat-app chrome (bubbles, avatars, playful empty states) where a dense dev tool is appropriate.
+## First complete loop
 
-Reference direction for desktop: Linear-like quiet canvas, tight typography, minimal chrome, hierarchy through spacing and type rather than stacked cards.
+A user can:
 
-## Design Principles
+1. Choose a local repository.
+2. Start PI or resume a PI-owned session in that repository.
+3. Send a prompt and see text, reasoning, tool activity, and errors stream in place.
+4. Steer, follow up, or abort using PI's real controls.
+5. Restart H3Code and recover the same PI session predictably.
+6. Review the files and diff produced by the session.
 
-1. **Provider truth stays upstream** — The UI speaks H3Code protocol and capabilities; it does not leak provider-specific shapes or copy into the shell.
-2. **Density without noise** — Every row and control earns its place for solo-dev flow; avoid empty padding and decorative containers.
-3. **Show the work** — Transcript, tools, repo/git context, and connection diagnostics carry the screen; chrome frames them, it does not compete.
-4. **Keyboard parity** — Frequent actions (navigation, send, abort, session switch, sidebar toggle) must be reachable without the mouse; shortcuts are part of the product, not an appendix.
-5. **Trust through state** — Connection, run lifecycle, and failures are always visible and actionable; never hide uncertainty behind generic loaders.
+That loop is the product gate. Work that does not improve it waits.
 
-## Accessibility & Inclusion
+## Sequence
 
-Target WCAG 2.2 AA for text contrast, focus visibility, and semantic structure. Keyboard-first power-user flows are non-negotiable for core workbench tasks. Respect `prefers-reduced-motion` for any motion beyond essential feedback (run indicators, subtle state transitions).
+### 0. Clean foundation — complete
+
+- One Electron + SvelteKit application.
+- Tailwind CSS 4 with the retained semantic palette.
+- Fresh shadcn-svelte configuration and component source.
+- No legacy runtime, cloud surface, shared protocol, or custom component library.
+
+### 1. PI execution loop — next
+
+- Choose and validate a repository.
+- Locate and launch PI through its supported programmatic or RPC boundary.
+- Expose a small typed Electron-to-renderer contract.
+- Stream one real turn and support abort.
+
+### 2. Native PI session behavior
+
+- Resume and switch PI-owned sessions.
+- Add steer and follow-up.
+- Represent queue, compaction, retry, and extension interactions when PI exposes them.
+- Recover cleanly after renderer and application restarts.
+
+### 3. Workbench depth
+
+- Session navigation.
+- Diff and changed-file review.
+- Terminal and development-server visibility where it directly improves the PI workflow.
+- Local Git actions only after review behavior is dependable.
+
+## Explicit non-goals
+
+Until the PI desktop loop is excellent:
+
+- Cloud workspaces, accounts, teams, collaboration, billing, and remote sandboxes.
+- Codex or additional agent runtimes.
+- A marketing application or native-shell experiment.
+- A shared cross-provider message protocol.
+- A browser editor, managed inference, or H3Code-owned agent loop.

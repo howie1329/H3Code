@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">H3 Code icon for dark mode</title>
-  <desc id="desc">A simple geometric H3 monogram on a dark rounded square.</desc>
-  <rect width="512" height="512" rx="112" fill="#171717"/>
-  <path fill="#fafafa" d="M92 136h58v94h56v-94h58v240h-58v-94h-56v94H92V136Z"/>
-  <path fill="#fafafa" d="M296 136h58c62 0 100 31 100 82 0 29-14 51-40 65 30 13 48 38 48 72 0 55-43 89-109 89h-57v-56h57c32 0 50-14 50-39 0-24-18-38-50-38h-37v-55h35c29 0 45-13 45-35 0-21-16-33-43-33h-57v-52Z"/>
-</svg>

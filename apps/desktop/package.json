@@ -12,23 +12,15 @@
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "lint": "svelte-check --tsconfig ./tsconfig.json",
-    "test:runtime-client": "tsc -p tsconfig.runtime-client-test.json && node --test dist-runtime-client-test/runtime-client.test.js dist-runtime-client-test/session-state.test.js",
-    "test:preferences": "npm run test --workspace @h3code/agent-metadata",
-    "test:agent-lib": "tsc -p tsconfig.agent-lib-test.json && node --test dist-agent-lib-test/session-stats.test.js dist-agent-lib-test/slash-commands.test.js dist-agent-lib-test/components/desktop/custom/ask-user-question.test.js",
-    "test:transcript-normalize": "tsc -p tsconfig.transcript-test.json && node --test dist-transcript-test/transcript-render.test.js"
+    "lint": "svelte-check --tsconfig ./tsconfig.json"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",
-    "@hugeicons/core-free-icons": "^4.2.0",
-    "@hugeicons/svelte": "^1.1.2",
-    "@internationalized/date": "^3.12.1",
     "@sveltejs/adapter-static": "^3.0.0",
     "@sveltejs/kit": "^2.27.0",
     "@sveltejs/vite-plugin-svelte": "^6.2.0",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^24.0.0",
-    "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "concurrently": "^9.2.0",
     "cross-env": "^10.0.0",
@@ -37,7 +29,7 @@
     "svelte": "^5.38.0",
     "svelte-check": "^4.3.0",
     "tailwind-merge": "^3.6.0",
-    "tailwind-variants": "^3.2.2",
+    "tailwind-variants": "^3.3.1",
     "tailwindcss": "^4.1.0",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5.9.0",
@@ -45,21 +37,6 @@
     "wait-on": "^9.0.0"
   },
   "dependencies": {
-    "@h3code/agent-metadata": "*",
-    "@h3code/agent-protocol": "*",
-    "@h3code/agent-runtime-server": "*",
-    "@lucide/svelte": "^1.16.0",
-    "@pierre/diffs": "^1.2.3",
-    "@shikijs/langs": "^4.1.0",
-    "@shikijs/themes": "^4.1.0",
-    "@streamdown-svelte/code": "^1.1.3",
-    "@tanstack/svelte-virtual": "^3.13.26",
-    "ai": "^6.0.190",
-    "isomorphic-dompurify": "^3.14.0",
-    "mode-watcher": "^1.1.0",
-    "runed": "^0.37.1",
-    "shiki": "^4.1.0",
-    "streamdown-svelte": "^3.0.6",
-    "svelte-toolbelt": "^0.10.6"
+    "mode-watcher": "^1.1.0"
   }
 }
