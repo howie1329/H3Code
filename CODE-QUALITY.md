@@ -1,40 +1,26 @@
 # H3Code — Code Quality
 
 <!-- agentkit:start code-quality -->
-Guidance for review, refactor, and maintainability. Commands live in `AGENTS.md`; run the narrowest check set for the workspaces you touch.
+Use the smallest implementation that completes the current PI product slice.
 
-## Review Priorities
+## Priorities
 
-1. **Boundary respect** — Providers own runtime and transcripts; H3Code owns local UI and orchestration. Do not blur ownership.
-2. **Protocol neutrality** — Keep renderer and shared types aligned with `@h3code/agent-protocol`, not PI-specific shapes.
-3. **Scope discipline** — No drive-by refactors, unrelated formatting, or dependency churn.
-4. **Type safety** — Prefer explicit types at protocol boundaries; use `svelte-check` / `tsc` clean passes.
-5. **UI consistency** — Reuse shadcn primitives: Svelte in `apps/desktop` / `apps/web`; React in `apps/cloud/src/components/ui/`. Follow `DESIGN.md` tokens.
+1. Preserve ownership: PI owns agent behavior and canonical sessions; H3Code owns the workbench.
+2. Keep the Electron boundary explicit: privileged operations in main, narrow preload API, browser-safe renderer.
+3. Prefer direct code over provider-neutral layers, registries, or abstractions without a second real consumer.
+4. Keep generated shadcn primitives upstream-shaped and compose product UI outside `components/ui`.
+5. Validate external data and process failures at the boundary where they enter.
 
-## Patterns to Prefer
+## Tests
 
-- Existing component and module structure in the touched app or package.
-- Workspace-local utilities (`apps/desktop/src/lib/utils.ts`, package `src/` modules).
-- Small, reviewable commits of behavior with tests where behavior is non-obvious.
-- Node test runner for server/desktop unit tests; Vitest for cloud (`npm run test --workspace @h3code/cloud`).
+No test runner exists in the clean baseline. Add focused tests with the first PI lifecycle or stream-processing module. Prefer deterministic unit tests for process framing, command correlation, state transitions, and reconnect behavior; use integration checks for Electron/PI boundaries only where unit tests cannot prove behavior.
 
-## Patterns to Avoid
+## Review Checklist
 
-- New dependencies without clear need and approval.
-- Duplicating provider logic in the renderer.
-- Hardcoded colors or spacing when `DESIGN.md` tokens or Tailwind theme variables exist.
-- Broad `any` at WebSocket or protocol boundaries.
-
-## Refactor Guidance
-
-- Refactor only what the task requires.
-- When extracting shared code, prefer `packages/` only if two workspaces need it.
-- Preserve public exports and protocol compatibility unless the task explicitly allows breaking changes.
-
-## Pre-Handoff Checklist
-
-- [ ] Changed workspaces pass `check` (and `lint` / tests when relevant).
-- [ ] No secrets or env values committed.
-- [ ] Important decisions documented in the change explanation.
-- [ ] Reviewer knows which app/package to focus on.
+- [ ] The change advances the active milestone in `PRODUCT.md`.
+- [ ] Main/preload/renderer responsibilities remain separated.
+- [ ] PI-native state is not copied into a competing canonical model.
+- [ ] New dependencies solve a concrete need.
+- [ ] Semantic theme classes and existing shadcn components are used.
+- [ ] `npm run check`, `npm run lint`, and `npm run build` pass when relevant.
 <!-- agentkit:end code-quality -->

@@ -5,25 +5,18 @@
   "type": "module",
   "packageManager": "npm@11.11.0",
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/desktop"
   ],
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "check": "turbo run check",
-    "lint": "turbo run lint",
-    "dev:cloud": "npm run dev --workspace @h3code/cloud",
-    "build:cloud": "npm run build --workspace @h3code/cloud",
-    "check:cloud": "npm run check --workspace @h3code/cloud",
+    "dev": "npm run dev:desktop",
+    "build": "npm run build --workspace @h3code/desktop",
+    "check": "npm run check --workspace @h3code/desktop",
+    "lint": "npm run lint --workspace @h3code/desktop",
     "dev:desktop": "npm run dev --workspace @h3code/desktop",
-    "dev:desktop-zero": "npm run dev --workspace @h3code/desktop-zero",
-    "build:desktop-zero": "npm run build --workspace @h3code/desktop-zero",
-    "check:desktop-zero": "npm run check --workspace @h3code/desktop-zero",
-    "dev:web": "npm run dev --workspace @h3code/web"
+    "build:desktop": "npm run build --workspace @h3code/desktop",
+    "check:desktop": "npm run check --workspace @h3code/desktop"
   },
   "devDependencies": {
-    "thomas-agentkit": "^0.9.0-alpha.1",
-    "turbo": "^2.5.0"
+    "thomas-agentkit": "^0.9.0-alpha.1"
   }
 }

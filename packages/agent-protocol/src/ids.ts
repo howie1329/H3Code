@@ -1,9 +1,0 @@
-export type SessionId = string;
-export type ProviderId = string;
-export type ProviderSessionRef = string;
-export type TurnId = string;
-export type RuntimeItemId = string;
-export type MessageId = string;
-export type ActivityId = string;
-export type RequestId = string;
-export type RepoPath = string;

@@ -8,5 +8,5 @@
     "claude"
   ],
   "designSystem": "linear",
-  "preset": "next"
+  "preset": "sveltekit"
 }

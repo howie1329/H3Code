@@ -1,126 +1,84 @@
 # H3Code Product Brief
 
-> Status: Active working brief. Strategic sequencing is maintained in [docs/h3code-roadmap.md](docs/h3code-roadmap.md); execution and business-model decisions are recorded in [docs/h3code-product-direction.md](docs/h3code-product-direction.md).
+> Status: Active PI-first brief after the August 10, 2026 reset.
 
 ## Product in one sentence
 
-H3Code is a focused coding-agent workbench that lets developers run the coding runtimes they already use against local or cloud repositories while H3Code provides the surrounding workspace, session, terminal, preview, diff, and Git experience.
+H3Code is a focused desktop workbench that makes PI sessions against local repositories easier to start, understand, control, resume, and review.
 
-## Problem
+## First user
 
-Coding agents are powerful but fragmented across terminals, editor panels, provider-specific applications, cloud sandboxes, and Git tooling. Developers have to reconstruct context, find the right session, understand what is running, and recover from failures across several surfaces.
+The first user is a developer who already uses PI, works in local Git repositories, and wants a clearer long-session interface than a collection of terminal windows.
 
-H3Code should make the work legible and continuous without hiding the runtime that is doing the work. A developer should be able to select a repository, start or resume an agent session, inspect tool activity and changes, intervene when needed, and deliver the result through Git.
+## Product boundary
 
-## Target users
+PI owns:
 
-The first user is a solo developer who:
-
-- works against one or more real repositories;
-- already uses coding-agent subscriptions, native provider authentication, or BYOK;
-- values fast orientation and keyboard-friendly controls over onboarding theater;
-- needs local-first workflows but may want a remote workspace when away from their primary machine.
-
-Teams, shared workspaces, and enterprise controls are later opportunities, not launch requirements.
-
-## Product promise
-
-> One workbench for coding agents, local repositories, and remote development sessions—using the provider access the developer already has whenever the runtime permits it.
-
-H3Code must clearly show which runtime, authentication path, and billing mode are active. It must not imply that provider subscription access is portable when it is not.
-
-## Product surfaces
-
-### Desktop: flagship surface
-
-Desktop is the first product to make reliable. It owns:
-
-- local repository and workspace selection;
-- runtime/session navigation and recovery;
-- unified transcript and tool activity presentation;
-- terminal and development-server workflows;
-- diff review and local Git actions;
-- runtime, model, authentication, connection, and capability state;
-- lightweight local metadata and display caching.
-
-Initial execution paths are PI through the existing SDK integration and Codex through its app-server, with a shared UI/transport boundary. Additional runtimes are justified by user value and reliable authentication—not by provider count.
-
-### Cloud: independent remote workspace
-
-Cloud is not a remote-control dependency on a running desktop. It gives a signed-in user a GitHub repository, isolated sandbox, agent session, durable product state, and a path to preview and deliver changes.
-
-The first cloud path is Codex-first, subject to validating authentication, credential custody, sandbox economics, and resume behavior. BYOK and AI Gateway remain explicit fallback paths. Cloud scope starts with solo accounts and GitHub.
-
-### Web and experimental shell
-
-`apps/web` is the marketing surface. `apps/desktop-zero` is an experimental native shell and does not currently define the flagship product scope.
-
-## Ownership boundary
+- The agent loop, model/provider behavior, tools, and execution.
+- Authentication and provider credentials.
+- Queueing, compaction, retry, and interruption semantics.
+- Canonical sessions and transcripts.
 
 H3Code owns:
 
-- the workbench UI and navigation;
-- repository/workspace context;
-- local or cloud sandbox lifecycle orchestration;
-- display persistence and product metadata;
-- terminal, preview, diff, and Git integrations;
-- clear runtime capabilities and connection state.
+- Electron process supervision and a narrow typed IPC bridge.
+- Local repository selection and workspace presentation.
+- Session navigation and readable streaming presentation.
+- Controls that directly map to PI behavior, such as prompt, steer, follow-up, and abort.
+- Lightweight preferences and indexes only when a product slice requires them.
+- Diff and Git-oriented review around changes PI makes.
 
-The selected runtime owns:
+H3Code will not introduce a universal agent protocol, copy PI's canonical transcript into a second source of truth, or abstract for hypothetical providers.
 
-- the agent loop, tools, model behavior, queueing, compaction, and retry;
-- canonical native session history and provider-native identifiers;
-- provider authentication semantics and execution details.
+## First complete loop
 
-The renderer boundary should use AI SDK-compatible `UIMessage` parts and a small lifecycle surface. H3Code should not build another universal agent protocol or projector.
+A user can:
 
-## Principles
+1. Choose a local repository.
+2. Start PI or resume a PI-owned session in that repository.
+3. Send a prompt and see text, reasoning, tool activity, and errors stream in place.
+4. Steer, follow up, or abort using PI's real controls.
+5. Restart H3Code and recover the same PI session predictably.
+6. Review the files and diff produced by the session.
 
-1. Own the workbench, not the agent loop.
-2. Prefer native provider subscriptions and BYOK; make managed inference optional and transparent.
-3. Keep desktop useful without cloud availability.
-4. Make runtime, authentication, connection, and run state visible.
-5. Favor one interaction model across local and cloud workspaces.
-6. Earn complexity in phases; do not build teams, broad provider coverage, or a browser editor before the core loop is dependable.
+That loop is the product gate. Work that does not improve it waits.
 
-## Current product state
+## Sequence
 
-### Working today
+### 0. Clean foundation — complete
 
-- Desktop local folder selection and Electron shell.
-- Local runtime-server supervision and WebSocket connection.
-- PI session creation, listing, switching, prompts, steer/follow-up, and abort.
-- Desktop transcript rendering, streaming output, tool blocks, diagnostics, extension UI, recent activity, session stats, preferences, and metadata indexing.
-- Cloud sign-in, Clerk/Convex auth, GitHub connection verification, curated workspace repositories, session create/list/open, Convex-persisted user messages, and asynchronous Daytona sandbox provisioning.
+- One Electron + SvelteKit application.
+- Tailwind CSS 4 with the retained semantic palette.
+- Fresh shadcn-svelte configuration and component source.
+- No legacy runtime, cloud surface, shared protocol, or custom component library.
 
-### Not yet product-complete
+### 1. PI execution loop — next
 
-- Desktop Codex app-server integration and shared transcript boundary.
-- Desktop migration away from the legacy runtime server.
-- Cloud live agent execution and assistant/tool streaming.
-- Cloud terminal, preview, diff, commit, push, and pull-request flow.
-- Durable cloud harness resume and secure credential lifecycle.
-- Reliable crash/reconnect testing and launch-quality packaging.
+- Choose and validate a repository.
+- Locate and launch PI through its supported programmatic or RPC boundary.
+- Expose a small typed Electron-to-renderer contract.
+- Stream one real turn and support abort.
 
-## Success criteria
+### 2. Native PI session behavior
 
-H3Code is ready to become a real product when a developer can:
+- Resume and switch PI-owned sessions.
+- Add steer and follow-up.
+- Represent queue, compaction, retry, and extension interactions when PI exposes them.
+- Recover cleanly after renderer and application restarts.
 
-1. choose a local repository or GitHub-backed cloud workspace;
-2. authenticate through a clearly labeled supported path;
-3. start or resume a session and see useful streaming state;
-4. steer or stop the run predictably;
-5. inspect tool activity, terminal output, previews, and diffs;
-6. recover after restart or sandbox suspension;
-7. deliver changes through local Git or a cloud branch/PR workflow.
+### 3. Workbench depth
 
-Product quality is measured first by successful completion and recovery of that loop, then by adoption, retention, cloud cost, and support burden. Numeric targets should be set after baseline instrumentation exists.
+- Session navigation.
+- Diff and changed-file review.
+- Terminal and development-server visibility where it directly improves the PI workflow.
+- Local Git actions only after review behavior is dependable.
 
 ## Explicit non-goals
 
-- Building a foundation model or general-purpose agent framework.
-- Replacing mature provider runtimes with an H3Code-owned agent loop.
-- Making H3Code the canonical owner of provider transcripts.
-- Supporting every provider before the core workbench is excellent.
-- Requiring cloud connectivity for the desktop product.
-- Launching teams, a full browser editor, native mobile apps, or managed inference as the default before the MVP gates pass.
+Until the PI desktop loop is excellent:
+
+- Cloud workspaces, accounts, teams, collaboration, billing, and remote sandboxes.
+- Codex or additional agent runtimes.
+- A marketing application or native-shell experiment.
+- A shared cross-provider message protocol.
+- A browser editor, managed inference, or H3Code-owned agent loop.

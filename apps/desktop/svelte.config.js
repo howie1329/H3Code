@@ -12,7 +12,6 @@ const config = {
     alias: {
       $lib: libPath,
       "$lib/*": `${libPath}/*`,
-      "@/*": "./path/to/lib/*",
     },
   },
 };
