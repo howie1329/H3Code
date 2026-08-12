@@ -1,7 +1,7 @@
 # H3Code — Design Guidance
 
 <!-- agentkit:start design -->
-H3Code uses a restrained, Linear-influenced desktop-tool baseline. The interface should feel precise and calm during long PI sessions: clear hierarchy, compact controls, continuous surfaces, and minimal decoration.
+H3Code uses a restrained, Linear-influenced desktop-tool baseline. The interface should feel precise and calm while supervising long-running and concurrent Threads: clear hierarchy, compact controls, continuous surfaces, and minimal decoration.
 
 ## Token Mapping
 
@@ -28,6 +28,12 @@ Use semantic utilities. Literal OKLCH, RGB, and hex values belong only in the th
 - Use compact spacing and control sizes for session chrome; use comfortable line height for transcript content.
 - Maintain a visible keyboard focus state and useful minimum pointer targets.
 - Support light and dark mode through the existing semantic variables.
+- Organize primary navigation by Repository, with its Threads nested beneath it.
+- Keep global Running, Waiting for Approval, and Failed indicators visible even when their Repository is not selected.
+- Present Shared Checkout state persistently with participating Threads, branch, and Repository-wide dirty state available without reconstructing context.
+- Keep Follow-up and Steer as visibly distinct actions while a Turn is active.
+- Keep unseen background completion, failure, and approval-required activity visible until its Thread is viewed.
+- Present compaction as quiet transcript context with details on demand rather than as an error or interruption.
 
 ## Typography
 
@@ -42,7 +48,7 @@ Use semantic utilities. Literal OKLCH, RGB, and hex values belong only in the th
 - Keep generated primitives in `apps/desktop/src/lib/components/ui/` and product composition outside that directory.
 - Use component variants before overriding component colors or typography.
 - Use `gap-*` for layout spacing, `size-*` for square elements, and semantic color utilities.
-- Avoid decorative gradients, glass effects, oversized radii, chat avatars, and card grids that do not help the PI workflow.
+- Avoid decorative gradients, glass effects, oversized radii, chat avatars, and card grids that do not help the coding-agent workflow.
 
 ## Motion
 
